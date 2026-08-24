@@ -3,7 +3,11 @@ import type { ExpoConfig } from "expo/config";
 import * as fs from "fs";
 import * as path from "path";
 
-type TdlibSecrets = { apiId: number | null; apiHash: string | null };
+type TdlibSecrets = {
+  apiId: number | null;
+  apiHash: string | null;
+  google_maps_api_key?: string | null;
+};
 
 function loadTdlibSecrets(): TdlibSecrets {
   const secretPath = path.resolve(__dirname, "tdlib.secrets.json");
@@ -13,6 +17,8 @@ function loadTdlibSecrets(): TdlibSecrets {
       return {
         apiId: typeof raw.api_id === "number" ? raw.api_id : null,
         apiHash: typeof raw.api_hash === "string" ? raw.api_hash : null,
+        google_maps_api_key:
+          typeof raw.google_maps_api_key === "string" ? raw.google_maps_api_key : null,
       };
     } catch {
       console.warn("tdlib.secrets.json is malformed — TDLib auth will fail until fixed.");
@@ -22,7 +28,7 @@ function loadTdlibSecrets(): TdlibSecrets {
       "tdlib.secrets.json not found. Copy tdlib.secrets.example.json and add your api_id/api_hash from https://my.telegram.org"
     );
   }
-  return { apiId: null, apiHash: null };
+  return { apiId: null, apiHash: null, google_maps_api_key: null };
 }
 
 const secrets = loadTdlibSecrets();
@@ -42,6 +48,9 @@ const config: ExpoConfig = {
   android: {
     package: "com.photogram.app",
     versionCode: 1,
+    config: secrets.google_maps_api_key
+      ? { googleMaps: { apiKey: secrets.google_maps_api_key } }
+      : undefined,
     adaptiveIcon: {
       backgroundColor: "#101014",
       foregroundImage: "./assets/android-icon-foreground.png",

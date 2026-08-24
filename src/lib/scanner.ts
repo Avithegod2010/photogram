@@ -25,6 +25,15 @@ function mimeFromAsset(asset: MediaLibrary.Asset): string {
   return "image/jpeg";
 }
 
+function autoTagsFor(asset: MediaLibrary.Asset): string {
+  const name = asset.filename.toLowerCase();
+  const tags: string[] = [asset.mediaType === MediaLibrary.MediaType.video ? "video" : "photo"];
+  if (name.includes("screenshot")) tags.push("screenshot");
+  if (name.includes("download")) tags.push("download");
+  if (name.includes("whatsapp")) tags.push("whatsapp");
+  return tags.join(" ");
+}
+
 async function makeThumbnail(uri: string, isVideo: boolean): Promise<string> {
   const thumbsDir = new File(Paths.cache, "thumbs");
   if (!thumbsDir.exists) {
@@ -109,6 +118,7 @@ export async function scanDeviceLibrary(
         }
 
         const thumbUri = await makeThumbnail(localUri, isVideo);
+        const location = info.location ?? null;
         const inserted = await insertMedia({
           local_uri: localUri,
           thumb_uri: thumbUri,
@@ -121,6 +131,9 @@ export async function scanDeviceLibrary(
           taken_at: Math.round(asset.creationTime * 1000),
           fingerprint,
           state: "local",
+          tags: autoTagsFor(asset),
+          latitude: location?.latitude ?? null,
+          longitude: location?.longitude ?? null,
         });
         if (inserted !== null) progress.added++;
         else progress.duplicates++;
