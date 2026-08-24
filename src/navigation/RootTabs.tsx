@@ -1,8 +1,8 @@
 import React from "react";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import { StyleSheet, Text, View } from "react-native";
-import { GalleryPlaceholderScreen } from "../screens/GalleryPlaceholderScreen";
-import { CollectionsPlaceholderScreen } from "../screens/CollectionsPlaceholderScreen";
+import { GalleryScreen } from "../screens/GalleryScreen";
+import { CollectionsScreen } from "../screens/CollectionsScreen";
 import { SettingsScreen } from "../screens/SettingsScreen";
 import { theme } from "../theme";
 
@@ -38,8 +38,8 @@ export function RootTabs() {
         ),
       })}
     >
-      <Tab.Screen name="Gallery" component={GalleryPlaceholderScreen} />
-      <Tab.Screen name="Collections" component={CollectionsPlaceholderScreen} />
+      <Tab.Screen name="Gallery" component={GalleryScreen} />
+      <Tab.Screen name="Collections" component={CollectionsScreen} />
       <Tab.Screen name="Settings" component={SettingsScreen} />
     </Tab.Navigator>
   );

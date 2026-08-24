@@ -1,0 +1,88 @@
+import React from "react";
+import { Pressable, StyleSheet, Text, View } from "react-native";
+import { StatusBar } from "expo-status-bar";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
+import { theme } from "../theme";
+
+type CollectionsNav = NativeStackNavigationProp<{
+  Trash: undefined;
+}>;
+
+const SECTIONS = [
+  { key: "albums", label: "Albums", sub: "Your own folders, backed up as Telegram albums", enabled: false },
+  { key: "people", label: "People & Pets", sub: "Face grouping arrives in Phase 2 (on-device ML)", enabled: false },
+  { key: "archive", label: "Archive", sub: "Decluttered media — hidden from the main timeline", enabled: false },
+  { key: "trash", label: "Trash", sub: "Deleted items · 30-day countdown", enabled: true },
+  { key: "hidden", label: "Hidden", sub: "Locked behind your fingerprint or face", enabled: false },
+];
+
+export function CollectionsScreen({ navigation }: { navigation: CollectionsNav }) {
+  const insets = useSafeAreaInsets();
+
+  return (
+    <View style={[styles.root, { paddingTop: insets.top }]}>
+      <StatusBar style="light" />
+      <Text style={styles.title}>Collections</Text>
+      <View style={styles.card}>
+        {SECTIONS.map((s) => {
+          const content = (
+            <>
+              <View style={[styles.dot, s.key === "hidden" && styles.dotAccent]} />
+              <View style={styles.rowText}>
+                <Text style={styles.rowLabel}>{s.label}</Text>
+                <Text style={styles.rowSub}>{s.sub}</Text>
+              </View>
+              {s.enabled ? <Text style={styles.chevron}>›</Text> : null}
+            </>
+          );
+          if (s.enabled) {
+            return (
+              <Pressable
+                key={s.key}
+                onPress={() => navigation.navigate("Trash")}
+                android_ripple={{ color: theme.colors.outlineVariant }}
+                style={styles.row}
+              >
+                {content}
+              </Pressable>
+            );
+          }
+          return (
+            <View key={s.key} style={[styles.row, styles.disabled]}>
+              {content}
+            </View>
+          );
+        })}
+      </View>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  root: { flex: 1, backgroundColor: theme.colors.background, padding: theme.spacing.md },
+  title: { color: theme.colors.onSurface, fontSize: 28, fontWeight: "700", marginBottom: theme.spacing.md },
+  card: {
+    backgroundColor: theme.colors.surfaceContainer,
+    borderRadius: theme.radius.xl,
+    borderWidth: 1,
+    borderColor: theme.colors.outlineVariant,
+    overflow: "hidden",
+  },
+  row: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: theme.spacing.md,
+    paddingHorizontal: theme.spacing.lg,
+    paddingVertical: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: theme.colors.outlineVariant,
+  },
+  disabled: { opacity: 0.55 },
+  dot: { width: 10, height: 10, borderRadius: 5, backgroundColor: theme.colors.primary },
+  dotAccent: { backgroundColor: theme.colors.error },
+  rowText: { flex: 1 },
+  rowLabel: { color: theme.colors.onSurface, fontSize: 15.5, fontWeight: "600" },
+  rowSub: { color: theme.colors.onSurfaceVariant, fontSize: 12.5, marginTop: 2 },
+  chevron: { color: theme.colors.onSurfaceVariant, fontSize: 22 },
+});

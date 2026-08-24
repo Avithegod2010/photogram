@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
+  Alert,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -15,7 +16,11 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { fetchProfile } from "../lib/tdlib";
 import { formatBytes, getMonthlyBuckets, getStorageTotals, MonthBucket, StorageTotals } from "../lib/stats";
 import { canUseBiometrics } from "../lib/biometrics";
-import { useSettingsStore } from "../store/settingsStore";
+import { countFreeableBytes } from "../lib/trash";
+import { freeUpDeviceSpace } from "../lib/space";
+import { pauseUploads, refreshCounts, resumeUploads } from "../lib/uploader";
+import { useUploadStore } from "../store/uploadStore";
+import { useSettingsStore, UploadQuality } from "../store/settingsStore";
 import { useAuthStore } from "../auth/authStore";
 import { theme } from "../theme";
 
@@ -26,6 +31,8 @@ export function SettingsScreen() {
   const [profileName, setProfileName] = useState<string | null>(null);
   const [bioInfo, setBioInfo] = useState<{ hardware: boolean; enrolled: boolean } | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  const [freeable, setFreeable] = useState<{ count: number; bytes: number }>({ count: 0, bytes: 0 });
+  const [freeing, setFreeing] = useState(false);
 
   const exifPreserve = useSettingsStore((s) => s.exifPreserve);
   const hiddenLockEnabled = useSettingsStore((s) => s.hiddenLockEnabled);
@@ -35,13 +42,26 @@ export function SettingsScreen() {
   const setHiddenLockEnabled = useSettingsStore((s) => s.setHiddenLockEnabled);
   const setWifiOnlyUpload = useSettingsStore((s) => s.setWifiOnlyUpload);
   const setChargeOnlyUpload = useSettingsStore((s) => s.setChargeOnlyUpload);
+  const uploadQuality = useSettingsStore((s) => s.uploadQuality);
+  const setUploadQuality = useSettingsStore((s) => s.setUploadQuality);
   const boot = useAuthStore((s) => s.boot);
+  const uploadActive = useUploadStore((s) => s.active);
+  const uploadPending = useUploadStore((s) => s.pending);
+  const uploadDone = useUploadStore((s) => s.done);
+  const uploadFailed = useUploadStore((s) => s.failed);
+  const uploadPaused = useUploadStore((s) => s.paused);
+  const sessionBytes = useUploadStore((s) => s.sessionBytes);
 
   const load = useCallback(async () => {
     try {
-      const [t, b] = await Promise.all([getStorageTotals(), getMonthlyBuckets()]);
+      const [t, b, f] = await Promise.all([
+        getStorageTotals(),
+        getMonthlyBuckets(),
+        countFreeableBytes(),
+      ]);
       setTotals(t);
       setBuckets(b);
+      setFreeable(f);
     } catch {
       setTotals(null);
     }
@@ -49,6 +69,7 @@ export function SettingsScreen() {
 
   useEffect(() => {
     void load();
+    void refreshCounts();
     void (async () => {
       const p = await fetchProfile();
       if (!p) return;
@@ -132,6 +153,32 @@ export function SettingsScreen() {
         </Section>
 
         <Section title="Backup preferences">
+          <View style={styles.qualityRow}>
+            <Text style={styles.rowLabel}>Upload quality</Text>
+            <View style={styles.qualityChips}>
+              {(["storage_saver", "original"] as UploadQuality[]).map((q) => (
+                <Pressable
+                  key={q}
+                  onPress={() => setUploadQuality(q)}
+                  style={[styles.qualityChip, uploadQuality === q && styles.qualityChipActive]}
+                >
+                  <Text
+                    style={[
+                      styles.qualityChipText,
+                      uploadQuality === q && styles.qualityChipTextActive,
+                    ]}
+                  >
+                    {q === "original" ? "Original" : "Storage saver"}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
+            <Text style={styles.rowSub}>
+              {uploadQuality === "original"
+                ? "Upload files exactly as they are"
+                : "Photos larger than 2048px are recompressed (~85% quality). Videos always stay original."}
+            </Text>
+          </View>
           <ToggleRow
             label="Preserve EXIF metadata"
             sub="Keep date, camera and GPS data when uploading"
@@ -151,6 +198,47 @@ export function SettingsScreen() {
           />
         </Section>
 
+        <Section title="Device storage">
+          <View style={styles.row}>
+            <View style={styles.toggleText}>
+              <Text style={styles.rowLabel}>Free up device space</Text>
+              <Text style={styles.rowSub}>
+                {freeable.count > 0
+                  ? `${formatBytes(freeable.bytes)} of originals safely backed up — remove local copies`
+                  : "Nothing to free yet. Originals appear here once backed up."}
+              </Text>
+            </View>
+            <Pressable
+              disabled={freeing || freeable.count === 0}
+              onPress={() => {
+                Alert.alert(
+                  "Free up space?",
+                  `Remove ${formatBytes(freeable.bytes)} of local originals? They stay safe in your Telegram cloud; thumbnails remain on device.`,
+                  [
+                    { text: "Cancel", style: "cancel" },
+                    {
+                      text: "Remove",
+                      style: "destructive",
+                      onPress: () => {
+                        setFreeing(true);
+                        void freeUpDeviceSpace()
+                          .then((r) => {
+                            setFreeable({ count: 0, bytes: 0 });
+                            void load();
+                          })
+                          .finally(() => setFreeing(false));
+                      },
+                    },
+                  ]
+                );
+              }}
+              style={[styles.freeBtn, (freeing || freeable.count === 0) && styles.btnDisabledStyle]}
+            >
+              <Text style={styles.freeBtnText}>{freeing ? "Removing…" : "Remove"}</Text>
+            </Pressable>
+          </View>
+        </Section>
+
         <Section title="Privacy">
           <ToggleRow
             label="Biometric lock for Hidden"
@@ -166,7 +254,41 @@ export function SettingsScreen() {
         </Section>
 
         <Section title="Uploads">
-          <Row label="Upload queue" sub="Live progress dashboard arrives with the upload engine (Step 4)" muted />
+          {uploadActive ? (
+            <View style={styles.uploadCard}>
+              <Text style={styles.uploadName} numberOfLines={1}>
+                {uploadActive.fileName}
+              </Text>
+              <View style={styles.uploadBarTrack}>
+                <View
+                  style={[
+                    styles.uploadBarFill,
+                    {
+                      width: `${uploadActive.byteSize > 0 ? Math.max(4, (uploadActive.uploadedBytes / uploadActive.byteSize) * 100) : 6}%`,
+                    },
+                  ]}
+                />
+              </View>
+              <Text style={styles.uploadMeta}>
+                {formatBytes(uploadActive.uploadedBytes)} / {formatBytes(uploadActive.byteSize)}
+              </Text>
+            </View>
+          ) : (
+            <Row label="No active upload" sub={uploadPaused ? "Uploads are paused" : "Queue is idle"} muted />
+          )}
+          <View style={styles.queueStats}>
+            <StatCard value={String(uploadPending)} caption="Queued" />
+            <StatCard value={String(uploadDone)} caption="Uploaded" />
+            <StatCard value={String(uploadFailed)} caption="Failed" />
+            <StatCard value={formatBytes(sessionBytes)} caption="This session" />
+          </View>
+          <Pressable
+            style={({ pressed }) => [styles.pauseBtn, pressed && styles.pressed]}
+            android_ripple={{ color: theme.colors.outlineVariant }}
+            onPress={() => void (uploadPaused ? resumeUploads() : pauseUploads())}
+          >
+            <Text style={styles.pauseText}>{uploadPaused ? "Resume uploads" : "Pause uploads"}</Text>
+          </Pressable>
         </Section>
 
         <Text style={styles.footer}>Photogram 0.1.0 · Your cloud is your Telegram</Text>
@@ -267,6 +389,57 @@ const styles = StyleSheet.create({
   },
   logoutText: { color: theme.colors.error, fontWeight: "600", fontSize: 14 },
   pressed: { opacity: 0.85 },
+  uploadCard: {
+    paddingHorizontal: theme.spacing.md,
+    paddingTop: theme.spacing.md,
+    gap: 8,
+  },
+  uploadName: { color: theme.colors.onSurface, fontSize: 14, fontWeight: "600" },
+  uploadBarTrack: {
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: theme.colors.surfaceHighest,
+    overflow: "hidden",
+  },
+  uploadBarFill: { height: "100%", backgroundColor: theme.colors.primary, borderRadius: 4 },
+  uploadMeta: { color: theme.colors.onSurfaceVariant, fontSize: 12 },
+  queueStats: {
+    flexDirection: "row",
+    gap: theme.spacing.sm,
+    padding: theme.spacing.md,
+    paddingBottom: theme.spacing.sm,
+  },
+  pauseBtn: {
+    marginHorizontal: theme.spacing.md,
+    marginBottom: theme.spacing.md,
+    borderRadius: theme.radius.full,
+    borderWidth: 1,
+    borderColor: theme.colors.outline,
+    paddingVertical: 10,
+    alignItems: "center",
+  },
+  pauseText: { color: theme.colors.onSurface, fontWeight: "600", fontSize: 14 },
+  qualityRow: { paddingHorizontal: theme.spacing.md, paddingVertical: 14 },
+  qualityChips: { flexDirection: "row", gap: theme.spacing.sm, marginTop: 10, marginBottom: 8 },
+  qualityChip: {
+    flex: 1,
+    borderRadius: theme.radius.full,
+    borderWidth: 1,
+    borderColor: theme.colors.outline,
+    paddingVertical: 9,
+    alignItems: "center",
+  },
+  qualityChipActive: { backgroundColor: theme.colors.primaryContainer, borderColor: theme.colors.primary },
+  qualityChipText: { color: theme.colors.onSurfaceVariant, fontSize: 13, fontWeight: "600" },
+  qualityChipTextActive: { color: theme.colors.onPrimaryContainer },
+  freeBtn: {
+    borderRadius: theme.radius.full,
+    backgroundColor: theme.colors.primary,
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+  },
+  freeBtnText: { color: theme.colors.onPrimary, fontWeight: "700", fontSize: 13 },
+  btnDisabledStyle: { opacity: 0.45 },
   statGrid: { flexDirection: "row", gap: theme.spacing.sm, padding: theme.spacing.md, paddingBottom: 0 },
   gridSecond: { paddingBottom: theme.spacing.md, paddingTop: theme.spacing.sm },
   statCard: {
