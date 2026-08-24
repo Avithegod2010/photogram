@@ -4,15 +4,19 @@ import { createMMKV } from "react-native-mmkv";
 
 export const mmkv = createMMKV({ id: "photogram-settings" });
 
+export type UploadQuality = "original" | "storage_saver";
+
 interface SettingsState {
   exifPreserve: boolean;
   hiddenLockEnabled: boolean;
   wifiOnlyUpload: boolean;
   chargeOnlyUpload: boolean;
+  uploadQuality: UploadQuality;
   setExifPreserve: (v: boolean) => void;
   setHiddenLockEnabled: (v: boolean) => void;
   setWifiOnlyUpload: (v: boolean) => void;
   setChargeOnlyUpload: (v: boolean) => void;
+  setUploadQuality: (q: UploadQuality) => void;
 }
 
 export const useSettingsStore = create<SettingsState>()(
@@ -22,10 +26,12 @@ export const useSettingsStore = create<SettingsState>()(
       hiddenLockEnabled: true,
       wifiOnlyUpload: false,
       chargeOnlyUpload: false,
+      uploadQuality: "storage_saver",
       setExifPreserve: (v) => set({ exifPreserve: v }),
       setHiddenLockEnabled: (v) => set({ hiddenLockEnabled: v }),
       setWifiOnlyUpload: (v) => set({ wifiOnlyUpload: v }),
       setChargeOnlyUpload: (v) => set({ chargeOnlyUpload: v }),
+      setUploadQuality: (q) => set({ uploadQuality: q }),
     }),
     {
       name: "photogram-settings",
