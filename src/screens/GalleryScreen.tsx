@@ -5,6 +5,7 @@ import {
   RefreshControl,
   StyleSheet,
   Text,
+  TextInput,
   View,
 } from "react-native";
 import { FlashList } from "@shopify/flash-list";
@@ -14,8 +15,10 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { pageVisibleMedia, MediaRow } from "../db/queries";
+import { runSearch } from "../lib/search";
 import { scanDeviceLibrary, ScanProgress } from "../lib/scanner";
 import { startWorker } from "../lib/uploader";
+import { MemoriesCarousel } from "../components/MemoriesCarousel";
 import { theme } from "../theme";
 
 type StackNav = NativeStackNavigationProp<{ Viewer: { ids: number[]; index: number } }>;
@@ -60,6 +63,10 @@ export function GalleryScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [scan, setScan] = useState<ScanProgress | null>(null);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const [results, setResults] = useState<MediaRow[] | null>(null);
+  const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const scanCancelRef = useRef({ cancelled: false });
   const cursorRef = useRef<number | null>(null);
   const exhaustedRef = useRef(false);
@@ -98,8 +105,31 @@ export function GalleryScreen() {
 
   const data: GalleryItem[] = useMemo(() => {
     if (zoomLevel === "years") return groupYears(rows);
-    return rows.map((r) => ({ ...r, __type: "media" as const }));
-  }, [rows, zoomLevel]);
+    const source = results ?? rows;
+    return source.map((r) => ({ ...r, __type: "media" as const }));
+  }, [rows, zoomLevel, results]);
+
+  useEffect(() => {
+    if (!searchOpen) {
+      setResults(null);
+      return;
+    }
+    if (searchTimer.current) clearTimeout(searchTimer.current);
+    if (query.trim().length === 0) {
+      setResults(null);
+      return;
+    }
+    searchTimer.current = setTimeout(() => {
+      void runSearch(query.trim())
+        .then(setResults)
+        .catch(() => setResults([]));
+    }, 250);
+    return () => {
+      if (searchTimer.current) clearTimeout(searchTimer.current);
+    };
+  }, [query, searchOpen]);
+
+  const searching = searchOpen && query.trim().length > 0;
 
   const beginScan = useCallback(() => {
     scanCancelRef.current.cancelled = false;
@@ -166,20 +196,49 @@ export function GalleryScreen() {
   return (
     <View style={[styles.root, { paddingTop: insets.top }]}>
       <View style={styles.header}>
-        <Text style={styles.title}>Gallery</Text>
-        <View style={styles.segmented}>
-          {(["days", "months", "years"] as ZoomLevel[]).map((z) => (
+        {searchOpen ? (
+          <View style={styles.searchRow}>
+            <TextInput
+              autoFocus
+              value={query}
+              onChangeText={setQuery}
+              placeholder='Search "screenshot", "June 2026", "last month"…'
+              placeholderTextColor={theme.colors.onSurfaceVariant + "88"}
+              style={styles.searchInput}
+            />
             <Pressable
-              key={z}
-              onPress={() => setZoomLevel(z)}
-              style={[styles.segBtn, zoomLevel === z && styles.segActive]}
+              onPress={() => {
+                setSearchOpen(false);
+                setQuery("");
+              }}
+              hitSlop={8}
             >
-              <Text style={[styles.segText, zoomLevel === z && styles.segTextActive]}>
-                {z[0].toUpperCase() + z.slice(1)}
-              </Text>
+              <Text style={styles.searchCancel}>Cancel</Text>
             </Pressable>
-          ))}
-        </View>
+          </View>
+        ) : (
+          <>
+            <Text style={styles.title}>Gallery</Text>
+            <View style={styles.headerRight}>
+              <Pressable style={styles.searchBtn} onPress={() => setSearchOpen(true)} hitSlop={6}>
+                <Text style={styles.searchBtnIcon}>⌕</Text>
+              </Pressable>
+              <View style={styles.segmented}>
+                {(["days", "months", "years"] as ZoomLevel[]).map((z) => (
+                  <Pressable
+                    key={z}
+                    onPress={() => setZoomLevel(z)}
+                    style={[styles.segBtn, zoomLevel === z && styles.segActive]}
+                  >
+                    <Text style={[styles.segText, zoomLevel === z && styles.segTextActive]}>
+                      {z[0].toUpperCase() + z.slice(1)}
+                    </Text>
+                  </Pressable>
+                ))}
+              </View>
+            </View>
+          </>
+        )}
       </View>
 
       {scan ? (
@@ -229,6 +288,15 @@ export function GalleryScreen() {
             showsVerticalScrollIndicator={false}
             contentContainerStyle={styles.listContent}
             extraData={zoomLevel}
+            ListHeaderComponent={
+              !searching && zoomLevel === "days" ? (
+                <MemoriesCarousel
+                  onOpen={(ids) =>
+                    navigation.navigate("Viewer", { ids, index: 0 })
+                  }
+                />
+              ) : null
+            }
             refreshControl={
               <RefreshControl
                 refreshing={refreshing}
@@ -261,6 +329,27 @@ const styles = StyleSheet.create({
   segActive: { backgroundColor: theme.colors.primaryContainer },
   segText: { color: theme.colors.onSurfaceVariant, fontSize: 12.5, fontWeight: "600" },
   segTextActive: { color: theme.colors.onPrimaryContainer },
+  headerRight: { flexDirection: "row", alignItems: "center", gap: theme.spacing.sm },
+  searchBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: theme.colors.surfaceContainer,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  searchBtnIcon: { color: theme.colors.primary, fontSize: 20, fontWeight: "700", marginTop: -2 },
+  searchRow: { flex: 1, flexDirection: "row", alignItems: "center", gap: theme.spacing.md },
+  searchInput: {
+    flex: 1,
+    backgroundColor: theme.colors.surfaceContainer,
+    borderRadius: theme.radius.full,
+    color: theme.colors.onSurface,
+    fontSize: 14,
+    paddingHorizontal: theme.spacing.md,
+    paddingVertical: 9,
+  },
+  searchCancel: { color: theme.colors.primary, fontWeight: "600", fontSize: 13.5 },
   listContent: { paddingBottom: 96 },
   cell: {
     flex: 1,

@@ -67,12 +67,22 @@ CREATE TABLE IF NOT EXISTS upload_queue (
 CREATE INDEX IF NOT EXISTS idx_queue_status ON upload_queue (status, enqueued_at);
 `;
 
+const SCHEMA_V2 = `
+ALTER TABLE media ADD COLUMN tags TEXT NOT NULL DEFAULT '';
+ALTER TABLE media ADD COLUMN latitude REAL;
+ALTER TABLE media ADD COLUMN longitude REAL;
+CREATE INDEX IF NOT EXISTS idx_media_geo ON media (latitude, longitude) WHERE latitude IS NOT NULL;
+`;
+
 export interface Migration {
   version: number;
   up: string;
 }
 
-export const MIGRATIONS: Migration[] = [{ version: 1, up: SCHEMA_V1 }];
+export const MIGRATIONS: Migration[] = [
+  { version: 1, up: SCHEMA_V1 },
+  { version: 2, up: SCHEMA_V2 },
+];
 
 export function migrationsAfter(version: number): Migration[] {
   return MIGRATIONS.filter((m) => m.version > version).sort((a, b) => a.version - b.version);

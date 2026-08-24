@@ -37,6 +37,9 @@ export interface NewMediaInput {
   taken_at: number;
   fingerprint: string;
   state?: MediaState;
+  tags?: string;
+  latitude?: number | null;
+  longitude?: number | null;
 }
 
 export interface QueueRow {
@@ -55,8 +58,8 @@ export async function insertMedia(input: NewMediaInput): Promise<number | null> 
   const result = await db.runAsync(
     `INSERT OR IGNORE INTO media
       (local_uri, thumb_uri, file_name, mime_type, byte_size, width, height, duration_ms,
-       taken_at, fingerprint, state, visibility, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'visible', ?, ?)`,
+       taken_at, fingerprint, state, visibility, tags, latitude, longitude, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'visible', ?, ?, ?, ?, ?)`,
     [
       input.local_uri,
       input.thumb_uri,
@@ -69,6 +72,9 @@ export async function insertMedia(input: NewMediaInput): Promise<number | null> 
       input.taken_at,
       input.fingerprint,
       input.state ?? "local",
+      input.tags ?? "",
+      input.latitude ?? null,
+      input.longitude ?? null,
       now,
       now,
     ]
@@ -246,5 +252,42 @@ export async function deleteMediaRow(id: number): Promise<void> {
   await db.runAsync(
     "DELETE FROM upload_queue WHERE media_id = ?; DELETE FROM album_media WHERE media_id = ?; DELETE FROM media WHERE id = ?;",
     [id, id, id]
+  );
+}
+
+export interface GeoItem {
+  id: number;
+  thumb_uri: string;
+  latitude: number;
+  longitude: number;
+}
+
+export async function listGeoTagged(limit = 800): Promise<GeoItem[]> {
+  const db = await getDb();
+  return db.getAllAsync<GeoItem>(
+    "SELECT id, thumb_uri, latitude, longitude FROM media WHERE visibility != 'trashed' AND latitude IS NOT NULL AND longitude IS NOT NULL LIMIT ?",
+    [limit]
+  );
+}
+
+export async function searchMediaRaw(query: string, limit = 300): Promise<MediaRow[]> {
+  const db = await getDb();
+  const like = `%${query.replace(/[%_]/g, "")}%`;
+  return db.getAllAsync<MediaRow>(
+    `SELECT * FROM media
+     WHERE visibility = 'visible'
+       AND (file_name LIKE ? OR tags LIKE ?)
+     ORDER BY taken_at DESC LIMIT ?`,
+    [like, like, limit]
+  );
+}
+
+export async function searchByDateRange(fromMs: number, toMs: number): Promise<MediaRow[]> {
+  const db = await getDb();
+  return db.getAllAsync<MediaRow>(
+    `SELECT * FROM media
+     WHERE visibility = 'visible' AND taken_at >= ? AND taken_at < ?
+     ORDER BY taken_at DESC`,
+    [fromMs, toMs]
   );
 }
