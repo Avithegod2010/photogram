@@ -7,6 +7,7 @@ import { useAuthStore } from "./src/auth/authStore";
 import { LoginScreen } from "./src/screens/LoginScreen";
 import { RootNavigator } from "./src/navigation";
 import { purgeExpiredTrash } from "./src/lib/trash";
+import { repairTakenAtUnits } from "./src/db/queries";
 import { theme } from "./src/theme";
 
 export default function App() {
@@ -15,6 +16,7 @@ export default function App() {
   useEffect(() => {
     if (phase === "ready") {
       void purgeExpiredTrash().catch(() => {});
+      void repairTakenAtUnits().catch(() => {});
     }
   }, [phase]);
 

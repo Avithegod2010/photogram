@@ -2,7 +2,7 @@ import * as MediaLibrary from "expo-media-library/legacy";
 import { ImageManipulator, SaveFormat } from "expo-image-manipulator";
 import * as VideoThumbnails from "expo-video-thumbnails";
 import { File, Paths } from "expo-file-system";
-import { insertMedia, updateMediaLibraryId } from "../db/queries";
+import { insertMedia, updateMediaLibraryId, backfillTakenAt } from "../db/queries";
 import { findDuplicate, quickFingerprint } from "./dedupe";
 
 export interface ScanProgress {
@@ -62,6 +62,20 @@ async function fileSizeOf(uri: string): Promise<number> {
   } catch {
     return 0;
   }
+}
+
+// WhatsApp videos often have no capture date in MediaStore (creationTime = 0 → shows as
+// "1 Jan 1970" everywhere). Fall back to the file's mtime, which is when it was saved.
+// Empirically creationTime/modificationTime arrive in MILLISECONDS on this stack — but
+// guard against seconds too (values > 1e11 are already ms).
+function toMs(secondsOrMs: number): number {
+  return secondsOrMs > 1e11 ? Math.round(secondsOrMs) : Math.round(secondsOrMs * 1000);
+}
+
+function takenAtMsOf(asset: MediaLibrary.Asset): number {
+  const creationMs = toMs(asset.creationTime);
+  if (creationMs > 86400000) return creationMs; // > 2 Jan 1970: a real date
+  return toMs(asset.modificationTime || Date.now());
 }
 
 export async function ensureMediaPermission(): Promise<boolean> {
@@ -129,6 +143,9 @@ export async function scanDeviceLibrary(
           if (asset.id && existing.id) {
             await updateMediaLibraryId(existing.id, asset.id);
           }
+          if (existing.taken_at <= 86400000) {
+            await backfillTakenAt(existing.id, takenAtMsOf(asset));
+          }
           progress.duplicates++;
           continue;
         }
@@ -144,7 +161,7 @@ export async function scanDeviceLibrary(
           width: asset.width,
           height: asset.height,
           duration_ms: isVideo ? Math.round(asset.duration * 1000) : null,
-          taken_at: Math.round(asset.creationTime * 1000),
+          taken_at: takenAtMsOf(asset),
           fingerprint,
           state: "local",
           tags: autoTagsFor(asset),

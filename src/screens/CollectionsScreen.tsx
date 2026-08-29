@@ -8,10 +8,11 @@ import { theme } from "../theme";
 type CollectionsNav = NativeStackNavigationProp<{
   Trash: undefined;
   Map: undefined;
+  Albums: undefined;
 }>;
 
 const SECTIONS = [
-  { key: "albums", label: "Albums", sub: "Your own folders, backed up as Telegram albums", enabled: false, route: null },
+  { key: "albums", label: "Albums", sub: "Camera, Screenshots, WhatsApp, Downloads & more", enabled: true, route: "Albums" },
   { key: "people", label: "People & Pets", sub: "Face grouping arrives in Phase 2 (on-device ML)", enabled: false, route: null },
   { key: "archive", label: "Archive", sub: "Decluttered media — hidden from the main timeline", enabled: false, route: null },
   { key: "trash", label: "Trash", sub: "Deleted items · 30-day countdown", enabled: true, route: "Trash" },
