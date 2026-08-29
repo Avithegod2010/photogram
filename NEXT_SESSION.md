@@ -1,11 +1,80 @@
 # PHOTOGRAM — MASTER HANDOFF (read this fully before coding)
 
 _This file is the single source of truth for any AI agent or developer picking up this project cold.
-Last updated: 2026-08-29 evening session (§0 below). The immediate open task is at §7._
+Last updated: end of day 2026-08-29 (§0). Read §0, then §1–§17. CHANGELOG.md has per-version notes._
 
 ---
 
-## 0a. SESSION 2026-08-29 (evening) — FULL PRODUCT LOOP VERIFIED END-TO-END ✅
+## 0. CURRENT STATE — END OF DAY 2026-08-29 · v0.5 COMMITTED (`6e234cf`) · WORKING TREE CLEAN
+
+**The entire product loop works and was verified LIVE on the Samsung (SM-S942B) today:**
+scan (photos + videos) → dedupe → upload to Saved Messages → Free-Up-Space (system delete) →
+restore back from Telegram into the device gallery, byte-identical.
+
+### What works (verified on device)
+- **Scan**: 1,850 items — 1,717 photos + 133 videos, matching MediaStore. 2 genuinely corrupt files
+  failed (NagramXF attachment) and the scan banner SHOWS failures + first error.
+- **Upload**: smoke test passed (202 KB video → Saved Messages, owner confirmed it plays).
+  The bulk "▲ Back up 1,849" button is ready but NOT yet triggered (≈13+ GB, throttled
+  1.5 GB/session by design — owner's call when to start).
+- **Free-Up-Space**: verified — system delete dialog → file gone → DB correctly remote-only.
+- **Restore (S7)**: verified — "Restore missing originals" (Settings → Device storage) downloads
+  from Telegram into DCIM gallery, re-links DB, byte-identical. Viewer "Save to device" chip uses
+  the same code path (not visually tested yet).
+
+### Key fixes landed in v0.5 (root causes, so you don't re-trip)
+1. **Photos never scanned** = two stacked bugs: `"jpeg"` string instead of `SaveFormat.JPEG` enum
+   (every photo thumbnail threw, per-item catch hid it) + missing `ACCESS_MEDIA_LOCATION` permission
+   (needed by getAssetInfoAsync for EXIF). Scan banner now shows failed count + first error.
+2. **Free-Up-Space never worked** = Android 11+ scoped storage forbids deleting other apps' files.
+   Schema **v3** added `media.media_library_id`; deletion goes through
+   `MediaLibrary.deleteAssetsAsync` (system dialog) with verify-gone before clearing the DB.
+3. **Uploader stored PENDING message ids** (TDLib replaces them right after send — ids differ in low
+   bits). Fixed via `updateMessageSendSucceeded` listener + restorer filename-match self-heal.
+4. **gson JSON uses JAVA field names** (camelCase: `fileName`, `expectedSize`, `isDownloadingCompleted`)
+   — NOT TDLib wire snake_case. TDLib may classify small MP4s as `messageAnimation`. `restorer.ts`
+   handles document + animation + photo content and both naming conventions (`firstDefined` helper).
+5. **`getMessage()` 404s even with the chat created** — use `getChatHistory` + `openChat` first
+   (fresh chats return empty history briefly) + retry loop, like `restorer.ts` does.
+6. **Backup triggers were missing entirely** (enqueueForUpload had zero callers) — added "▲ Back up N"
+   gallery pill + per-item chips + permanent "⟳" scan button in the gallery header.
+7. Tab icons = `@expo/vector-icons` Ionicons (Gallery=cloud, Collections=magnifier, Settings=gear).
+
+### Workflow & environment gotchas (learned the hard way)
+- **Wireless adb** (no USB): phone = 192.168.x.97. If it drops (Wi-Fi doze), owner opens
+  Settings → Developer options → Wireless debugging (wakes adbd) and reads the CURRENT IP:port →
+  `adb connect <ip:port>`. **Binary transfers need `adb exec-out`** — plain `adb shell cat`
+  corrupts binaries via LF→CRLF. DB inspection: `adb exec-out run-as com.photogram.app cat
+  files/SQLite/photogram.db` (+ -wal + -shm, all three!) then read on PC with `node:sqlite`
+  (Node 24 at E:\Dev\nodejs).
+- **Metro** (port 8083 — 8081 belongs to the sibling MU Weather project, DO NOT touch):
+  runs via `E:\Dev\run-photogram-metro-fast.ps1` (no --clear → ~1 min warm rebuilds).
+  **CI=1 means no file watching: after ANY code edit you MUST kill + restart Metro**, then
+  force-stop + relaunch the app (deep link:
+  `adb shell am start -a android.intent.action.VIEW -d "exp+photogram://expo-development-client/?url=http%3A%2F%2Flocalhost%3A8083" com.photogram.app`).
+- **TDLib client poisoning**: a dev-launcher bundle reload creates a new JS context while the native
+  TDLib client persists → "Initialization parameters are needed" errors. Always clean-restart the
+  app process (`am force-stop`) before debugging login/auth errors.
+- **Native manifest changes** (like ACCESS_MEDIA_LOCATION) need a gradle rebuild via
+  `E:\Dev\run-photogram-gradle.ps1` (~30 min on this 8 GB machine) + `adb install -r`.
+  `pm grant` works only for permissions the APK declares.
+- **Rebuild safety**: `android/gradle.properties` must keep arm64-only + parallel=false +
+  workers.max=2 (OOM on this machine). After any `expo prebuild`, re-apply — and re-add
+  ACCESS_MEDIA_LOCATION to the manifest (app.config.ts now declares it, so prebuild covers it).
+- **`sendRaw()` in lib/tdlib.ts is cosmetically broken** (native td_json_client_send is
+  fire-and-forget → always throws "Unparseable TDLib response"). QR login still works via the
+  update fan-out. Fixing it properly = native change → lib/tdlib.ts is PROTECTED, ask owner first.
+
+### Next steps (roadmap order)
+1. Owner starts the bulk backup ("▲ Back up 1,849") — then watch throttling on a real batch.
+2. S8 Auto-albums · S9 Telegram-group album sharing · real Albums/Archive/Hidden screens.
+3. Polish: "56y" Memories artifact (epoch-1970 `taken_at` → fall back to file mtime when metadata
+   is missing); Viewer "Save to device" visual check; 2 corrupt-file UX; consider awaiting full
+   upload completion (updateFile remote bytes) before marking "synced".
+
+---
+
+## 0b. SESSION LOG (evening) — full loop verified, details kept for the debugging trail
 
 **Everything below was TESTED LIVE on the Samsung, not just implemented:**
 
@@ -41,13 +110,11 @@ Last updated: 2026-08-29 evening session (§0 below). The immediate open task is
 - **Pending-id note for future debugging:** ids in Saved Messages history are spaced 2^20 apart;
   a stored id that is "off by one" from a real message id is the pending-id signature above.
 
-**NOT yet done:** git commit (owner hasn't approved; changes span many files — see CHANGELOG need),
-bulk 13 GB backup (owner's call, button ready), Viewer "Save to device" chip visual test
-(same code path as the Settings bulk restore, which works).
+**Superseded notes below were the state BEFORE the v0.5 commit — kept for the debugging trail:**
 
 ---
 
-## 0. SESSION 2026-08-29 — app revived on phone over WIRELESS adb; backup buttons added; login pending
+## 0c. SESSION LOG (afternoon) — app revived over wireless adb, backup buttons added
 
 **What happened this session (newest context first):**
 
@@ -64,8 +131,7 @@ bulk 13 GB backup (owner's call, button ready), Viewer "Save to device" chip vis
   - `GalleryScreen.tsx`: header pill "▲ Back up N" (N = local+failed rows on the loaded page) with
     confirmation Alert that queues all of them.
   - `ViewerScreen.tsx`: "Back up" ActionChip (enabled when state is local/failed) that queues one item.
-  Both call `enqueueForUpload(mediaId)`. Type-check passes (`npx tsc --noEmit`). NOT yet exercised
-  end-to-end on device — that is the pending smoke test.
+  Both call `enqueueUpload(mediaId)`. (Verified live later the same day — see §0b.)
 - **DB facts (pulled via `adb exec-out run-as com.photogram.app cat files/SQLite/photogram.db*` and read
   with `node:sqlite` on the PC — pull db + -wal + -shm together):** 93 media rows, ALL WhatsApp videos,
   12.99 GB total, every `taken_at` = epoch 1970 → the "56y / 1 Jan · 16" Memories card is a BUG ARTIFACT
@@ -87,7 +153,7 @@ bulk 13 GB backup (owner's call, button ready), Viewer "Save to device" chip vis
 - **Smoke test PASSED (2026-08-29 ~19:06):** login restored via clean process restart (no re-login needed);
   Viewer "Back up" chip on media id 78 (202 KB WhatsApp video) → upload_queue done → media state synced →
   remote_chat_id=<redacted> (own id = Saved Messages), remote_message_id=<redacted> → Settings shows
-  "198 KB In cloud". Telegram-side visual confirmation by owner pending.
+  "198 KB In cloud". Telegram-side confirmation by owner: **the video arrived and plays.**
   KNOWN REFINEMENT for later: the worker marks an item "done" as soon as the Telegram message EXISTS
   (fire-and-forget sendMessage + getChatHistory scan) — it does not await the file's remote upload
   completion (updateFile remote.uploaded_size) before marking done. For small files this is instant; for
@@ -118,9 +184,8 @@ bulk 13 GB backup (owner's call, button ready), Viewer "Save to device" chip vis
 - **Tab icons:** text glyphs (▦ ▤ ≡) replaced with `@expo/vector-icons` Ionicons — Gallery=cloud
   (Unlim-style), Collections=magnifier (owner's explicit pick), Settings=gear. @expo/vector-icons was
   installed for this (npm install @expo/vector-icons).
-- **Free-Up-Space:** code was always correct (`space.ts` + queries) — it looked "not working" because
-  the Remove button is disabled while 0 items are synced. First real test happens now that 1 item is
-  synced.
+- **Free-Up-Space:** initially looked code-correct — the REAL root cause (scoped storage) was found
+  in the evening session; see §0b.
 
 ---
 
