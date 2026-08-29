@@ -54,6 +54,17 @@ confirmation, queue dedupe, and the date/grid fixes. All verified live on the Sa
 2. S9 Telegram-group album sharing · real Albums/Archive/Hidden screens (Hidden + biometric toggle).
 3. Polish: Viewer "Save to device" visual check (code path verified via bulk restore); 2 corrupt-file UX.
 
+### FIRST ACTIONS for the next session (end of day 2026-08-30)
+1. Reconnect: owner wakes the phone (Settings → Developer options → Wireless debugging) →
+   `adb mdns services` → `adb connect <ip:port>` → `adb reverse tcp:8083 tcp:8083`.
+2. Metro: check port 8083 is listening; if not, `powershell -ExecutionPolicy Bypass -File
+   E:\Dev\run-photogram-metro-fast.ps1`. Then force-stop + deep-link relaunch the app.
+3. **Upload queue state**: ~1,843 items were pending (270 done / ≈1.9 GB in Saved Messages) when the
+   session ended. The worker AUTO-RESUMES on every app start. If the owner wants it stopped, tap
+   Pause in Settings → Uploads (session-only — a restart un-pauses). Uploads overnight are mostly
+   throttled by Android doze with the screen off.
+4. Then continue roadmap: S9 group album sharing, Archive/Hidden screens, Save-to-device chip check.
+
 ---
 
 ## 0b. SESSION LOG (evening) — full loop verified, details kept for the debugging trail
