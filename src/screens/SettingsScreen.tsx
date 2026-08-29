@@ -164,8 +164,12 @@ export function SettingsScreen() {
           ) : (
             <>
               <View style={styles.statGrid}>
-                <StatCard value={String(totals.photos)} caption="Photos" />
-                <StatCard value={String(totals.videos)} caption="Videos" />
+                <StatCard value={String(totals.photos)} caption="Local photos" />
+                <StatCard value={String(totals.videos)} caption="Local videos" />
+              </View>
+              <View style={[styles.statGrid, styles.gridSecond]}>
+                <StatCard value={String(totals.cloudPhotos)} caption="Cloud photos" />
+                <StatCard value={String(totals.cloudVideos)} caption="Cloud videos" />
                 <StatCard value={formatBytes(totals.syncedBytes)} caption="In cloud" />
                 <StatCard value={String(totals.pendingCount)} caption="In queue" />
               </View>

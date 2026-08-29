@@ -3,6 +3,8 @@ import { getDb } from "../db";
 export interface StorageTotals {
   photos: number;
   videos: number;
+  cloudPhotos: number;
+  cloudVideos: number;
   syncedBytes: number;
   pendingCount: number;
   failedCount: number;
@@ -22,6 +24,8 @@ export async function getStorageTotals(): Promise<StorageTotals> {
   const mediaRow = await db.getFirstAsync<{
     photos: number;
     videos: number;
+    cloud_photos: number;
+    cloud_videos: number;
     synced_bytes: number;
     archived: number;
     trashed: number;
@@ -30,6 +34,8 @@ export async function getStorageTotals(): Promise<StorageTotals> {
     SELECT
       COALESCE(SUM(CASE WHEN visibility != 'trashed' AND mime_type LIKE 'image/%' THEN 1 ELSE 0 END), 0) AS photos,
       COALESCE(SUM(CASE WHEN visibility != 'trashed' AND mime_type LIKE 'video/%' THEN 1 ELSE 0 END), 0) AS videos,
+      COALESCE(SUM(CASE WHEN state = 'synced' AND visibility != 'trashed' AND mime_type LIKE 'image/%' THEN 1 ELSE 0 END), 0) AS cloud_photos,
+      COALESCE(SUM(CASE WHEN state = 'synced' AND visibility != 'trashed' AND mime_type LIKE 'video/%' THEN 1 ELSE 0 END), 0) AS cloud_videos,
       COALESCE(SUM(CASE WHEN state = 'synced' THEN byte_size ELSE 0 END), 0) AS synced_bytes,
       COALESCE(SUM(CASE WHEN visibility = 'archived' THEN 1 ELSE 0 END), 0) AS archived,
       COALESCE(SUM(CASE WHEN visibility = 'trashed' THEN 1 ELSE 0 END), 0) AS trashed,
@@ -45,6 +51,8 @@ export async function getStorageTotals(): Promise<StorageTotals> {
   return {
     photos: mediaRow?.photos ?? 0,
     videos: mediaRow?.videos ?? 0,
+    cloudPhotos: mediaRow?.cloud_photos ?? 0,
+    cloudVideos: mediaRow?.cloud_videos ?? 0,
     syncedBytes: mediaRow?.synced_bytes ?? 0,
     archived: mediaRow?.archived ?? 0,
     trashed: mediaRow?.trashed ?? 0,

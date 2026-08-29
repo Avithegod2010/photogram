@@ -4,6 +4,49 @@ Each entry below documents what a commit adds and what comes next. Newest first.
 
 ---
 
+## v0.6 — S8 Auto-albums, cloud counts, upload-completion confirmation, date-unit repair, gallery grid fix
+
+**Added in this commit**
+- **S8 · Auto-albums** (new `src/lib/albums.ts`, `AlbumsScreen.tsx`, `AlbumScreen.tsx`): Collections →
+  **Albums** is now real — auto-groups from scanner tags into **Camera / Screenshots / WhatsApp /
+  Downloads / Videos** cards (cover = newest item, empty albums hidden). Tapping a card opens a
+  3-column masonry grid of that album with video badges and upload-state dots; items open the Viewer.
+- **Cloud counts in Settings → Storage**: stat grid now splits **Local photos/videos** vs
+  **Cloud photos/videos** (rows with `state='synced'`) alongside In-cloud GB and In queue — counts
+  tick up live while the bulk backup runs.
+- **Uploads only marked "synced" when bytes actually reached Telegram**: the uploader now records the
+  remote message ids as **"uploading"** and waits for real completion (updateMessageSendSucceeded /
+  updateFile completion events, both gson camelCase + snake_case, plus a 5 s history-poll fallback)
+  before flipping to `synced`. Progress now also feeds the live dashboard (the old progress handler
+  only read snake_case and never fired). 2 h confirmation timeout → queue item fails with an honest
+  message instead of over-claiming. Message lookup retries while a fresh chat's history is empty.
+- **Queue dedupe (`dedupeUploadQueue`)**: pressing "▲ Back up" twice double-queued the whole library
+  (3,599 rows) — worker boot + every enqueue now collapse surplus pending rows per media (verified:
+  3,599 → 1,848, zero duplicate groups).
+- **taken_at unit repair**: MediaLibrary's `creationTime`/`modificationTime` arrive in **milliseconds**
+  on this stack — the v0.5 fix multiplied by 1000 again, putting every row in year 58,629. Scanner now
+  normalizes both units (`toMs`), and a one-shot boot repair (`repairTakenAtUnits`, App.tsx) divided
+  the damaged rows back to true dates (verified range Jul 2024 → Aug 2026).
+- **Gallery grid finally visible (Days mode)**: days-mode tiles passed `aspectRatio: undefined` with an
+  `absoluteFill` image → every tile collapsed to zero height, so the grid rendered invisible under the
+  Memories carousel. Tiles now take their real per-item aspect (clamped 0.6–1.8). Verified visually:
+  populated 4-column masonry with date badges.
+- **More unique Memories**: carousel no longer requires ≥2 items per day — every prior-year day
+  qualifies, ordered by same-date-first then closest-to-today.
+- Timestamp backfill on rescan: rows with epoch-1970 `taken_at` get real dates via file mtime.
+
+**Verified live on device (2026-08-30)**: storage cloud counts, Albums hub + grid + Viewer, queue
+dedupe in DB, date repair, populated gallery grid + multi-day memories (screenshot-confirmed).
+
+**Next plan**
+- Owner resumes the bulk backup ("▲ Back up" — remember it auto-resumes on app restart; Pause in
+  Settings → Uploads stops it for the session)
+- S9 Telegram-group album sharing · real Archive/Hidden screens (Hidden behind the biometric toggle)
+- Viewer "Save to device" chip visual check (code path already verified via bulk restore)
+- 1 media row still has no discoverable date (falls back to save time on next scan)
+
+---
+
 ## v0.5.1 — Handoff docs consolidated (docs only)
 
 - `NEXT_SESSION.md` §0 rewritten as a single "current state" section: everything verified live on

@@ -198,6 +198,14 @@ export function GalleryScreen() {
       }
       const cols = COLUMNS[zoomLevel];
       const size = item.height && item.width ? item.height / item.width : 1;
+      // Days mode previously passed aspectRatio: undefined — with an absoluteFill
+      // image every tile collapsed to zero height, so the grid looked empty.
+      const aspect =
+        zoomLevel === "days"
+          ? Math.max(0.6, Math.min(1.8, 1 / size))
+          : zoomLevel === "months"
+            ? Math.max(0.75, Math.min(1.5, 1 / size / 1.2))
+            : undefined;
       return (
         <Pressable
           onPress={() =>
@@ -206,7 +214,7 @@ export function GalleryScreen() {
               index: rows.findIndex((r) => r.id === item.id),
             })
           }
-          style={[styles.cell, { aspectRatio: zoomLevel === "months" ? Math.max(0.75, Math.min(1.5, 1 / size / 1.2)) : undefined }]}
+          style={[styles.cell, { aspectRatio: aspect }]}
         >
           <Image
             source={{ uri: item.thumb_uri }}

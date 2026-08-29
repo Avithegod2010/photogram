@@ -90,6 +90,26 @@ export async function updateMediaLibraryId(id: number, libraryId: string): Promi
   await db.runAsync("UPDATE media SET media_library_id = ? WHERE id = ?", [libraryId, id]);
 }
 
+// Repairs rows whose taken_at is epoch-1970 (missing capture metadata) with a real date.
+export async function backfillTakenAt(id: number, takenAtMs: number): Promise<void> {
+  const db = await getDb();
+  await db.runAsync(
+    "UPDATE media SET taken_at = ?, updated_at = ? WHERE id = ? AND taken_at <= 86400000",
+    [takenAtMs, Date.now(), id]
+  );
+}
+
+// One-shot unit repair: a scan pass stored taken_at in ms*1000 (the MediaLibrary
+// timestamp fields are milliseconds on this stack). Values beyond year 2100 are
+// exactly 1000x too large, so dividing recovers the true ms timestamp.
+export async function repairTakenAtUnits(): Promise<void> {
+  const db = await getDb();
+  await db.runAsync(
+    "UPDATE media SET taken_at = CAST(taken_at / 1000 AS INTEGER), updated_at = ? WHERE taken_at > 4102444800000",
+    [Date.now()]
+  );
+}
+
 export async function pageVisibleMedia(beforeTakenAt: number | null, limit = 120): Promise<MediaRow[]> {
   const db = await getDb();
   if (beforeTakenAt === null) {
@@ -125,15 +145,18 @@ export async function setMediaState(id: number, state: MediaState): Promise<void
   ]);
 }
 
+// `state` lets the uploader record remote ids while the bytes are still flying
+// ("uploading") and flip to "synced" only once TDLib confirms completion.
 export async function setMediaRemote(
   id: number,
   chatId: string,
-  messageId: string
+  messageId: string,
+  state: MediaState = "synced"
 ): Promise<void> {
   const db = await getDb();
   await db.runAsync(
-    "UPDATE media SET state = 'synced', remote_chat_id = ?, remote_message_id = ?, uploaded_at = ?, updated_at = ? WHERE id = ?",
-    [chatId, messageId, Date.now(), Date.now(), id]
+    "UPDATE media SET state = ?, remote_chat_id = ?, remote_message_id = ?, uploaded_at = ?, updated_at = ? WHERE id = ?",
+    [state, chatId, messageId, Date.now(), Date.now(), id]
   );
 }
 
@@ -191,6 +214,24 @@ export async function bumpQueueAttempt(queueId: number): Promise<number> {
 export async function resetActiveToPending(): Promise<void> {
   const db = await getDb();
   await db.runAsync("UPDATE upload_queue SET status = 'pending' WHERE status = 'active'");
+}
+
+// Removes surplus pending rows for the same media (the Back-up pill can be
+// pressed repeatedly). Keeps the oldest pending row; never touches active/done.
+export async function dedupeUploadQueue(): Promise<void> {
+  const db = await getDb();
+  await db.runAsync(
+    `DELETE FROM upload_queue
+     WHERE status = 'pending'
+       AND media_id IN (
+         SELECT media_id FROM upload_queue
+         WHERE status IN ('pending','active')
+         GROUP BY media_id HAVING COUNT(*) > 1
+       )
+       AND id NOT IN (
+         SELECT MIN(id) FROM upload_queue WHERE status = 'pending' GROUP BY media_id
+       )`
+  );
 }
 
 export async function countQueueByStatus(): Promise<{

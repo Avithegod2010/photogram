@@ -5,72 +5,54 @@ Last updated: end of day 2026-08-29 (§0). Read §0, then §1–§17. CHANGELOG.
 
 ---
 
-## 0. CURRENT STATE — END OF DAY 2026-08-29 · v0.5 COMMITTED (`6e234cf`) · WORKING TREE CLEAN
+## 0. CURRENT STATE — END OF DAY 2026-08-30 · v0.6 COMMITTED · WORKING TREE CLEAN
 
-**The entire product loop works and was verified LIVE on the Samsung (SM-S942B) today:**
-scan (photos + videos) → dedupe → upload to Saved Messages → Free-Up-Space (system delete) →
-restore back from Telegram into the device gallery, byte-identical.
+**The full product loop works and v0.6 added S8 Auto-albums, cloud storage counts, upload-completion
+confirmation, queue dedupe, and the date/grid fixes. All verified live on the Samsung (SM-S942B).**
 
-### What works (verified on device)
-- **Scan**: 1,850 items — 1,717 photos + 133 videos, matching MediaStore. 2 genuinely corrupt files
-  failed (NagramXF attachment) and the scan banner SHOWS failures + first error.
-- **Upload**: smoke test passed (202 KB video → Saved Messages, owner confirmed it plays).
-  The bulk "▲ Back up 1,849" button is ready but NOT yet triggered (≈13+ GB, throttled
-  1.5 GB/session by design — owner's call when to start).
-- **Free-Up-Space**: verified — system delete dialog → file gone → DB correctly remote-only.
-- **Restore (S7)**: verified — "Restore missing originals" (Settings → Device storage) downloads
-  from Telegram into DCIM gallery, re-links DB, byte-identical. Viewer "Save to device" chip uses
-  the same code path (not visually tested yet).
+### What works (verified on device 2026-08-30)
+- **Gallery grid is finally visible** (Days mode tiles previously had no aspectRatio → zero-height,
+  invisible). 4-col masonry with per-tile date badges, Memories carousel above.
+- **Memories** now show unique day cards (single-item days included): "1y · 30 Aug · 1" etc.
+- **Auto-albums**: Collections → Albums → Camera (1,750) / Screenshots (106) / WhatsApp (4) /
+  Videos (137) → masonry album grid → Viewer.
+- **Settings → Storage** splits Local vs **Cloud photos/videos/GB/queue** (live while uploading).
+- **Upload-completion confirmation**: items flip local → queued → uploading → synced only after TDLib
+  confirms the file fully reached Telegram (updateMessageSendSucceeded / updateFile + history poll).
+- **Queue dedupe**: "▲ Back up" double-presses can no longer duplicate the queue (3,599 → 1,848 verified).
+- **Bulk backup ran live**: 270+ items (~1.5 GB) landed in Saved Messages before owner paused it.
+  The queue auto-resumes on every app restart (by design); Pause in Settings stops it for the session.
 
-### Key fixes landed in v0.5 (root causes, so you don't re-trip)
-1. **Photos never scanned** = two stacked bugs: `"jpeg"` string instead of `SaveFormat.JPEG` enum
-   (every photo thumbnail threw, per-item catch hid it) + missing `ACCESS_MEDIA_LOCATION` permission
-   (needed by getAssetInfoAsync for EXIF). Scan banner now shows failed count + first error.
-2. **Free-Up-Space never worked** = Android 11+ scoped storage forbids deleting other apps' files.
-   Schema **v3** added `media.media_library_id`; deletion goes through
-   `MediaLibrary.deleteAssetsAsync` (system dialog) with verify-gone before clearing the DB.
-3. **Uploader stored PENDING message ids** (TDLib replaces them right after send — ids differ in low
-   bits). Fixed via `updateMessageSendSucceeded` listener + restorer filename-match self-heal.
-4. **gson JSON uses JAVA field names** (camelCase: `fileName`, `expectedSize`, `isDownloadingCompleted`)
-   — NOT TDLib wire snake_case. TDLib may classify small MP4s as `messageAnimation`. `restorer.ts`
-   handles document + animation + photo content and both naming conventions (`firstDefined` helper).
-5. **`getMessage()` 404s even with the chat created** — use `getChatHistory` + `openChat` first
-   (fresh chats return empty history briefly) + retry loop, like `restorer.ts` does.
-6. **Backup triggers were missing entirely** (enqueueForUpload had zero callers) — added "▲ Back up N"
-   gallery pill + per-item chips + permanent "⟳" scan button in the gallery header.
-7. Tab icons = `@expo/vector-icons` Ionicons (Gallery=cloud, Collections=magnifier, Settings=gear).
-
-### Workflow & environment gotchas (learned the hard way)
-- **Wireless adb** (no USB): phone = 192.168.29.97. If it drops (Wi-Fi doze), owner opens
-  Settings → Developer options → Wireless debugging (wakes adbd) and reads the CURRENT IP:port →
-  `adb connect <ip:port>`. **Binary transfers need `adb exec-out`** — plain `adb shell cat`
-  corrupts binaries via LF→CRLF. DB inspection: `adb exec-out run-as com.photogram.app cat
-  files/SQLite/photogram.db` (+ -wal + -shm, all three!) then read on PC with `node:sqlite`
-  (Node 24 at E:\Dev\nodejs).
-- **Metro** (port 8083 — 8081 belongs to the sibling MU Weather project, DO NOT touch):
-  runs via `E:\Dev\run-photogram-metro-fast.ps1` (no --clear → ~1 min warm rebuilds).
-  **CI=1 means no file watching: after ANY code edit you MUST kill + restart Metro**, then
-  force-stop + relaunch the app (deep link:
-  `adb shell am start -a android.intent.action.VIEW -d "exp+photogram://expo-development-client/?url=http%3A%2F%2Flocalhost%3A8083" com.photogram.app`).
-- **TDLib client poisoning**: a dev-launcher bundle reload creates a new JS context while the native
-  TDLib client persists → "Initialization parameters are needed" errors. Always clean-restart the
-  app process (`am force-stop`) before debugging login/auth errors.
-- **Native manifest changes** (like ACCESS_MEDIA_LOCATION) need a gradle rebuild via
-  `E:\Dev\run-photogram-gradle.ps1` (~30 min on this 8 GB machine) + `adb install -r`.
-  `pm grant` works only for permissions the APK declares.
-- **Rebuild safety**: `android/gradle.properties` must keep arm64-only + parallel=false +
-  workers.max=2 (OOM on this machine). After any `expo prebuild`, re-apply — and re-add
-  ACCESS_MEDIA_LOCATION to the manifest (app.config.ts now declares it, so prebuild covers it).
-- **`sendRaw()` in lib/tdlib.ts is cosmetically broken** (native td_json_client_send is
-  fire-and-forget → always throws "Unparseable TDLib response"). QR login still works via the
-  update fan-out. Fixing it properly = native change → lib/tdlib.ts is PROTECTED, ask owner first.
+### Key facts newer agents must not re-trip (v0.6)
+1. **MediaLibrary timestamps are MILLISECONDS on this stack** — `creationTime`/`modificationTime` are
+   ms, not seconds. Use `toMs()` in `scanner.ts` (values > 1e11 are already ms). Never `* 1000` blindly.
+2. **Days-mode gallery tiles need an explicit `aspectRatio`** — `absoluteFill` images collapse to 0
+   height without one (that was the "gallery shows no photos" bug).
+3. **Upload confirmation**: `waitForUploadConfirmed()` in `uploader.ts` — read BOTH gson camelCase and
+   wire snake_case (`firstDefined`) for every TDLib JSON field.
+4. `setMediaRemote(id, chat, msgId, state)` — pass "uploading" then flip to "synced" via `setMediaState`
+   after confirmation. Never mark synced from message existence alone.
+5. **uiautomator dump fails with "could not get idle state"** when app animations run — either zero the
+   animation scales temporarily (`adb shell settings put global {window,transition,animator}_duration_scale 0`,
+   RESTORE to 1 afterwards) or verify via screenshots read by a subagent (OCR) — the main agent's model
+   may not accept images.
+6. **Wireless adb drops when the screen dozes** — mDNS still lists the service; reconnect via
+   `adb mdns services` → `adb connect <ip:port>` (port changes per session; refused = phone asleep,
+   owner must open Settings → Developer options → Wireless debugging). After reconnect ALWAYS re-run
+   `adb reverse tcp:8083 tcp:8083` before relaunching the dev client.
+7. Metro: kill by port (`netstat -ano | grep 8083` → Stop-Process), restart with
+   `powershell -ExecutionPolicy Bypass -File E:\Dev\run-photogram-metro-fast.ps1` (plain -File hits
+   execution policy from tool shells). No bundle arrives until the dev client fetches — force-stop +
+   deep-link relaunch, then watch `.expo/dev/logs/start.log` for `metro:bundling:done`.
+8. **DB inspection** (worked great this session): pull db + -wal + -shm via
+   `adb exec-out run-as com.photogram.app cat files/SQLite/photogram.db*` → read with `node:sqlite`
+   (E:\Dev\nodejs). NOTE: Git Bash mangles `/sdcard/...` paths — set `MSYS_NO_PATHCONV=1`.
+   1 media row still has no discoverable date (epoch-1970) — falls back to save time on next scan.
 
 ### Next steps (roadmap order)
-1. Owner starts the bulk backup ("▲ Back up 1,849") — then watch throttling on a real batch.
-2. S8 Auto-albums · S9 Telegram-group album sharing · real Albums/Archive/Hidden screens.
-3. Polish: "56y" Memories artifact (epoch-1970 `taken_at` → fall back to file mtime when metadata
-   is missing); Viewer "Save to device" visual check; 2 corrupt-file UX; consider awaiting full
-   upload completion (updateFile remote bytes) before marking "synced".
+1. Owner resumes the bulk backup (≈13 GB; throttled 1.5 GB → 5 s pause, reactive FLOOD_WAIT).
+2. S9 Telegram-group album sharing · real Albums/Archive/Hidden screens (Hidden + biometric toggle).
+3. Polish: Viewer "Save to device" visual check (code path verified via bulk restore); 2 corrupt-file UX.
 
 ---
 

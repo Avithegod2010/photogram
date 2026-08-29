@@ -8,6 +8,8 @@ export interface MemoryGroup {
   mediaIds: number[];
 }
 
+// Groups every prior-year day (even single items) so the carousel shows more
+// unique memories, not just days that happen to share a date with today.
 export async function getMemories(limit = 12): Promise<MemoryGroup[]> {
   const db = await getDb();
   const thisYear = new Date().getFullYear();
@@ -31,7 +33,7 @@ export async function getMemories(limit = 12): Promise<MemoryGroup[]> {
     WHERE visibility = 'visible'
       AND CAST(strftime('%Y', taken_at / 1000, 'unixepoch') AS INTEGER) < ?
     GROUP BY y, m, d
-    HAVING count >= 2
+    HAVING count >= 1
     ORDER BY (m * 100 + d) = (CAST(strftime('%m','now') AS INTEGER) * 100 + CAST(strftime('%d','now') AS INTEGER)) DESC,
              ABS(m * 100 + d - (CAST(strftime('%m','now') AS INTEGER) * 100 + CAST(strftime('%d','now') AS INTEGER))) ASC,
              count DESC
