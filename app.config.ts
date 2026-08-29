@@ -48,6 +48,7 @@ const config: ExpoConfig = {
   android: {
     package: "com.photogram.app",
     versionCode: 1,
+    permissions: ["ACCESS_MEDIA_LOCATION"],
     config: secrets.google_maps_api_key
       ? { googleMaps: { apiKey: secrets.google_maps_api_key } }
       : undefined,

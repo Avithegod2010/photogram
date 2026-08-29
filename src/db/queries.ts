@@ -23,6 +23,7 @@ export interface MediaRow {
   state: MediaState;
   visibility: MediaVisibility;
   trashed_at: number | null;
+  media_library_id: string | null;
 }
 
 export interface NewMediaInput {
@@ -38,6 +39,7 @@ export interface NewMediaInput {
   fingerprint: string;
   state?: MediaState;
   tags?: string;
+  media_library_id?: string | null;
   latitude?: number | null;
   longitude?: number | null;
 }
@@ -58,8 +60,8 @@ export async function insertMedia(input: NewMediaInput): Promise<number | null> 
   const result = await db.runAsync(
     `INSERT OR IGNORE INTO media
       (local_uri, thumb_uri, file_name, mime_type, byte_size, width, height, duration_ms,
-       taken_at, fingerprint, state, visibility, tags, latitude, longitude, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'visible', ?, ?, ?, ?, ?)`,
+       taken_at, fingerprint, state, visibility, tags, latitude, longitude, media_library_id, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'visible', ?, ?, ?, ?, ?, ?)`,
     [
       input.local_uri,
       input.thumb_uri,
@@ -75,11 +77,17 @@ export async function insertMedia(input: NewMediaInput): Promise<number | null> 
       input.tags ?? "",
       input.latitude ?? null,
       input.longitude ?? null,
+      input.media_library_id ?? null,
       now,
       now,
     ]
   );
   return result.changes > 0 ? result.lastInsertRowId : null;
+}
+
+export async function updateMediaLibraryId(id: number, libraryId: string): Promise<void> {
+  const db = await getDb();
+  await db.runAsync("UPDATE media SET media_library_id = ? WHERE id = ?", [libraryId, id]);
 }
 
 export async function pageVisibleMedia(beforeTakenAt: number | null, limit = 120): Promise<MediaRow[]> {
@@ -213,18 +221,59 @@ export interface SyncedWithLocal {
   local_uri: string;
   byte_size: number;
   file_name: string | null;
+  media_library_id: string | null;
 }
 
 export async function getSyncedWithLocal(): Promise<SyncedWithLocal[]> {
   const db = await getDb();
   return db.getAllAsync<SyncedWithLocal>(
-    "SELECT id, local_uri, byte_size, file_name FROM media WHERE state = 'synced' AND local_uri IS NOT NULL"
+    "SELECT id, local_uri, byte_size, file_name, media_library_id FROM media WHERE state = 'synced' AND local_uri IS NOT NULL"
   );
 }
 
 export async function clearLocalUri(id: number): Promise<void> {
   const db = await getDb();
   await db.runAsync("UPDATE media SET local_uri = NULL, updated_at = ? WHERE id = ?", [
+    Date.now(),
+    id,
+  ]);
+}
+
+export async function setLocalUri(id: number, uri: string, libraryId?: string | null): Promise<void> {
+  const db = await getDb();
+  await db.runAsync(
+    "UPDATE media SET local_uri = ?, media_library_id = COALESCE(?, media_library_id), updated_at = ? WHERE id = ?",
+    [uri, libraryId ?? null, Date.now(), id]
+  );
+}
+
+export interface RestorableRow {
+  id: number;
+  byte_size: number;
+  file_name: string | null;
+  remote_chat_id: string;
+  remote_message_id: string;
+}
+
+export async function getSyncedWithoutLocal(): Promise<RestorableRow[]> {
+  const db = await getDb();
+  return db.getAllAsync<RestorableRow>(
+    "SELECT id, byte_size, file_name, remote_chat_id, remote_message_id FROM media WHERE state = 'synced' AND local_uri IS NULL AND remote_message_id IS NOT NULL AND remote_message_id != '0' ORDER BY byte_size ASC"
+  );
+}
+
+export async function replaceRemoteMessageId(oldId: string, newId: string): Promise<void> {
+  const db = await getDb();
+  await db.runAsync(
+    "UPDATE media SET remote_message_id = ?, updated_at = ? WHERE remote_message_id = ?",
+    [newId, Date.now(), oldId]
+  );
+}
+
+export async function updateRemoteMessageIdById(id: number, newId: string): Promise<void> {
+  const db = await getDb();
+  await db.runAsync("UPDATE media SET remote_message_id = ?, updated_at = ? WHERE id = ?", [
+    newId,
     Date.now(),
     id,
   ]);

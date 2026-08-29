@@ -18,6 +18,8 @@ import { formatBytes, getMonthlyBuckets, getStorageTotals, MonthBucket, StorageT
 import { canUseBiometrics } from "../lib/biometrics";
 import { countFreeableBytes } from "../lib/trash";
 import { freeUpDeviceSpace } from "../lib/space";
+import { restoreMediaToDevice } from "../lib/restorer";
+import { getSyncedWithoutLocal, RestorableRow } from "../db/queries";
 import { pauseUploads, refreshCounts, resumeUploads } from "../lib/uploader";
 import { useUploadStore } from "../store/uploadStore";
 import { useSettingsStore, UploadQuality } from "../store/settingsStore";
@@ -33,6 +35,8 @@ export function SettingsScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [freeable, setFreeable] = useState<{ count: number; bytes: number }>({ count: 0, bytes: 0 });
   const [freeing, setFreeing] = useState(false);
+  const [restorable, setRestorable] = useState<RestorableRow[]>([]);
+  const [restoringText, setRestoringText] = useState<string | null>(null);
 
   const exifPreserve = useSettingsStore((s) => s.exifPreserve);
   const hiddenLockEnabled = useSettingsStore((s) => s.hiddenLockEnabled);
@@ -54,14 +58,16 @@ export function SettingsScreen() {
 
   const load = useCallback(async () => {
     try {
-      const [t, b, f] = await Promise.all([
+      const [t, b, f, r] = await Promise.all([
         getStorageTotals(),
         getMonthlyBuckets(),
         countFreeableBytes(),
+        getSyncedWithoutLocal(),
       ]);
       setTotals(t);
       setBuckets(b);
       setFreeable(f);
+      setRestorable(r);
     } catch {
       setTotals(null);
     }
@@ -80,6 +86,46 @@ export function SettingsScreen() {
   }, [load]);
 
   const maxBucketCount = Math.max(1, ...buckets.map((b) => b.count));
+
+  const restoreAll = useCallback(() => {
+    if (restorable.length === 0) return;
+    Alert.alert(
+      "Restore originals?",
+      `Download ${restorable.length} item${restorable.length === 1 ? "" : "s"} (${formatBytes(
+        restorable.reduce((s, r) => s + (r.byte_size || 0), 0)
+      )}) from your Telegram cloud back onto this device?`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Restore",
+          onPress: () => {
+            void (async () => {
+              let restored = 0;
+              let failed = 0;
+              const errors: string[] = [];
+              for (let i = 0; i < restorable.length; i++) {
+                setRestoringText(`Restoring ${i + 1}/${restorable.length}…`);
+                const result = await restoreMediaToDevice(restorable[i].id);
+                if (result.outcome === "restored") restored++;
+                else {
+                  failed++;
+                  if (result.message) errors.push(result.message);
+                }
+              }
+              setRestoringText(null);
+              void load();
+              Alert.alert(
+                "Restore finished",
+                `${restored} item${restored === 1 ? "" : "s"} back on this device${
+                  failed > 0 ? ` · ${failed} failed` : ""
+                }${errors.length ? `\n\n${errors.slice(0, 2).join("\n\n")}` : ""}`
+              );
+            })();
+          },
+        },
+      ]
+    );
+  }, [restorable, load]);
 
   return (
     <View style={[styles.root, { paddingTop: insets.top }]}>
@@ -237,6 +283,26 @@ export function SettingsScreen() {
               <Text style={styles.freeBtnText}>{freeing ? "Removing…" : "Remove"}</Text>
             </Pressable>
           </View>
+          {restorable.length > 0 ? (
+            <View style={styles.row}>
+              <View style={styles.toggleText}>
+                <Text style={styles.rowLabel}>Restore missing originals</Text>
+                <Text style={styles.rowSub}>
+                  {restoringText ??
+                    `${restorable.length} item${restorable.length === 1 ? "" : "s"} (${formatBytes(
+                      restorable.reduce((s, r) => s + (r.byte_size || 0), 0)
+                    )}) live in your Telegram cloud but not on this device.`}
+                </Text>
+              </View>
+              <Pressable
+                disabled={!!restoringText}
+                onPress={restoreAll}
+                style={[styles.freeBtn, restoringText && styles.btnDisabledStyle]}
+              >
+                <Text style={styles.freeBtnText}>Restore</Text>
+              </Pressable>
+            </View>
+          ) : null}
         </Section>
 
         <Section title="Privacy">

@@ -1,5 +1,6 @@
 import React, { useCallback, useMemo, useRef, useState } from "react";
 import {
+  Alert,
   Dimensions,
   FlatList,
   Modal,
@@ -15,6 +16,8 @@ import { useVideoPlayer, VideoView } from "expo-video";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { getMediaByIds, setMediaVisibility, MediaRow } from "../db/queries";
+import { enqueueForUpload } from "../lib/uploader";
+import { hasRemoteCopy, restoreMediaToDevice } from "../lib/restorer";
 import { formatBytes } from "../lib/stats";
 import { theme } from "../theme";
 
@@ -62,6 +65,7 @@ export function ViewerScreen({ route, navigation }: any) {
   const [rows, setRows] = useState<MediaRow[]>([]);
   const [currentId, setCurrentId] = useState<number>(ids[index] ?? 0);
   const [infoOpen, setInfoOpen] = useState(false);
+  const [savingId, setSavingId] = useState<number | null>(null);
   const listRef = useRef<FlatList<MediaRow> | null>(null);
 
   useMemo(() => {
@@ -69,6 +73,23 @@ export function ViewerScreen({ route, navigation }: any) {
   }, [ids]);
 
   const current = rows.find((r) => r.id === currentId);
+
+  const saveCurrent = useCallback(async () => {
+    if (!current || savingId !== null) return;
+    setSavingId(current.id);
+    try {
+      const result = await restoreMediaToDevice(current.id);
+      if (result.outcome === "restored") {
+        const refreshed = await getMediaByIds([current.id]);
+        setRows((prev) => prev.map((r) => (r.id === current.id ? refreshed[0] ?? r : r)));
+        Alert.alert("Saved", "This item was restored to your device gallery from Telegram.");
+      } else {
+        Alert.alert("Couldn't save", result.message ?? "Unknown error.");
+      }
+    } finally {
+      setSavingId(null);
+    }
+  }, [current, savingId]);
 
   const trashCurrent = useCallback(async () => {
     if (!current) return;
@@ -120,6 +141,21 @@ export function ViewerScreen({ route, navigation }: any) {
 
       <View style={[styles.actionsBar, { paddingBottom: insets.bottom + 12 }]}>
         <ActionChip label="Share" onPress={() => void shareCurrent()} />
+        {current && !current.local_uri && hasRemoteCopy(current) ? (
+          <ActionChip
+            label={savingId === current.id ? "Saving…" : "Save to device"}
+            disabled={savingId !== null}
+            onPress={() => void saveCurrent()}
+          />
+        ) : null}
+        <ActionChip
+          label="Back up"
+          disabled={!current || (current.state !== "local" && current.state !== "failed")}
+          onPress={() => {
+            if (!current) return;
+            void enqueueForUpload(current.id).catch(() => {});
+          }}
+        />
         <ActionChip
           label="Archive"
           disabled={!current}

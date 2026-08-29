@@ -16,3 +16,7 @@ This folder (`E:\Opencode CLI\Projects\photogram`) is **Photogram**, the TDLib-b
 3. **Secrets:** `tdlib.secrets.json` is gitignored on purpose. Never commit it, never copy its contents into code or docs.
 4. **Architecture direction:** user account storage via TDLib/Saved Messages. Do NOT migrate this project to the Bot API.
 5. **Expo SDK 57:** read exact versioned docs at https://docs.expo.dev/versions/v57.0.0/ before writing any code.
+
+## Session handoff
+
+6. **Read `NEXT_SESSION.md` at the start of every session** and follow its "FIRST ACTIONS" — it tracks in-flight debugging state between sessions.

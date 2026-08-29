@@ -1,6 +1,7 @@
 import React from "react";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import { StyleSheet, Text, View } from "react-native";
+import { Ionicons } from "@expo/vector-icons";
 import { GalleryScreen } from "../screens/GalleryScreen";
 import { CollectionsScreen } from "../screens/CollectionsScreen";
 import { SettingsScreen } from "../screens/SettingsScreen";
@@ -14,10 +15,13 @@ export type RootTabParamList = {
 
 const Tab = createBottomTabNavigator<RootTabParamList>();
 
-const TAB_ICONS: Record<keyof RootTabParamList, string> = {
-  Gallery: "▦",
-  Collections: "▤",
-  Settings: "≡",
+const TAB_ICONS: Record<
+  keyof RootTabParamList,
+  { on: keyof typeof Ionicons.glyphMap; off: keyof typeof Ionicons.glyphMap }
+> = {
+  Gallery: { on: "cloud", off: "cloud-outline" },
+  Collections: { on: "search", off: "search-outline" },
+  Settings: { on: "settings", off: "settings-outline" },
 };
 
 export function RootTabs() {
@@ -31,11 +35,14 @@ export function RootTabs() {
         tabBarLabel: ({ color }) => (
           <Text style={[styles.tabLabel, { color }]}>{route.name}</Text>
         ),
-        tabBarIcon: ({ color, focused }) => (
-          <View style={[styles.tabIconWrap, focused && styles.tabIconFocused]}>
-            <Text style={[styles.tabIcon, { color }]}>{TAB_ICONS[route.name as keyof RootTabParamList]}</Text>
-          </View>
-        ),
+        tabBarIcon: ({ color, focused }) => {
+          const icons = TAB_ICONS[route.name as keyof RootTabParamList];
+          return (
+            <View style={[styles.tabIconWrap, focused && styles.tabIconFocused]}>
+              <Ionicons name={focused ? icons.on : icons.off} size={18} color={color} />
+            </View>
+          );
+        },
       })}
     >
       <Tab.Screen name="Gallery" component={GalleryScreen} />
@@ -63,5 +70,4 @@ const styles = StyleSheet.create({
   tabIconFocused: {
     backgroundColor: theme.colors.primaryContainer,
   },
-  tabIcon: { fontSize: 16, lineHeight: 20 },
 });
