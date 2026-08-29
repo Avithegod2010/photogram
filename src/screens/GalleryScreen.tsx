@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  Alert,
   Pressable,
   RefreshControl,
   StyleSheet,
@@ -17,7 +18,7 @@ import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { pageVisibleMedia, MediaRow } from "../db/queries";
 import { runSearch } from "../lib/search";
 import { scanDeviceLibrary, ScanProgress } from "../lib/scanner";
-import { startWorker } from "../lib/uploader";
+import { enqueueForUpload, startWorker } from "../lib/uploader";
 import { MemoriesCarousel } from "../components/MemoriesCarousel";
 import { theme } from "../theme";
 
@@ -103,6 +104,31 @@ export function GalleryScreen() {
     exhaustedRef.current = more.length < 120;
   }, [loading]);
 
+  const localOnlyCount = useMemo(
+    () => rows.filter((r) => r.state === "local" || r.state === "failed").length,
+    [rows]
+  );
+
+  const backUpAll = useCallback(() => {
+    const pending = rows.filter((r) => r.state === "local" || r.state === "failed");
+    if (pending.length === 0) return;
+    Alert.alert(
+      "Back up to Telegram",
+      `Queue ${pending.length} item${pending.length === 1 ? "" : "s"} for upload to Saved Messages?`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Back up",
+          onPress: () => {
+            for (const item of pending) {
+              void enqueueForUpload(item.id).catch(() => {});
+            }
+          },
+        },
+      ]
+    );
+  }, [rows]);
+
   const data: GalleryItem[] = useMemo(() => {
     if (zoomLevel === "years") return groupYears(rows);
     const source = results ?? rows;
@@ -134,7 +160,17 @@ export function GalleryScreen() {
   const beginScan = useCallback(() => {
     scanCancelRef.current.cancelled = false;
     setScan({ scanned: 0, added: 0, duplicates: 0, failed: 0, total: null, done: false });
-    void scanDeviceLibrary(setScan, scanCancelRef.current)
+    let warnedPartial = false;
+    void scanDeviceLibrary((p) => {
+      setScan(p);
+      if (p.partialAccess && !warnedPartial) {
+        warnedPartial = true;
+        Alert.alert(
+          "Partial photo access",
+          "Android is only showing Photogram the items you picked manually, so some photos may be missing.\n\nTo allow everything: long-press the Photogram app icon → App info → Permissions → Photos and videos → Allow all."
+        );
+      }
+    }, scanCancelRef.current)
       .then(() => loadFirstPage())
       .catch((err) => setScan(null))
       .finally(() => {});
@@ -220,6 +256,16 @@ export function GalleryScreen() {
           <>
             <Text style={styles.title}>Gallery</Text>
             <View style={styles.headerRight}>
+              <Pressable style={styles.searchBtn} onPress={beginScan} hitSlop={6}>
+                <Text style={styles.searchBtnIcon}>⟳</Text>
+              </Pressable>
+              {localOnlyCount > 0 ? (
+                <Pressable style={styles.backupBtn} onPress={backUpAll} hitSlop={6}>
+                  <Text style={styles.backupBtnText} numberOfLines={1}>
+                    ▲ Back up {localOnlyCount}
+                  </Text>
+                </Pressable>
+              ) : null}
               <Pressable style={styles.searchBtn} onPress={() => setSearchOpen(true)} hitSlop={6}>
                 <Text style={styles.searchBtnIcon}>⌕</Text>
               </Pressable>
@@ -245,8 +291,10 @@ export function GalleryScreen() {
         <View style={styles.scanBanner}>
           {scan.done ? (
             <>
-              <Text style={styles.scanText}>
+              <Text style={styles.scanText} numberOfLines={2}>
                 Scan complete · {scan.added} added · {scan.duplicates} duplicates skipped
+                {scan.failed > 0 ? ` · ${scan.failed} failed` : ""}
+                {scan.lastError ? ` (${scan.lastError})` : ""}
               </Text>
               <Pressable onPress={() => setScan(null)}>
                 <Text style={styles.scanDismiss}>Dismiss</Text>
@@ -258,6 +306,11 @@ export function GalleryScreen() {
           {!scan.done && scan.total !== null ? (
             <Text style={styles.scanText}>
               Scanning… {scan.scanned}/{scan.total} · new {scan.added}
+            </Text>
+          ) : null}
+          {scan.partialAccess ? (
+            <Text style={styles.scanText}>
+              ⚠ Only selected items visible — allow all photos in app settings
             </Text>
           ) : null}
         </View>
@@ -330,6 +383,15 @@ const styles = StyleSheet.create({
   segText: { color: theme.colors.onSurfaceVariant, fontSize: 12.5, fontWeight: "600" },
   segTextActive: { color: theme.colors.onPrimaryContainer },
   headerRight: { flexDirection: "row", alignItems: "center", gap: theme.spacing.sm },
+  backupBtn: {
+    height: 36,
+    paddingHorizontal: 12,
+    borderRadius: 18,
+    backgroundColor: theme.colors.primaryContainer,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  backupBtnText: { color: theme.colors.onPrimaryContainer, fontSize: 12.5, fontWeight: "700" },
   searchBtn: {
     width: 36,
     height: 36,

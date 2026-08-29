@@ -74,6 +74,10 @@ ALTER TABLE media ADD COLUMN longitude REAL;
 CREATE INDEX IF NOT EXISTS idx_media_geo ON media (latitude, longitude) WHERE latitude IS NOT NULL;
 `;
 
+const SCHEMA_V3 = `
+ALTER TABLE media ADD COLUMN media_library_id TEXT;
+`;
+
 export interface Migration {
   version: number;
   up: string;
@@ -82,6 +86,7 @@ export interface Migration {
 export const MIGRATIONS: Migration[] = [
   { version: 1, up: SCHEMA_V1 },
   { version: 2, up: SCHEMA_V2 },
+  { version: 3, up: SCHEMA_V3 },
 ];
 
 export function migrationsAfter(version: number): Migration[] {

@@ -2,7 +2,7 @@ import * as MediaLibrary from "expo-media-library/legacy";
 import { ImageManipulator, SaveFormat } from "expo-image-manipulator";
 import * as VideoThumbnails from "expo-video-thumbnails";
 import { File, Paths } from "expo-file-system";
-import { insertMedia } from "../db/queries";
+import { insertMedia, updateMediaLibraryId } from "../db/queries";
 import { findDuplicate, quickFingerprint } from "./dedupe";
 
 export interface ScanProgress {
@@ -10,8 +10,10 @@ export interface ScanProgress {
   added: number;
   duplicates: number;
   failed: number;
+  lastError?: string;
   total: number | null;
   done: boolean;
+  partialAccess?: boolean;
 }
 
 const PAGE_SIZE = 100;
@@ -50,7 +52,7 @@ async function makeThumbnail(uri: string, isVideo: boolean): Promise<string> {
   }
   const context = ImageManipulator.manipulate(uri).resize({ width: 320 });
   const rendered = await context.renderAsync();
-  const saved = await rendered.saveAsync({ compress: 0.5, format: "jpeg" as never });
+  const saved = await rendered.saveAsync({ compress: 0.5, format: SaveFormat.JPEG });
   return saved.uri;
 }
 
@@ -67,12 +69,22 @@ export async function ensureMediaPermission(): Promise<boolean> {
   return perm.granted;
 }
 
+async function hasOnlySelectedAccess(): Promise<boolean> {
+  try {
+    const perm = await MediaLibrary.getPermissionsAsync();
+    return perm.granted && (perm as { accessPrivileges?: string }).accessPrivileges === "selected";
+  } catch {
+    return false;
+  }
+}
+
 export async function scanDeviceLibrary(
   onProgress?: (progress: ScanProgress) => void,
   cancelRef?: { cancelled: boolean }
 ): Promise<ScanProgress> {
   const granted = await ensureMediaPermission();
   if (!granted) throw new Error("Photo library permission denied.");
+  const partialAccess = await hasOnlySelectedAccess();
 
   const progress: ScanProgress = {
     scanned: 0,
@@ -81,6 +93,7 @@ export async function scanDeviceLibrary(
     failed: 0,
     total: null,
     done: false,
+    partialAccess,
   };
   let cursor: string | undefined = undefined;
 
@@ -113,6 +126,9 @@ export async function scanDeviceLibrary(
 
         const existing = await findDuplicate(fingerprint);
         if (existing) {
+          if (asset.id && existing.id) {
+            await updateMediaLibraryId(existing.id, asset.id);
+          }
           progress.duplicates++;
           continue;
         }
@@ -134,11 +150,13 @@ export async function scanDeviceLibrary(
           tags: autoTagsFor(asset),
           latitude: location?.latitude ?? null,
           longitude: location?.longitude ?? null,
+          media_library_id: asset.id ?? null,
         });
         if (inserted !== null) progress.added++;
         else progress.duplicates++;
-      } catch {
+      } catch (err) {
         progress.failed++;
+        if (!progress.lastError && err instanceof Error) progress.lastError = err.message;
       }
       onProgress?.({ ...progress });
     }

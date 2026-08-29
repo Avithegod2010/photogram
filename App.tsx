@@ -1,6 +1,7 @@
 import React, { useEffect } from "react";
-import { StyleSheet, View } from "react-native";
+import { StyleSheet } from "react-native";
 import { StatusBar } from "expo-status-bar";
+import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { NavigationContainer } from "@react-navigation/native";
 import { useAuthStore } from "./src/auth/authStore";
 import { LoginScreen } from "./src/screens/LoginScreen";
@@ -18,7 +19,7 @@ export default function App() {
   }, [phase]);
 
   return (
-    <View style={styles.container}>
+    <GestureHandlerRootView style={styles.container}>
       <StatusBar style="light" />
       {phase === "ready" ? (
         <NavigationContainer>
@@ -27,7 +28,7 @@ export default function App() {
       ) : (
         <LoginScreen />
       )}
-    </View>
+    </GestureHandlerRootView>
   );
 }
 

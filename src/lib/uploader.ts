@@ -9,6 +9,7 @@ import {
   getMediaByIds,
   nextQueued,
   resetActiveToPending,
+  replaceRemoteMessageId,
   setMediaRemote,
   updateQueueStatus,
 } from "../db/queries";
@@ -90,6 +91,18 @@ export async function resumeUploads(): Promise<void> {
 export function startWorker(): void {
   if (workerStarted) return;
   workerStarted = true;
+
+  // TDLib initially assigns a pending id to an outgoing message and replaces it
+  // once the send succeeds — keep the stored remote_message_id in sync.
+  onUpdate((update) => {
+    if (update.type !== "updateMessageSendSucceeded") return;
+    try {
+      const message = update.payload.message as Record<string, unknown> | undefined;
+      const oldId = update.payload.old_message_id;
+      if (!message || typeof message.id === "undefined" || typeof oldId === "undefined") return;
+      void replaceRemoteMessageId(String(oldId), String(message.id));
+    } catch {}
+  });
 
   onUpdate((update) => {
     if (update.type !== "updateFile") return;

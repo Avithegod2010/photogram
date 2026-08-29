@@ -42,3 +42,4 @@ tdlib.secrets.json
 # generated native folders
 /ios
 /android
+.zcode/
