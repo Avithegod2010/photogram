@@ -4,6 +4,17 @@ Each entry below documents what a commit adds and what comes next. Newest first.
 
 ---
 
+## v0.5.1 — Handoff docs consolidated (docs only)
+
+- `NEXT_SESSION.md` §0 rewritten as a single "current state" section: everything verified live on
+  2026-08-29, all root causes (photo scan, scoped storage, pending message ids, gson camelCase,
+  messageAnimation, getMessage 404s), wireless-adb + Metro workflow gotchas, and the next steps.
+  Older session logs retitled §0b/§0c (history).
+- `AGENT.md` §7 status + §13 first-actions refreshed to match (no more stale "awaiting phone install").
+- No code changes.
+
+---
+
 ## v0.5 — App revived on device, photo scan fixed, Free-Up-Space fixed, S7 Restore-to-device
 
 **Added in this commit**

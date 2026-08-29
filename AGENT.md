@@ -1,6 +1,6 @@
 # PHOTOGRAM — COMPLETE HANDOFF FOR NEXT AGENT
 
-_Last updated: 2026-08-29 — after first successful phone build & TDLib APK verification. Read this entire file before writing any code._
+_Last updated: end of day 2026-08-29 — v0.5 committed (`6e234cf`), full product loop verified live on the Samsung. Read NEXT_SESSION.md §0 first for the current state; this file holds the full reference._
 
 ---
 
@@ -116,7 +116,33 @@ _Last updated: 2026-08-29 — after first successful phone build & TDLib APK ver
 
 ---
 
-## 7. CURRENT STATUS — APK with TDLib BUILT & VERIFIED
+## 7. CURRENT STATUS — v0.5: FULL PRODUCT LOOP VERIFIED ON DEVICE (2026-08-29)
+
+- ✅ **Everything works live on the Samsung**: scan (1,717 photos + 133 videos), upload to Saved
+  Messages (smoke-tested, owner confirmed playback), Free-Up-Space (system delete dialog, scoped
+  storage), Restore-to-device (Settings bulk + Viewer chip, byte-identical round trip).
+- ✅ v0.5 committed (`6e234cf`) — backup triggers, photo-scan fixes (SaveFormat enum +
+  ACCESS_MEDIA_LOCATION), scoped-storage Free-Up-Space (schema v3 `media_library_id`), S7
+  `src/lib/restorer.ts`, pending-message-id correctness, tab icons. Working tree clean.
+- ✅ App connects via **wireless adb** (no USB): phone 192.168.29.97; if the link drops, owner
+  opens Settings → Developer options → Wireless debugging (wakes adbd) and reads the current
+  IP:port → `adb connect`. Use `adb exec-out` for binary pulls (plain `adb shell cat` corrupts).
+- ✅ Metro runs on **8083** via `E:\Dev\run-photogram-metro-fast.ps1` (no --clear). CI=1 = no file
+  watching: **restart Metro after every code edit**, then force-stop + relaunch the app.
+- ⚠️ Gotchas that cost hours (details in NEXT_SESSION.md §0): TDLib client poisoning after bundle
+  reloads (clean process restart fixes), gson uses JAVA camelCase field names, small MP4s can be
+  classified `messageAnimation`, `getMessage()` 404s (use getChatHistory + openChat + retry),
+  scoped storage blocks cross-app deletes (use MediaLibrary.deleteAssetsAsync).
+
+**FIRST ACTIONS for the next session:**
+1. Read NEXT_SESSION.md §0 (current state) — it supersedes anything stale below.
+2. Connect to the phone (wireless adb steps above) and start Metro + `adb reverse tcp:8083 tcp:8083`
+   + deep-link relaunch (see §12 quick reference).
+3. The owner may want to trigger the bulk "▲ Back up 1,849" (≈13+ GB, throttled) — their call.
+4. Roadmap next: S8 auto-albums · S9 Telegram-group album sharing · real Albums/Archive/Hidden
+   screens · polish (epoch-1970 Memories artifact, corrupt-file UX).
+
+### Historical — the original red-error saga (kept for context)
 
 - ✅ **Native build SUCCEEDED** (7m 24s for gradle assembleDebug after manual NDK/Platform36/CMake install)
 - ✅ **APK (122.6 MB) installed on the Samsung**; dev client launches; Metro connects on port 8083; **JS bundle loads**
@@ -212,17 +238,18 @@ adb install -r android\app\build\outputs\apk\debug\app-debug.apk
 
 ## 13. WHAT THE NEXT AGENT SHOULD DO IMMEDIATELY
 
-1. **Read this entire AGENT.md file** (you are here now)
-2. **Connect the Samsung via USB** and verify `adb devices` shows `RZGL3039AAA`
-3. **Install the APK** if not already installed: `adb install -r android\app\build\outputs\apk\debug\app-debug.apk`
-4. **Run the Metro script**, reverse proxy, launch app:
+1. **Read NEXT_SESSION.md §0** — the current state (v0.5, everything verified). This section below
+   is the OLD first-build checklist, kept only for the historical commands.
+2. **Connect the phone**: wireless adb (see §7) — or via USB (`adb devices` shows `RZGL3039AAA`).
+3. **Run the Metro script**, reverse proxy, launch app:
    ```powershell
-   E:\Dev\run-photogram-metro.ps1
+   E:\Dev\run-photogram-metro-fast.ps1
    adb reverse tcp:8083 tcp:8083
-   adb shell am start -n com.photogram.app/.MainActivity
+   adb shell am start -a android.intent.action.VIEW -d "exp+photogram://expo-development-client/?url=http%3A%2F%2Flocalhost%3A8083" com.photogram.app
    ```
-5. **Verify the TDLib LoginScreen appears** (QR code / tap-to-confirm)
-6. **Then continue roadmap** — S7 restore-to-device is next
+4. The app should reach the Gallery directly (TDLib session persists on the phone). If login
+   errors appear, force-stop the app once and relaunch before debugging anything.
+5. **Then continue roadmap** — S8 auto-albums is next (see §0 / §9).
 
 ---
 
