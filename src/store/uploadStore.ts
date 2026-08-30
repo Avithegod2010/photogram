@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { createMMKV } from "react-native-mmkv";
 
 export interface UploadActiveItem {
   queueId: number;
@@ -6,6 +7,31 @@ export interface UploadActiveItem {
   fileName: string;
   byteSize: number;
   uploadedBytes: number;
+}
+
+const uploadsMmkv = createMMKV({ id: "uploads" });
+
+function todayKey(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+// "Backed up today" survives app restarts, unlike the session counter.
+function loadTodayBytes(): number {
+  try {
+    const stored = uploadsMmkv.getString("today");
+    if (!stored) return 0;
+    const parsed = JSON.parse(stored) as { key: string; bytes: number };
+    return parsed.key === todayKey() ? parsed.bytes : 0;
+  } catch {
+    return 0;
+  }
+}
+
+function saveTodayBytes(bytes: number): void {
+  try {
+    uploadsMmkv.set("today", JSON.stringify({ key: todayKey(), bytes }));
+  } catch {}
 }
 
 interface UploadState {
@@ -17,7 +43,9 @@ interface UploadState {
   done: number;
   failed: number;
   sessionBytes: number;
+  todayBytes: number;
   lastError: string | null;
+  holdReason: string | null;
   setRunning: (v: boolean) => void;
   setPaused: (v: boolean) => void;
   setThrottledUntil: (t: number | null) => void;
@@ -26,6 +54,7 @@ interface UploadState {
   setCounts: (c: { pending: number; done: number; failed: number }) => void;
   addSessionBytes: (n: number) => void;
   setError: (e: string | null) => void;
+  setHoldReason: (r: string | null) => void;
 }
 
 export const THROTTLE_LIMIT_BYTES = 1_500_000_000;
@@ -40,7 +69,9 @@ export const useUploadStore = create<UploadState>()((set) => ({
   done: 0,
   failed: 0,
   sessionBytes: 0,
+  todayBytes: loadTodayBytes(),
   lastError: null,
+  holdReason: null,
   setRunning: (v) => set({ running: v }),
   setPaused: (v) => set({ paused: v }),
   setThrottledUntil: (t) => set({ throttledUntil: t }),
@@ -52,6 +83,13 @@ export const useUploadStore = create<UploadState>()((set) => ({
         : {}
     ),
   setCounts: (c) => set(c),
-  addSessionBytes: (n) => set((s) => ({ sessionBytes: s.sessionBytes + n })),
+  addSessionBytes: (n) =>
+    set((s) => {
+      // loadTodayBytes resets to 0 when the stored day is no longer today.
+      const today = loadTodayBytes() + n;
+      saveTodayBytes(today);
+      return { sessionBytes: s.sessionBytes + n, todayBytes: today };
+    }),
   setError: (e) => set({ lastError: e }),
+  setHoldReason: (r) => set({ holdReason: r }),
 }));

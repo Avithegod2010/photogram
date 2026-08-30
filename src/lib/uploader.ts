@@ -1,6 +1,8 @@
 import TdLib from "react-native-tdlib";
 import { ImageManipulator, SaveFormat } from "expo-image-manipulator";
 import { File } from "expo-file-system";
+import * as Network from "expo-network";
+import type * as BatteryModule from "expo-battery";
 import { useSettingsStore } from "../store/settingsStore";
 import {
   bumpQueueAttempt,
@@ -191,6 +193,16 @@ async function workerLoop(): Promise<void> {
     }
     if (throttleUntil && Date.now() >= throttleUntil) {
       state.setThrottledUntil(null);
+    }
+
+    const hold = await uploadHoldReason();
+    if (hold) {
+      state.setHoldReason(hold);
+      await sleep(4000);
+      continue;
+    }
+    if (state.holdReason) {
+      state.setHoldReason(null);
     }
 
     const item = await nextQueued();
@@ -487,4 +499,57 @@ function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+// expo-battery's native module only exists after the next gradle rebuild — the
+// installed APK predates it. Soft-require so a missing module means "not charging"
+// instead of crashing the worker.
+// expo-battery's native module only exists after the next gradle rebuild — the
+// installed APK predates it. Soft-require so a missing module means "not charging"
+// instead of crashing the worker.
+function requireBattery(): typeof BatteryModule | null {
+  try {
+    const resolved = require("expo-battery") as typeof BatteryModule;
+    return typeof resolved?.getBatteryStateAsync === "function" ? resolved : null;
+  } catch {
+    return null;
+  }
+}
+
+// Respects the Settings toggles: "Wi-Fi only" and "Only while charging".
+// Returns a user-facing hold reason, or null when uploads may proceed.
+async function uploadHoldReason(): Promise<string | null> {
+  const { wifiOnlyUpload, chargeOnlyUpload } = useSettingsStore.getState();
+  if (!wifiOnlyUpload && !chargeOnlyUpload) return null;
+
+  try {
+    if (wifiOnlyUpload) {
+      const net = await Network.getNetworkStateAsync();
+      // The interface enum drifted across SDKs — accept any non-cellular truthiness.
+      const isWifi = (net as { type?: string; typeName?: string }).type === Network.NetworkStateType.WIFI
+        || (net as { typeName?: string }).typeName === "WIFI"
+        || (net as { isWifi?: boolean }).isWifi === true;
+      if (!isWifi) {
+        return "Waiting for Wi-Fi (Wi-Fi only is on in Settings)";
+      }
+    }
+  } catch {
+    // Network unreadable: fail open rather than stalling forever.
+  }
+
+  if (chargeOnlyUpload) {
+    const battery = requireBattery();
+    if (!battery) return null; // native not built yet — don't hold uploads hostage
+    try {
+      const state = await battery.getBatteryStateAsync();
+      const charging =
+        state === battery.BatteryState.CHARGING || state === battery.BatteryState.FULL;
+      if (!charging) {
+        return "Waiting for charger (charge-only is on in Settings)";
+      }
+    } catch {
+      // Unreadable battery state: fail open.
+    }
+  }
+  return null;
 }

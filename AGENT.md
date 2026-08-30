@@ -1,6 +1,6 @@
 # PHOTOGRAM — COMPLETE HANDOFF FOR NEXT AGENT
 
-_Last updated: end of day 2026-08-29 — v0.5 committed (`6e234cf`), full product loop verified live on the Samsung. Read NEXT_SESSION.md §0 first for the current state; this file holds the full reference._
+_Last updated: 2026-08-30 evening — v0.6 committed (`e80fe6a`), v0.7 coded but NOT committed/verified (shared phone). Read NEXT_SESSION.md §0 first for the current state; this file holds the full reference._
 
 ---
 
@@ -116,31 +116,50 @@ _Last updated: end of day 2026-08-29 — v0.5 committed (`6e234cf`), full produc
 
 ---
 
-## 7. CURRENT STATUS — v0.5: FULL PRODUCT LOOP VERIFIED ON DEVICE (2026-08-29)
+## 7. CURRENT STATUS — v0.6/0.7: ALBUMS + SHARING-READY UPLOAD ENGINE (2026-08-30)
 
-- ✅ **Everything works live on the Samsung**: scan (1,717 photos + 133 videos), upload to Saved
-  Messages (smoke-tested, owner confirmed playback), Free-Up-Space (system delete dialog, scoped
-  storage), Restore-to-device (Settings bulk + Viewer chip, byte-identical round trip).
-- ✅ v0.5 committed (`6e234cf`) — backup triggers, photo-scan fixes (SaveFormat enum +
-  ACCESS_MEDIA_LOCATION), scoped-storage Free-Up-Space (schema v3 `media_library_id`), S7
-  `src/lib/restorer.ts`, pending-message-id correctness, tab icons. Working tree clean.
-- ✅ App connects via **wireless adb** (no USB): phone 192.168.29.97; if the link drops, owner
-  opens Settings → Developer options → Wireless debugging (wakes adbd) and reads the current
-  IP:port → `adb connect`. Use `adb exec-out` for binary pulls (plain `adb shell cat` corrupts).
+- ✅ **v0.6 committed** (`e80fe6a`): S8 Auto-albums, cloud storage counts, upload-completion
+  confirmation (synced only after bytes reach Telegram), queue dedupe (double "Back up" presses can
+  no longer duplicate), taken_at ms-unit repair (year-58629 fix), and the Days-mode grid visibility
+  fix (tiles had no aspectRatio → zero-height). All verified live on the Samsung.
+- ✅ **Bulk backup ran live**: 270+ items (~1.9 GB) in Saved Messages; ~1,843 still pending. The
+  worker AUTO-RESUMES on app restart; Pause in Settings → Uploads is session-only.
+- ✅ **v0.7 coded, NOT yet device-verified nor committed** (owner's phone is shared with another
+  automation agent — coordinate first): real Archive + Hidden screens (Hidden gated by
+  `unlockHiddenAlbum()` unless the Settings biometric toggle is off), scanner failed-file-names UX
+  (tap the scan banner), Wi-Fi-only / charge-only upload enforcement (`uploadHoldReason()`; the
+  Settings toggles were decorative before). Charging detection needs the NEXT gradle rebuild to
+  bring expo-battery's native module in; until then it fails open. Days-mode day-section headers
+  (Today/Yesterday/date, via FlashList v2 masonry span) + persisted "Backed up today" counter also
+  await verification.
+- ✅ S9 groundwork: `src/lib/chats.ts` (`listMyGroups()` via raw td_json_client_send getChats/getChat).
+- ✅ SDK patch packages aligned (`expo install --fix`, all 57.0.x patches + RN 0.86.3; JS-side only —
+  the APK picks them up at the next gradle build, which also brings expo-battery native in).
+- ⚠️ **SHARED PHONE**: another automation agent also drives this Samsung via wireless adb — confirm
+  with the owner before adb/ui work; expect connection collisions. Skip device steps if it's busy.
+- ✅ App connects via **wireless adb** (no USB): mDNS lists the service even when adbd sleeps —
+  `adb mdns services` → `adb connect <ip:port>` (refused = phone asleep; owner wakes it via
+  Settings → Developer options → Wireless debugging). After reconnect ALWAYS re-run
+  `adb reverse tcp:8083 tcp:8083`. Use `adb exec-out` for binary pulls (plain `adb shell cat`
+  corrupts). Git Bash mangles `/sdcard/...` paths — set `MSYS_NO_PATHCONV=1`.
 - ✅ Metro runs on **8083** via `E:\Dev\run-photogram-metro-fast.ps1` (no --clear). CI=1 = no file
-  watching: **restart Metro after every code edit**, then force-stop + relaunch the app.
+  watching: **restart Metro after every code edit**; first boot after an npm install can take 4+
+  minutes — don't kill it prematurely. Then force-stop + deep-link relaunch the app.
 - ⚠️ Gotchas that cost hours (details in NEXT_SESSION.md §0): TDLib client poisoning after bundle
-  reloads (clean process restart fixes), gson uses JAVA camelCase field names, small MP4s can be
-  classified `messageAnimation`, `getMessage()` 404s (use getChatHistory + openChat + retry),
-  scoped storage blocks cross-app deletes (use MediaLibrary.deleteAssetsAsync).
+  reloads (clean process restart fixes), gson uses JAVA camelCase field names, MediaLibrary
+  timestamps are MILLISECONDS on this stack, small MP4s can be classified `messageAnimation`,
+  `getMessage()` 404s (use getChatHistory + openChat + retry), scoped storage blocks cross-app
+  deletes (use MediaLibrary.deleteAssetsAsync), Days-mode masonry tiles need explicit aspectRatio.
 
 **FIRST ACTIONS for the next session:**
-1. Read NEXT_SESSION.md §0 (current state) — it supersedes anything stale below.
-2. Connect to the phone (wireless adb steps above) and start Metro + `adb reverse tcp:8083 tcp:8083`
-   + deep-link relaunch (see §12 quick reference).
-3. The owner may want to trigger the bulk "▲ Back up 1,849" (≈13+ GB, throttled) — their call.
-4. Roadmap next: S8 auto-albums · S9 Telegram-group album sharing · real Albums/Archive/Hidden
-   screens · polish (epoch-1970 Memories artifact, corrupt-file UX).
+1. Read NEXT_SESSION.md §0 + its FIRST ACTIONS — they supersede anything stale below.
+2. Coordinate with the owner about the OTHER agent's phone use, then connect (steps above) and
+   device-verify the uncommitted v0.7 work (Archive/Hidden + biometric gate, scan-fail banner,
+   Wi-Fi-only hold reason, day headers), then commit as v0.7 with a CHANGELOG entry.
+3. Draft the S9 design with the owner (one-way "claim family uploads from a Telegram group" vs
+   two-way), then build the chat-picker + album-claim flow on top of `src/lib/chats.ts`.
+4. A gradle rebuild is due eventually anyway: it brings expo-battery native AND the SDK patch
+   bumps into the APK (plus the Google Maps key if the owner adds one to tdlib.secrets.json).
 
 ### Historical — the original red-error saga (kept for context)
 
