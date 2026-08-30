@@ -41,6 +41,7 @@ export async function getStorageTotals(): Promise<StorageTotals> {
       COALESCE(SUM(CASE WHEN visibility = 'trashed' THEN 1 ELSE 0 END), 0) AS trashed,
       COALESCE(SUM(CASE WHEN visibility = 'hidden' THEN 1 ELSE 0 END), 0) AS hidden
     FROM media
+    WHERE NOT EXISTS (SELECT 1 FROM album_media am WHERE am.media_id = media.id)
   `);
   const queueRow = await db.getFirstAsync<{ pending: number; failed: number }>(`
     SELECT
@@ -74,6 +75,7 @@ export async function getMonthlyBuckets(monthsBack = 6): Promise<MonthBucket[]> 
       COALESCE(SUM(byte_size), 0) AS bytes
     FROM media
     WHERE taken_at >= ? AND visibility != 'trashed'
+      AND NOT EXISTS (SELECT 1 FROM album_media am WHERE am.media_id = media.id)
     GROUP BY ym
   `,
     [since.getTime()]
@@ -103,4 +105,28 @@ export function formatBytes(bytes: number): string {
     unitIndex++;
   }
   return `${value.toFixed(value >= 10 ? 0 : 1)} ${units[unitIndex]}`;
+}
+
+export interface BackupHeartbeat {
+  total: number;
+  synced: number;
+  lastSyncedAt: number | null;
+}
+
+// Gallery header heartbeat: how much of the owner's own library is safely in
+// Telegram, and when the last upload finished. Excludes shared-album claims
+// (family media is never this library's backup responsibility).
+export async function getBackupHeartbeat(): Promise<BackupHeartbeat | null> {
+  const db = await getDb();
+  const row = await db.getFirstAsync<{ total: number; synced: number; last: number | null }>(`
+    SELECT
+      COUNT(*) AS total,
+      COALESCE(SUM(CASE WHEN state = 'synced' THEN 1 ELSE 0 END), 0) AS synced,
+      MAX(uploaded_at) AS last
+    FROM media
+    WHERE visibility != 'trashed'
+      AND NOT EXISTS (SELECT 1 FROM album_media am WHERE am.media_id = media.id)
+  `);
+  if (!row || row.total === 0) return null;
+  return { total: row.total, synced: row.synced, lastSyncedAt: row.last };
 }

@@ -48,6 +48,8 @@ export function SettingsScreen() {
   const setChargeOnlyUpload = useSettingsStore((s) => s.setChargeOnlyUpload);
   const uploadQuality = useSettingsStore((s) => s.uploadQuality);
   const setUploadQuality = useSettingsStore((s) => s.setUploadQuality);
+  const sharedTimelineMaster = useSettingsStore((s) => s.sharedTimelineMaster);
+  const setSharedTimelineMaster = useSettingsStore((s) => s.setSharedTimelineMaster);
   const boot = useAuthStore((s) => s.boot);
   const uploadActive = useUploadStore((s) => s.active);
   const uploadPending = useUploadStore((s) => s.pending);
@@ -201,6 +203,20 @@ export function SettingsScreen() {
               </View>
             </>
           )}
+        </Section>
+
+        <Section title="Shared albums">
+          <Row
+            label="Show shared albums in my timeline"
+            sub="Master switch — each album has its own toggle too. Default: album-only."
+            muted
+          />
+          <View style={styles.qualityRow}>
+            <Text style={styles.rowLabel}>
+              {sharedTimelineMaster ? "Family photos appear in your Days/Months/Years" : "Family photos stay inside their albums"}
+            </Text>
+            <Switch value={sharedTimelineMaster} onValueChange={setSharedTimelineMaster} />
+          </View>
         </Section>
 
         <Section title="Backup preferences">

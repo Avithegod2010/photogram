@@ -15,14 +15,20 @@ import { Image } from "expo-image";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
-import { pageVisibleMedia, MediaRow } from "../db/queries";
+import { pageVisibleMedia, getRandomMedia, MediaRow } from "../db/queries";
+import { getBackupHeartbeat, BackupHeartbeat } from "../lib/stats";
+import { formatBytes } from "../lib/stats";
 import { runSearch } from "../lib/search";
 import { scanDeviceLibrary, ScanProgress } from "../lib/scanner";
 import { enqueueForUpload, startWorker } from "../lib/uploader";
 import { MemoriesCarousel } from "../components/MemoriesCarousel";
+import { useSettingsStore } from "../store/settingsStore";
 import { theme } from "../theme";
 
-type StackNav = NativeStackNavigationProp<{ Viewer: { ids: number[]; index: number } }>;
+type StackNav = NativeStackNavigationProp<{
+  Viewer: { ids: number[]; index: number };
+  Story: { ids: number[]; title: string };
+}>;
 
 export type ZoomLevel = "days" | "months" | "years";
 
@@ -71,6 +77,16 @@ function dayKeyOf(ts: number): number {
   return d.getFullYear() * 10000 + d.getMonth() * 100 + d.getDate();
 }
 
+function timeAgo(ts: number): string {
+  const mins = Math.floor((Date.now() - ts) / 60000);
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins} min ago`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  return days === 1 ? "yesterday" : `${days}d ago`;
+}
+
 function groupYears(rows: MediaRow[]): GalleryYearItem[] {
   const counts = new Map<number, number>();
   for (const r of rows) {
@@ -101,7 +117,9 @@ export function GalleryScreen() {
   const loadFirstPage = useCallback(async () => {
     setLoading(true);
     try {
-      const first = await pageVisibleMedia(null);
+      // Master switch on → albums that opted into the timeline appear too.
+      const master = useSettingsStore.getState().sharedTimelineMaster;
+      const first = await pageVisibleMedia(null, 120, master);
       setRows(first);
       cursorRef.current = first.length > 0 ? first[first.length - 1].taken_at : null;
       exhaustedRef.current = first.length < 120;
@@ -117,7 +135,8 @@ export function GalleryScreen() {
   const loadMore = useCallback(async () => {
     if (exhaustedRef.current || loading) return;
     if (cursorRef.current === null) return;
-    const more = await pageVisibleMedia(cursorRef.current);
+    const master = useSettingsStore.getState().sharedTimelineMaster;
+    const more = await pageVisibleMedia(cursorRef.current, 120, master);
     if (more.length === 0) {
       exhaustedRef.current = true;
       return;
@@ -134,6 +153,19 @@ export function GalleryScreen() {
     () => rows.filter((r) => r.state === "local" || r.state === "failed").length,
     [rows]
   );
+
+  // 🎲 Rediscover: jump straight into a random photo, full-screen.
+  const rediscover = useCallback(async () => {
+    const random = await getRandomMedia();
+    if (!random) return;
+    navigation.navigate("Viewer", { ids: [random.id], index: 0 });
+  }, [navigation]);
+
+  // Backup heartbeat: refresh alongside the grid data.
+  const [heartbeat, setHeartbeat] = useState<BackupHeartbeat | null>(null);
+  useEffect(() => {
+    void getBackupHeartbeat().then(setHeartbeat);
+  }, [rows.length]);
 
   const backUpAll = useCallback(() => {
     const pending = rows.filter((r) => r.state === "local" || r.state === "failed");
@@ -321,6 +353,13 @@ export function GalleryScreen() {
                   </Text>
                 </Pressable>
               ) : null}
+              <Pressable
+                style={styles.searchBtn}
+                onPress={() => void rediscover()}
+                hitSlop={6}
+              >
+                <Text style={styles.searchBtnIcon}>🎲</Text>
+              </Pressable>
               <Pressable style={styles.searchBtn} onPress={() => setSearchOpen(true)} hitSlop={6}>
                 <Text style={styles.searchBtnIcon}>⌕</Text>
               </Pressable>
@@ -341,6 +380,18 @@ export function GalleryScreen() {
           </>
         )}
       </View>
+
+      {heartbeat && heartbeat.total > 0 ? (
+        <Text style={styles.heartbeat}>
+          {heartbeat.synced >= heartbeat.total
+            ? `🔒 All ${heartbeat.total} backed up${
+                heartbeat.lastSyncedAt ? ` · ${timeAgo(heartbeat.lastSyncedAt)}` : ""
+              }`
+            : `🔒 ${heartbeat.synced}/${heartbeat.total} in Telegram${
+                heartbeat.lastSyncedAt ? ` · last backup ${timeAgo(heartbeat.lastSyncedAt)}` : ""
+              }`}
+        </Text>
+      ) : null}
 
       {scan ? (
         <View style={styles.scanBanner}>
@@ -419,8 +470,8 @@ export function GalleryScreen() {
             ListHeaderComponent={
               !searching && zoomLevel === "days" ? (
                 <MemoriesCarousel
-                  onOpen={(ids) =>
-                    navigation.navigate("Viewer", { ids, index: 0 })
+                  onOpen={(ids, title) =>
+                    navigation.navigate("Story", { ids, title })
                   }
                 />
               ) : null
@@ -488,6 +539,13 @@ const styles = StyleSheet.create({
   },
   searchCancel: { color: theme.colors.primary, fontWeight: "600", fontSize: 13.5 },
   listContent: { paddingBottom: 96 },
+  heartbeat: {
+    color: theme.colors.onSurfaceVariant,
+    fontSize: 11.5,
+    paddingHorizontal: theme.spacing.md,
+    paddingBottom: theme.spacing.xs,
+    marginTop: -4,
+  },
   dayHeaderWrap: {
     paddingVertical: theme.spacing.sm,
     paddingHorizontal: theme.spacing.xs,

@@ -32,6 +32,7 @@ export async function getMemories(limit = 12): Promise<MemoryGroup[]> {
     FROM media
     WHERE visibility = 'visible'
       AND CAST(strftime('%Y', taken_at / 1000, 'unixepoch') AS INTEGER) < ?
+      AND NOT EXISTS (SELECT 1 FROM album_media am WHERE am.media_id = media.id)
     GROUP BY y, m, d
     HAVING count >= 1
     ORDER BY (m * 100 + d) = (CAST(strftime('%m','now') AS INTEGER) * 100 + CAST(strftime('%d','now') AS INTEGER)) DESC,

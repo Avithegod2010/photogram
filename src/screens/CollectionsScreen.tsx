@@ -11,10 +11,12 @@ type CollectionsNav = NativeStackNavigationProp<{
   Albums: undefined;
   Archive: undefined;
   Hidden: undefined;
+  SharedAlbums: undefined;
 }>;
 
 const SECTIONS = [
   { key: "albums", label: "Albums", sub: "Camera, Screenshots, WhatsApp, Downloads & more", enabled: true, route: "Albums" },
+  { key: "shared", label: "Shared albums", sub: "Family photos from a private Telegram group", enabled: true, route: "SharedAlbums" },
   { key: "people", label: "People & Pets", sub: "Face grouping arrives in Phase 2 (on-device ML)", enabled: false, route: null },
   { key: "archive", label: "Archive", sub: "Decluttered media — hidden from the main timeline", enabled: true, route: "Archive" },
   { key: "trash", label: "Trash", sub: "Deleted items · 30-day countdown", enabled: true, route: "Trash" },

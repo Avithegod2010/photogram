@@ -74,3 +74,23 @@ export async function listMyGroups(): Promise<TelegramGroup[]> {
 
   return groups;
 }
+
+const senderNameCache = new Map<string, string>();
+
+// Resolve Telegram user ids to display names for the activity feed (cached).
+export async function resolveSenderNames(ids: Array<string | null>): Promise<Map<string, string>> {
+  const result = new Map<string, string>();
+  const unique = [...new Set(ids.filter((id): id is string => !!id))];
+  for (const id of unique) {
+    const cached = senderNameCache.get(id);
+    if (cached) {
+      result.set(id, cached);
+      continue;
+    }
+    const chat = await sendTd({ "@type": "getChat", chat_id: Number(id) });
+    const name = chat ? String(firstDefined(chat.title, chat.firstName, chat.first_name, "Someone")) : "Someone";
+    senderNameCache.set(id, name);
+    result.set(id, name);
+  }
+  return result;
+}

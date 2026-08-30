@@ -78,6 +78,18 @@ const SCHEMA_V3 = `
 ALTER TABLE media ADD COLUMN media_library_id TEXT;
 `;
 
+// S9 Phase 1: shared albums backed by Telegram groups. Reuses the v1 albums +
+// album_media tables. chat_id NULL = a local album (unused for now);
+// last_claimed_message_id = claim cursor into the group's history.
+const SCHEMA_V4 = `
+ALTER TABLE albums ADD COLUMN chat_id TEXT;
+ALTER TABLE albums ADD COLUMN last_claimed_message_id TEXT;
+ALTER TABLE albums ADD COLUMN show_in_timeline INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE album_media ADD COLUMN sender_id TEXT;
+ALTER TABLE album_media ADD COLUMN message_id TEXT;
+ALTER TABLE upload_queue ADD COLUMN chat_id TEXT;
+`;
+
 export interface Migration {
   version: number;
   up: string;
@@ -87,6 +99,7 @@ export const MIGRATIONS: Migration[] = [
   { version: 1, up: SCHEMA_V1 },
   { version: 2, up: SCHEMA_V2 },
   { version: 3, up: SCHEMA_V3 },
+  { version: 4, up: SCHEMA_V4 },
 ];
 
 export function migrationsAfter(version: number): Migration[] {

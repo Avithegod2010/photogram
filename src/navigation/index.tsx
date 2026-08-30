@@ -8,16 +8,20 @@ import { AlbumsScreen } from "../screens/AlbumsScreen";
 import { AlbumScreen } from "../screens/AlbumScreen";
 import { ArchiveScreen } from "../screens/ArchiveScreen";
 import { HiddenScreen } from "../screens/HiddenScreen";
+import { SharedAlbumsScreen } from "../screens/SharedAlbumsScreen";
+import { StoryScreen } from "../screens/StoryScreen";
 
 export type RootStackParamList = {
   Tabs: undefined;
   Viewer: { ids: number[]; index: number };
+  Story: { ids: number[]; title: string };
   Trash: undefined;
   Map: undefined;
   Albums: undefined;
-  Album: { key: string; label: string };
+  Album: { key: string; label: string; sharedAlbumId?: number };
   Archive: undefined;
   Hidden: undefined;
+  SharedAlbums: undefined;
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -31,12 +35,18 @@ export function RootNavigator() {
         component={ViewerScreen}
         options={{ animation: "fade", presentation: "fullScreenModal" }}
       />
+      <Stack.Screen
+        name="Story"
+        component={StoryScreen}
+        options={{ animation: "fade", presentation: "fullScreenModal", gestureEnabled: true }}
+      />
       <Stack.Screen name="Trash" component={TrashScreen} />
       <Stack.Screen name="Map" component={MapScreen} />
       <Stack.Screen name="Albums" component={AlbumsScreen} />
       <Stack.Screen name="Album" component={AlbumScreen} />
       <Stack.Screen name="Archive" component={ArchiveScreen} />
       <Stack.Screen name="Hidden" component={HiddenScreen} />
+      <Stack.Screen name="SharedAlbums" component={SharedAlbumsScreen} />
     </Stack.Navigator>
   );
 }

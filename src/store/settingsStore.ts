@@ -12,11 +12,13 @@ interface SettingsState {
   wifiOnlyUpload: boolean;
   chargeOnlyUpload: boolean;
   uploadQuality: UploadQuality;
+  sharedTimelineMaster: boolean;
   setExifPreserve: (v: boolean) => void;
   setHiddenLockEnabled: (v: boolean) => void;
   setWifiOnlyUpload: (v: boolean) => void;
   setChargeOnlyUpload: (v: boolean) => void;
   setUploadQuality: (q: UploadQuality) => void;
+  setSharedTimelineMaster: (v: boolean) => void;
 }
 
 export const useSettingsStore = create<SettingsState>()(
@@ -27,11 +29,13 @@ export const useSettingsStore = create<SettingsState>()(
       wifiOnlyUpload: false,
       chargeOnlyUpload: false,
       uploadQuality: "storage_saver",
+      sharedTimelineMaster: false,
       setExifPreserve: (v) => set({ exifPreserve: v }),
       setHiddenLockEnabled: (v) => set({ hiddenLockEnabled: v }),
       setWifiOnlyUpload: (v) => set({ wifiOnlyUpload: v }),
       setChargeOnlyUpload: (v) => set({ chargeOnlyUpload: v }),
       setUploadQuality: (q) => set({ uploadQuality: q }),
+      setSharedTimelineMaster: (v) => set({ sharedTimelineMaster: v }),
     }),
     {
       name: "photogram-settings",
