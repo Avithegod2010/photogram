@@ -6,6 +6,8 @@ import { TrashScreen } from "../screens/TrashScreen";
 import { MapScreen } from "../screens/MapScreen";
 import { AlbumsScreen } from "../screens/AlbumsScreen";
 import { AlbumScreen } from "../screens/AlbumScreen";
+import { ArchiveScreen } from "../screens/ArchiveScreen";
+import { HiddenScreen } from "../screens/HiddenScreen";
 
 export type RootStackParamList = {
   Tabs: undefined;
@@ -14,6 +16,8 @@ export type RootStackParamList = {
   Map: undefined;
   Albums: undefined;
   Album: { key: string; label: string };
+  Archive: undefined;
+  Hidden: undefined;
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -31,6 +35,8 @@ export function RootNavigator() {
       <Stack.Screen name="Map" component={MapScreen} />
       <Stack.Screen name="Albums" component={AlbumsScreen} />
       <Stack.Screen name="Album" component={AlbumScreen} />
+      <Stack.Screen name="Archive" component={ArchiveScreen} />
+      <Stack.Screen name="Hidden" component={HiddenScreen} />
     </Stack.Navigator>
   );
 }

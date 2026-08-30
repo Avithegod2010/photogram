@@ -10,6 +10,7 @@ export interface ScanProgress {
   added: number;
   duplicates: number;
   failed: number;
+  failedNames: string[];
   lastError?: string;
   total: number | null;
   done: boolean;
@@ -105,6 +106,7 @@ export async function scanDeviceLibrary(
     added: 0,
     duplicates: 0,
     failed: 0,
+    failedNames: [],
     total: null,
     done: false,
     partialAccess,
@@ -173,6 +175,7 @@ export async function scanDeviceLibrary(
         else progress.duplicates++;
       } catch (err) {
         progress.failed++;
+        if (progress.failedNames.length < 8) progress.failedNames.push(asset.filename);
         if (!progress.lastError && err instanceof Error) progress.lastError = err.message;
       }
       onProgress?.({ ...progress });

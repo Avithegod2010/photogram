@@ -328,6 +328,22 @@ export async function listTrashed(limit = 500): Promise<MediaRow[]> {
   );
 }
 
+export async function listArchived(limit = 500): Promise<MediaRow[]> {
+  const db = await getDb();
+  return db.getAllAsync<MediaRow>(
+    "SELECT * FROM media WHERE visibility = 'archived' ORDER BY taken_at DESC LIMIT ?",
+    [limit]
+  );
+}
+
+export async function listHidden(limit = 500): Promise<MediaRow[]> {
+  const db = await getDb();
+  return db.getAllAsync<MediaRow>(
+    "SELECT * FROM media WHERE visibility = 'hidden' ORDER BY taken_at DESC LIMIT ?",
+    [limit]
+  );
+}
+
 export async function findExpiredTrash(maxAgeDays: number): Promise<MediaRow[]> {
   const cutoff = Date.now() - maxAgeDays * 24 * 60 * 60 * 1000;
   const db = await getDb();

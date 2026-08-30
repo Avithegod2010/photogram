@@ -42,8 +42,11 @@ confirmation, queue dedupe, and the date/grid fixes. All verified live on the Sa
    `adb reverse tcp:8083 tcp:8083` before relaunching the dev client.
 7. Metro: kill by port (`netstat -ano | grep 8083` → Stop-Process), restart with
    `powershell -ExecutionPolicy Bypass -File E:\Dev\run-photogram-metro-fast.ps1` (plain -File hits
-   execution policy from tool shells). No bundle arrives until the dev client fetches — force-stop +
-   deep-link relaunch, then watch `.expo/dev/logs/start.log` for `metro:bundling:done`.
+   execution policy from tool shells). **The first boot after any npm install can take 4+ minutes**
+   (CLI stalls stage-by-stage before `metro:instantiate`) — give it a long uninterrupted window
+   before assuming it crashed; watch `.expo/dev/logs/start.log` for `metro:instantiate` + netstat
+   for the LISTENING line. No bundle is served until the dev client fetches (force-stop + deep-link
+   relaunch, then `metro:bundling:done` in the log).
 8. **DB inspection** (worked great this session): pull db + -wal + -shm via
    `adb exec-out run-as com.photogram.app cat files/SQLite/photogram.db*` → read with `node:sqlite`
    (E:\Dev\nodejs). NOTE: Git Bash mangles `/sdcard/...` paths — set `MSYS_NO_PATHCONV=1`.
@@ -55,15 +58,30 @@ confirmation, queue dedupe, and the date/grid fixes. All verified live on the Sa
 3. Polish: Viewer "Save to device" visual check (code path verified via bulk restore); 2 corrupt-file UX.
 
 ### FIRST ACTIONS for the next session (end of day 2026-08-30)
-1. Reconnect: owner wakes the phone (Settings → Developer options → Wireless debugging) →
+1. ⚠️ **SHARED PHONE**: another automation agent ALSO drives this Samsung via wireless adb
+   (owner told us 2026-08-30 evening). Before ANY adb/ui work, confirm with the owner that the
+   other agent is idle; expect our `adb connect`/`reverse`/force-stops to potentially collide
+   with theirs.
+2. Reconnect: owner wakes the phone (Settings → Developer options → Wireless debugging) →
    `adb mdns services` → `adb connect <ip:port>` → `adb reverse tcp:8083 tcp:8083`.
-2. Metro: check port 8083 is listening; if not, `powershell -ExecutionPolicy Bypass -File
-   E:\Dev\run-photogram-metro-fast.ps1`. Then force-stop + deep-link relaunch the app.
-3. **Upload queue state**: ~1,843 items were pending (270 done / ≈1.9 GB in Saved Messages) when the
+3. Metro is likely still running (or restart per gotcha #7). Then force-stop + deep-link relaunch.
+4. **UNCOMMITTED v0.7 work (code-complete, tsc-clean, NOT yet device-verified — verify then commit):**
+   - Real **Archive** + **Hidden** screens (Collections rows enabled; Hidden gated by
+     `unlockHiddenAlbum()` unless the Settings biometric toggle is off; Unarchive/Unhide actions).
+   - Scanner records **failed file names** (cap 8); scan-complete banner says "N failed (tap for
+     details)" and shows the list + first error.
+   - **Wi-Fi-only / charge-only enforcement** in the uploader (`uploadHoldReason()` — the Settings
+     toggles were decorative before). The worker holds with a visible reason ("Waiting for Wi-Fi…")
+     shown in Settings → Uploads. Charging detection uses **expo-battery** (npm-installed, SOFT-
+     required — the current APK lacks its native module, so charging is "fail open" until the NEXT
+     gradle rebuild; Wi-Fi check works immediately via expo-network).
+   - Verify: Archive/Hidden rows + biometric prompt, tap a failing scan banner, toggle Wi-Fi-only
+     with queue pending → dashboard shows the hold reason.
+5. **Upload queue state**: ~1,843 items were pending (270 done / ≈1.9 GB in Saved Messages) when the
    session ended. The worker AUTO-RESUMES on every app start. If the owner wants it stopped, tap
    Pause in Settings → Uploads (session-only — a restart un-pauses). Uploads overnight are mostly
    throttled by Android doze with the screen off.
-4. Then continue roadmap: S9 group album sharing, Archive/Hidden screens, Save-to-device chip check.
+6. Then continue roadmap: S9 group album sharing (draft a design with the owner first), Save-to-device chip check.
 
 ---
 

@@ -54,7 +54,8 @@ export function SettingsScreen() {
   const uploadDone = useUploadStore((s) => s.done);
   const uploadFailed = useUploadStore((s) => s.failed);
   const uploadPaused = useUploadStore((s) => s.paused);
-  const sessionBytes = useUploadStore((s) => s.sessionBytes);
+  const uploadHoldReason = useUploadStore((s) => s.holdReason);
+  const todayBytes = useUploadStore((s) => s.todayBytes);
 
   const load = useCallback(async () => {
     try {
@@ -344,13 +345,17 @@ export function SettingsScreen() {
               </Text>
             </View>
           ) : (
-            <Row label="No active upload" sub={uploadPaused ? "Uploads are paused" : "Queue is idle"} muted />
+            <Row
+              label="No active upload"
+              sub={uploadPaused ? "Uploads are paused" : uploadHoldReason ?? "Queue is idle"}
+              muted
+            />
           )}
           <View style={styles.queueStats}>
             <StatCard value={String(uploadPending)} caption="Queued" />
             <StatCard value={String(uploadDone)} caption="Uploaded" />
             <StatCard value={String(uploadFailed)} caption="Failed" />
-            <StatCard value={formatBytes(sessionBytes)} caption="This session" />
+            <StatCard value={formatBytes(todayBytes)} caption="Backed up today" />
           </View>
           <Pressable
             style={({ pressed }) => [styles.pauseBtn, pressed && styles.pressed]}

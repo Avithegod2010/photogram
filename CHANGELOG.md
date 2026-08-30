@@ -4,6 +4,42 @@ Each entry below documents what a commit adds and what comes next. Newest first.
 
 ---
 
+## v0.7 — Real Archive + Hidden (biometric gate), corrupt-file UX, upload constraints, gallery polish
+
+**Added in this commit**
+- **Real Archive + Hidden screens**: Collections rows enabled. Archive lists archived media with an
+  Unarchive action; Hidden shows a lock screen and asks for fingerprint/face (`expo-local-authentication`,
+  already compiled in) before fetching or rendering anything — the Settings biometric toggle turns the
+  gate off. Unhide action per item; items open in the full Viewer.
+- **Corrupt-file UX**: the scanner records the names of files that fail (up to 8) and the
+  scan-complete banner reads "N failed (tap for details)" — tapping lists the files, the error, and a
+  note that they're skipped and retried on the next scan.
+- **Wi-Fi-only / charge-only finally enforced**: the Settings toggles were decorative — the upload
+  worker now checks conditions before every item and holds with a visible reason in Settings →
+  Uploads ("Waiting for Wi-Fi…"). Charging detection uses expo-battery, npm-installed with a
+  SOFT-require (fails open until the next gradle build adds its native module); Wi-Fi via
+  expo-network works immediately.
+- **"Backed up today" counter**: replaced the reset-on-restart "This session" stat with a per-day
+  MMKV-persisted total.
+- **Day-section headers in Days mode**: full-width Today / Yesterday / date headers between day
+  groups via FlashList v2 masonry per-item span (skipped while searching).
+- **S9 groundwork**: `src/lib/chats.ts` — `listMyGroups()` lists the user's Telegram groups via raw
+  `td_json_client_send` getChats/getChat with retries.
+- **Housekeeping**: all 10 SDK patch deps aligned (`expo install --fix`, RN 0.86.3, JS-side; APK picks
+  them up at next gradle build). AGENT.md §7 + NEXT_SESSION.md refreshed (shared-phone warning,
+  slow-Metro-boot lesson, v0.7 verification checklist).
+
+**Not yet device-verified** (owner's phone shared with another automation agent): Archive/Hidden +
+biometric gate, scan-fail banner details, Wi-Fi-only hold reason, day headers. Code is tsc-clean and
+served by Metro; verify on next phone access.
+
+**Next plan**
+- S9 Phase 1 shared albums (design decided in docs/S9-DESIGN.md — one-way claim, per-album timeline
+  toggle, never auto-delete family media, 1 group = 1 album with topics as sub-albums)
+- A gradle rebuild is due anyway: brings expo-battery native + SDK bumps (and Maps key if added)
+
+---
+
 ## v0.6 — S8 Auto-albums, cloud counts, upload-completion confirmation, date-unit repair, gallery grid fix
 
 **Added in this commit**

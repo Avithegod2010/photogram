@@ -38,11 +38,37 @@ interface GalleryYearItem {
   count: number;
 }
 
-type GalleryItem = GalleryDataItem | GalleryYearItem;
+interface GalleryDayHeaderItem {
+  __type: "dayHeader";
+  ts: number;
+  label: string;
+}
+
+type GalleryItem = GalleryDataItem | GalleryYearItem | GalleryDayHeaderItem;
 
 function formatDayBadge(ts: number): string {
   const d = new Date(ts);
   return d.toLocaleDateString(undefined, { day: "numeric", month: "short" });
+}
+
+function daySectionLabel(ts: number): string {
+  const d = new Date(ts);
+  const startOfToday = new Date();
+  startOfToday.setHours(0, 0, 0, 0);
+  const startOfYesterday = new Date(startOfToday);
+  startOfYesterday.setDate(startOfYesterday.getDate() - 1);
+  if (d >= startOfToday) return "Today";
+  if (d >= startOfYesterday) return "Yesterday";
+  const opts: Intl.DateTimeFormatOptions =
+    d.getFullYear() === new Date().getFullYear()
+      ? { weekday: "short", day: "numeric", month: "short" }
+      : { day: "numeric", month: "short", year: "numeric" };
+  return d.toLocaleDateString(undefined, opts);
+}
+
+function dayKeyOf(ts: number): number {
+  const d = new Date(ts);
+  return d.getFullYear() * 10000 + d.getMonth() * 100 + d.getDate();
 }
 
 function groupYears(rows: MediaRow[]): GalleryYearItem[] {
@@ -132,7 +158,21 @@ export function GalleryScreen() {
   const data: GalleryItem[] = useMemo(() => {
     if (zoomLevel === "years") return groupYears(rows);
     const source = results ?? rows;
-    return source.map((r) => ({ ...r, __type: "media" as const }));
+    const items = source.map((r) => ({ ...r, __type: "media" as const }));
+    // Days mode gets full-width date section headers (Today / Yesterday / date)
+    // between day groups — skipped while searching so results stay dense.
+    if (zoomLevel !== "days" || results) return items;
+    const withHeaders: GalleryItem[] = [];
+    let lastDay = -1;
+    for (const item of items) {
+      const key = dayKeyOf(item.taken_at);
+      if (key !== lastDay) {
+        withHeaders.push({ __type: "dayHeader", ts: item.taken_at, label: daySectionLabel(item.taken_at) });
+        lastDay = key;
+      }
+      withHeaders.push(item);
+    }
+    return withHeaders;
   }, [rows, zoomLevel, results]);
 
   useEffect(() => {
@@ -159,7 +199,7 @@ export function GalleryScreen() {
 
   const beginScan = useCallback(() => {
     scanCancelRef.current.cancelled = false;
-    setScan({ scanned: 0, added: 0, duplicates: 0, failed: 0, total: null, done: false });
+    setScan({ scanned: 0, added: 0, duplicates: 0, failed: 0, failedNames: [], total: null, done: false });
     let warnedPartial = false;
     void scanDeviceLibrary((p) => {
       setScan(p);
@@ -194,6 +234,13 @@ export function GalleryScreen() {
             <Text style={styles.yearText}>{item.year}</Text>
             <Text style={styles.yearCount}>{item.count} items</Text>
           </Pressable>
+        );
+      }
+      if (item.__type === "dayHeader") {
+        return (
+          <View style={styles.dayHeaderWrap}>
+            <Text style={styles.dayHeaderText}>{item.label}</Text>
+          </View>
         );
       }
       const cols = COLUMNS[zoomLevel];
@@ -299,11 +346,23 @@ export function GalleryScreen() {
         <View style={styles.scanBanner}>
           {scan.done ? (
             <>
-              <Text style={styles.scanText} numberOfLines={2}>
-                Scan complete · {scan.added} added · {scan.duplicates} duplicates skipped
-                {scan.failed > 0 ? ` · ${scan.failed} failed` : ""}
-                {scan.lastError ? ` (${scan.lastError})` : ""}
-              </Text>
+              <Pressable
+                style={{ flex: 1 }}
+                onPress={() => {
+                  if (scan.failed === 0) return;
+                  const names = scan.failedNames.map((n) => `• ${n}`).join("\n");
+                  Alert.alert(
+                    `${scan.failed} item${scan.failed === 1 ? "" : "s"} failed to index`,
+                    `${names || "Unknown files"}\n\n${scan.lastError ?? "The files may be corrupt or unreadable."}\n\nThey were skipped and can be retried on the next scan.`
+                  );
+                }}
+              >
+                <Text style={styles.scanText} numberOfLines={2}>
+                  Scan complete · {scan.added} added · {scan.duplicates} duplicates skipped
+                  {scan.failed > 0 ? ` · ${scan.failed} failed (tap for details)` : ""}
+                  {scan.failed === 0 && scan.lastError ? ` (${scan.lastError})` : ""}
+                </Text>
+              </Pressable>
               <Pressable onPress={() => setScan(null)}>
                 <Text style={styles.scanDismiss}>Dismiss</Text>
               </Pressable>
@@ -343,7 +402,15 @@ export function GalleryScreen() {
             masonry
             numColumns={COLUMNS[zoomLevel]}
             renderItem={renderItem}
-            keyExtractor={(it) => (it.__type === "year" ? `y${it.year}` : `m${it.id}`)}
+            keyExtractor={(it) =>
+              it.__type === "year" ? `y${it.year}` : it.__type === "dayHeader" ? `d${it.ts}` : `m${it.id}`
+            }
+            getItemType={(it) => it.__type}
+            overrideItemLayout={(layout, it) => {
+              if (it.__type === "dayHeader") {
+                layout.span = COLUMNS[zoomLevel];
+              }
+            }}
             onEndReached={() => void loadMore()}
             onEndReachedThreshold={0.4}
             showsVerticalScrollIndicator={false}
@@ -421,6 +488,15 @@ const styles = StyleSheet.create({
   },
   searchCancel: { color: theme.colors.primary, fontWeight: "600", fontSize: 13.5 },
   listContent: { paddingBottom: 96 },
+  dayHeaderWrap: {
+    paddingVertical: theme.spacing.sm,
+    paddingHorizontal: theme.spacing.xs,
+  },
+  dayHeaderText: {
+    color: theme.colors.onSurface,
+    fontSize: 15,
+    fontWeight: "700",
+  },
   cell: {
     flex: 1,
     margin: 1,
