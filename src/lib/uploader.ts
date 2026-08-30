@@ -224,6 +224,7 @@ interface QueueItem {
   local_uri: string;
   byte_size: number;
   attempts: number;
+  chat_id: string | null;
 }
 
 async function runOne(item: QueueItem): Promise<void> {
@@ -246,7 +247,8 @@ async function runOne(item: QueueItem): Promise<void> {
     uploadedBytes: 0,
   });
   await updateQueueStatus(item.id, "active");
-  const chatId = await resolveSavedMessagesChat();
+  // Queue rows may target a shared-album group (S9 phase 2 hook); NULL = Saved Messages.
+  const chatId = item.chat_id ?? (await resolveSavedMessagesChat());
 
   try {
     let path = localUri.replace(/^file:\/\//, "");

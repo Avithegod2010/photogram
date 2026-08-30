@@ -4,6 +4,51 @@ Each entry below documents what a commit adds and what comes next. Newest first.
 
 ---
 
+## v0.8 — S9 Phase 1: Shared albums (one-way claim from a Telegram group)
+
+**Design decisions (owner, 2026-08-30 — full spec in docs/S9-DESIGN.md)**
+- Phased: one-way claim now, chat-parameterized plumbing so two-way needs no rework.
+- Album-only by default; **per-album "Show in my timeline" toggle** (default OFF) + master switch in
+  Settings. Photos the owner sends to the group themselves always stay in the main timeline.
+- **Free-Up-Space never touches family media.**
+- One group = one album (groups created in Telegram); topics as sub-albums = fast-follow.
+- Privacy: Telegram rules + warnings in the picker (extra caution for many-member groups).
+
+**Added in this commit** (NOT yet device-verified — phone shared with another agent)
+- **Schema v4** (additive, PROTECTED files touched with owner approval): `albums.chat_id`,
+  `albums.last_claimed_message_id`, `albums.show_in_timeline`; `album_media.sender_id`,
+  `album_media.message_id`; `upload_queue.chat_id` (NULL = Saved Messages — the phase-2 hook).
+- **Claim engine** (`src/lib/claimer.ts`): per album, reads the group's history past the claim
+  cursor, downloads originals into app storage (device DCIM untouched), makes thumbnails, inserts
+  rows tagged `shared`; own-sender rows stay unlinked; duplicates link the existing row instead of
+  storing copies (and never overwrite an existing Saved Messages remote link); the group message is
+  recorded as the row's remote copy so restore works.
+- **Shared albums UI**: Collections → "Shared albums" → link a group via picker
+  (`listMyGroups()` + privacy warning) → first claim runs immediately with live progress; album
+  cards with cover/count, "⟳ Claim new", Unlink (group untouched); shared album grid = AlbumScreen
+  in shared mode with the timeline toggle.
+- **Timeline exclusion everywhere**: main gallery (honoring master + per-album toggles), Memories,
+  search, map, storage stats, and Free-Up-Space/restore lists all skip album-linked rows.
+- **Uploader**: queue rows carry a target chat (NULL = Saved Messages) — the worker sends there;
+  the completion-confirmation logic is chat-agnostic already.
+- **Delight batch**: 🎲 **Rediscover** button in the gallery header (one random photo, full-screen);
+  **backup heartbeat** under the gallery title ("🔒 All 1,852 backed up · 2h ago" / live X/Y while
+  uploading; counts only the owner's media); **"On this day" Stories** — Memories cards now open a
+  full-screen auto-advancing slideshow (tap left/right to steer, ⤢ opens the viewer); **shared-album
+  activity feed** ("Maya added a photo to Family · 2h ago", sender names resolved from Telegram).
+
+**Verify on device when free**: link a real family group → first claim; toggle per-album + master
+switch and watch the timeline; confirm Free-Up-Space list excludes claimed items; resend a photo
+into the group and "⟳ Claim new" picks it up. Also: Memories card → Story playback, 🎲 button,
+heartbeat line.
+
+**Next plan**
+- Topic sub-albums (fast-follow) · S9 Phase 2 two-way · album organizer (sender/month, long-term)
+- Gradle rebuild due: expo-battery native + SDK bumps + Maps key if added
+- v0.7 on-device checklist still pending (Archive/Hidden, scan-fail banner, Wi-Fi hold, day headers)
+
+---
+
 ## v0.7 — Real Archive + Hidden (biometric gate), corrupt-file UX, upload constraints, gallery polish
 
 **Added in this commit**

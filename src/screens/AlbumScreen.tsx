@@ -1,11 +1,12 @@
 import React, { useCallback, useEffect, useState } from "react";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { Pressable, StyleSheet, Switch, Text, View } from "react-native";
 import { StatusBar } from "expo-status-bar";
 import { Image } from "expo-image";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { FlashList } from "@shopify/flash-list";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { getAlbumMedia } from "../lib/albums";
+import { getSharedAlbum, listAlbumMedia, setAlbumShowInTimeline } from "../db/queries";
 import { MediaRow } from "../db/queries";
 import { theme } from "../theme";
 
@@ -14,19 +15,38 @@ export function AlbumScreen({
   route,
 }: {
   navigation: NativeStackNavigationProp<{ Viewer: { ids: number[]; index: number } }>;
-  route: { params: { key: string; label: string } };
+  route: { params: { key: string; label: string; sharedAlbumId?: number } };
 }) {
   const insets = useSafeAreaInsets();
-  const { key, label } = route.params;
+  const { key, label, sharedAlbumId } = route.params;
   const [rows, setRows] = useState<MediaRow[]>([]);
   const [loaded, setLoaded] = useState(false);
+  const [inTimeline, setInTimeline] = useState(false);
 
   useEffect(() => {
-    void getAlbumMedia(key)
+    const loader = sharedAlbumId !== undefined ? listAlbumMedia(sharedAlbumId) : getAlbumMedia(key);
+    void loader
       .then(setRows)
       .catch(() => setRows([]))
       .finally(() => setLoaded(true));
-  }, [key]);
+  }, [key, sharedAlbumId]);
+
+  // Shared albums: load the current "show in my timeline" choice.
+  useEffect(() => {
+    if (sharedAlbumId === undefined) return;
+    void getSharedAlbum(sharedAlbumId)
+      .then((a) => setInTimeline(!!a?.show_in_timeline))
+      .catch(() => {});
+  }, [sharedAlbumId]);
+
+  const toggleTimeline = useCallback(
+    (value: boolean) => {
+      if (sharedAlbumId === undefined) return;
+      setInTimeline(value);
+      void setAlbumShowInTimeline(sharedAlbumId, value);
+    },
+    [sharedAlbumId]
+  );
 
   const renderItem = useCallback(
     ({ item }: { item: MediaRow }) => (
@@ -69,6 +89,15 @@ export function AlbumScreen({
         <Text style={styles.title}>{label}</Text>
         <Text style={styles.count}>{rows.length > 0 ? `${rows.length}` : ""}</Text>
       </View>
+      {sharedAlbumId !== undefined ? (
+        <View style={styles.toggleRow}>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.toggleLabel}>Show in my timeline</Text>
+            <Text style={styles.toggleNote}>Off = these photos live only in this album</Text>
+          </View>
+          <Switch value={inTimeline} onValueChange={toggleTimeline} />
+        </View>
+      ) : null}
       <FlashList
         data={rows}
         numColumns={3}
@@ -96,6 +125,15 @@ const styles = StyleSheet.create({
   back: { color: theme.colors.onSurface, fontSize: 24 },
   title: { color: theme.colors.onSurface, fontSize: 24, fontWeight: "700", flex: 1 },
   count: { color: theme.colors.onSurfaceVariant, fontSize: 14 },
+  toggleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: theme.spacing.md,
+    paddingVertical: theme.spacing.xs,
+    gap: theme.spacing.md,
+  },
+  toggleLabel: { color: theme.colors.onSurface, fontSize: 14, fontWeight: "600" },
+  toggleNote: { color: theme.colors.onSurfaceVariant, fontSize: 11.5, marginTop: 1 },
   listContent: { paddingBottom: 40, paddingTop: theme.spacing.sm },
   cell: {
     flex: 1,

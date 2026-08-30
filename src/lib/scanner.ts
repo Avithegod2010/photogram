@@ -37,7 +37,7 @@ function autoTagsFor(asset: MediaLibrary.Asset): string {
   return tags.join(" ");
 }
 
-async function makeThumbnail(uri: string, isVideo: boolean): Promise<string> {
+export async function makeThumbnail(uri: string, isVideo: boolean): Promise<string> {
   const thumbsDir = new File(Paths.cache, "thumbs");
   if (!thumbsDir.exists) {
     try {

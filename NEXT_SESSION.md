@@ -57,31 +57,31 @@ confirmation, queue dedupe, and the date/grid fixes. All verified live on the Sa
 2. S9 Telegram-group album sharing · real Albums/Archive/Hidden screens (Hidden + biometric toggle).
 3. Polish: Viewer "Save to device" visual check (code path verified via bulk restore); 2 corrupt-file UX.
 
-### FIRST ACTIONS for the next session (end of day 2026-08-30)
-1. ⚠️ **SHARED PHONE**: another automation agent ALSO drives this Samsung via wireless adb
-   (owner told us 2026-08-30 evening). Before ANY adb/ui work, confirm with the owner that the
-   other agent is idle; expect our `adb connect`/`reverse`/force-stops to potentially collide
-   with theirs.
-2. Reconnect: owner wakes the phone (Settings → Developer options → Wireless debugging) →
-   `adb mdns services` → `adb connect <ip:port>` → `adb reverse tcp:8083 tcp:8083`.
-3. Metro is likely still running (or restart per gotcha #7). Then force-stop + deep-link relaunch.
-4. **UNCOMMITTED v0.7 work (code-complete, tsc-clean, NOT yet device-verified — verify then commit):**
-   - Real **Archive** + **Hidden** screens (Collections rows enabled; Hidden gated by
-     `unlockHiddenAlbum()` unless the Settings biometric toggle is off; Unarchive/Unhide actions).
-   - Scanner records **failed file names** (cap 8); scan-complete banner says "N failed (tap for
-     details)" and shows the list + first error.
-   - **Wi-Fi-only / charge-only enforcement** in the uploader (`uploadHoldReason()` — the Settings
-     toggles were decorative before). The worker holds with a visible reason ("Waiting for Wi-Fi…")
-     shown in Settings → Uploads. Charging detection uses **expo-battery** (npm-installed, SOFT-
-     required — the current APK lacks its native module, so charging is "fail open" until the NEXT
-     gradle rebuild; Wi-Fi check works immediately via expo-network).
-   - Verify: Archive/Hidden rows + biometric prompt, tap a failing scan banner, toggle Wi-Fi-only
-     with queue pending → dashboard shows the hold reason.
-5. **Upload queue state**: ~1,843 items were pending (270 done / ≈1.9 GB in Saved Messages) when the
-   session ended. The worker AUTO-RESUMES on every app start. If the owner wants it stopped, tap
-   Pause in Settings → Uploads (session-only — a restart un-pauses). Uploads overnight are mostly
-   throttled by Android doze with the screen off.
-6. Then continue roadmap: S9 group album sharing (draft a design with the owner first), Save-to-device chip check.
+### LONG-TERM IDEAS BACKLOG (owner-curated)
+- **Telegram as a versioned archive**: when a future editor changes a photo, keep original AND edit
+  as separate Telegram messages linked in the DB — infinite, free, verifiable version history that
+  falls naturally out of the architecture (owner: add when the photo editor lands).
+- **Album organizer**: sort/organize shared-album photos by sender, by month (from S9 Q4).
+- **S9 Phase 2 two-way sync** (docs/S9-DESIGN.md §3).
+- Pending owner approval (proposed 2026-08-30): OCR text search at scan time (ML Kit), auto-backup
+  of specific folders via media-library change subscriptions, "Safety check" screen.
+
+### FIRST ACTIONS for the next session (2026-08-30 late evening)
+1. ⚠️ **SHARED PHONE**: another automation agent ALSO drives this Samsung via wireless adb.
+   Confirm with the owner that the other agent is idle before ANY adb/ui work.
+2. Reconnect: `adb mdns services` → `adb connect <ip:port>` → `adb reverse tcp:8083 tcp:8083`.
+   Metro should still be running on 8083 (restart per gotcha #7 if not).
+3. **UNCOMMITTED v0.8 (S9 Phase 1) + v0.7 on-device checklist — verify both, then commit:**
+   - v0.7: Archive/Hidden rows + biometric gate, scan-fail banner tap-for-details, Wi-Fi-only hold
+     reason in Settings → Uploads, Days-mode day headers.
+   - v0.8 S9: Collections → "Shared albums" → "+ Link group" → picker with privacy warning →
+     first claim runs with live progress → album card appears → open album grid → per-album
+     "Show in my timeline" toggle + Settings master switch flip the timeline.
+     NOTE: schema v4 migration runs on first app launch (check no redbox; DB meta.schema_version=4).
+4. **Upload queue state**: ~1,843 pending (270 done / ≈1.9 GB in Saved Messages) as of session end;
+   worker auto-resumes on app restart; Pause is session-only.
+5. Then: commit v0.8 (CHANGELOG entry already drafted at top of CHANGELOG.md) · topic sub-albums
+   (fast-follow) · S9 Phase 2 two-way · album organizer (long-term, docs/S9-DESIGN.md §3).
 
 ---
 

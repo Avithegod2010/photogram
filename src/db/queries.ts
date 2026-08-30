@@ -52,6 +52,7 @@ export interface QueueRow {
   attempts: number;
   status: "pending" | "active" | "paused" | "done" | "failed";
   error: string | null;
+  chat_id: string | null;
 }
 
 export async function insertMedia(input: NewMediaInput): Promise<number | null> {
@@ -110,16 +111,190 @@ export async function repairTakenAtUnits(): Promise<void> {
   );
 }
 
-export async function pageVisibleMedia(beforeTakenAt: number | null, limit = 120): Promise<MediaRow[]> {
+// --- S9 shared albums -------------------------------------------------------
+// Claimed family media lives in the existing albums/album_media tables. Rules
+// (docs/S9-DESIGN.md): album-only by default, per-album timeline toggle.
+
+// Excludes every album-linked row (Memories, search, map, stats, Free-Up-Space).
+const EXCLUDE_ALL_SHARED = `AND NOT EXISTS (SELECT 1 FROM album_media am WHERE am.media_id = media.id)`;
+
+// Excludes album-linked rows unless their album opted into the timeline.
+const EXCLUDE_UNLESS_TIMELINED = `AND NOT EXISTS (
+  SELECT 1 FROM album_media am JOIN albums a ON a.id = am.album_id
+  WHERE am.media_id = media.id AND a.show_in_timeline = 0
+)`;
+
+export interface SharedAlbumRow {
+  id: number;
+  title: string;
+  chat_id: string;
+  last_claimed_message_id: string | null;
+  show_in_timeline: number;
+  count: number;
+  cover: string | null;
+}
+
+export async function createSharedAlbum(title: string, chatId: string): Promise<number> {
   const db = await getDb();
+  const now = Date.now();
+  const result = await db.runAsync(
+    "INSERT INTO albums (title, chat_id, created_at, updated_at) VALUES (?, ?, ?, ?)",
+    [title, chatId, now, now]
+  );
+  return result.lastInsertRowId;
+}
+
+export async function listSharedAlbums(): Promise<SharedAlbumRow[]> {
+  const db = await getDb();
+  return db.getAllAsync<SharedAlbumRow>(
+    `SELECT a.id, a.title, a.chat_id, a.last_claimed_message_id, a.show_in_timeline,
+       (SELECT COUNT(*) FROM album_media am WHERE am.album_id = a.id) AS count,
+       (SELECT m.thumb_uri FROM album_media am JOIN media m ON m.id = am.media_id
+         WHERE am.album_id = a.id ORDER BY m.taken_at DESC LIMIT 1) AS cover
+     FROM albums a
+     WHERE a.chat_id IS NOT NULL
+     ORDER BY a.created_at DESC`
+  );
+}
+
+export async function getSharedAlbum(id: number): Promise<SharedAlbumRow | null> {
+  const db = await getDb();
+  return (
+    (await db.getFirstAsync<SharedAlbumRow>(
+      `SELECT a.id, a.title, a.chat_id, a.last_claimed_message_id, a.show_in_timeline,
+         (SELECT COUNT(*) FROM album_media am WHERE am.album_id = a.id) AS count,
+         (SELECT m.thumb_uri FROM album_media am JOIN media m ON m.id = am.media_id
+           WHERE am.album_id = a.id ORDER BY m.taken_at DESC LIMIT 1) AS cover
+       FROM albums a WHERE a.id = ?`,
+      [id]
+    )) ?? null
+  );
+}
+
+export async function setAlbumShowInTimeline(id: number, show: boolean): Promise<void> {
+  const db = await getDb();
+  await db.runAsync("UPDATE albums SET show_in_timeline = ?, updated_at = ? WHERE id = ?", [
+    show ? 1 : 0,
+    Date.now(),
+    id,
+  ]);
+}
+
+export async function setAlbumClaimCursor(id: number, messageId: string): Promise<void> {
+  const db = await getDb();
+  await db.runAsync("UPDATE albums SET last_claimed_message_id = ?, updated_at = ? WHERE id = ?", [
+    messageId,
+    Date.now(),
+    id,
+  ]);
+}
+
+export async function findClaimedMessage(
+  albumId: number,
+  messageId: string
+): Promise<{ media_id: number } | null> {
+  const db = await getDb();
+  return (
+    (await db.getFirstAsync<{ media_id: number }>(
+      "SELECT media_id FROM album_media WHERE album_id = ? AND message_id = ?",
+      [albumId, messageId]
+    )) ?? null
+  );
+}
+
+export async function linkMediaToAlbum(
+  albumId: number,
+  mediaId: number,
+  senderId: string | null,
+  messageId: string
+): Promise<void> {
+  const db = await getDb();
+  await db.runAsync(
+    "INSERT OR IGNORE INTO album_media (album_id, media_id, sender_id, message_id, added_at) VALUES (?, ?, ?, ?, ?)",
+    [albumId, mediaId, senderId, messageId, Date.now()]
+  );
+}
+
+export async function listAlbumMedia(albumId: number, limit = 800): Promise<MediaRow[]> {
+  const db = await getDb();
+  return db.getAllAsync<MediaRow>(
+    `SELECT m.* FROM media m
+     JOIN album_media am ON am.media_id = m.id
+     WHERE am.album_id = ?
+     ORDER BY m.taken_at DESC, m.id DESC LIMIT ?`,
+    [albumId, limit]
+  );
+}
+
+export async function deleteSharedAlbum(id: number): Promise<void> {
+  const db = await getDb();
+  await db.runAsync("DELETE FROM albums WHERE id = ?", [id]);
+}
+
+export async function findMediaIdByFingerprint(fingerprint: string): Promise<number | null> {
+  const db = await getDb();
+  const row = await db.getFirstAsync<{ id: number }>(
+    "SELECT id FROM media WHERE fingerprint = ? LIMIT 1",
+    [fingerprint]
+  );
+  return row?.id ?? null;
+}
+
+// --- Delight features --------------------------------------------------------
+
+// "Surprise me": one random photo from the owner's own library.
+export async function getRandomMedia(): Promise<MediaRow | null> {
+  const db = await getDb();
+  return (
+    (await db.getFirstAsync<MediaRow>(
+      `SELECT * FROM media WHERE visibility = 'visible'
+       ${EXCLUDE_ALL_SHARED}
+       ORDER BY RANDOM() LIMIT 1`
+    )) ?? null
+  );
+}
+
+export interface AlbumActivityItem {
+  albumId: number;
+  albumTitle: string;
+  senderId: string | null;
+  thumbUri: string;
+  mediaId: number;
+  addedAt: number;
+}
+
+// Shared-album activity feed: latest claimed photos across all albums.
+export async function listRecentAlbumActivity(limit = 20): Promise<AlbumActivityItem[]> {
+  const db = await getDb();
+  return db.getAllAsync<AlbumActivityItem>(
+    `SELECT am.album_id AS albumId, a.title AS albumTitle, am.sender_id AS senderId,
+            m.thumb_uri AS thumbUri, m.id AS mediaId, am.added_at AS addedAt
+     FROM album_media am
+     JOIN albums a ON a.id = am.album_id
+     JOIN media m ON m.id = am.media_id
+     ORDER BY am.added_at DESC
+     LIMIT ?`,
+    [limit]
+  );
+}
+
+export async function pageVisibleMedia(
+  beforeTakenAt: number | null,
+  limit = 120,
+  includeTimelinedShared = false
+): Promise<MediaRow[]> {
+  const db = await getDb();
+  const sharedFilter = includeTimelinedShared ? EXCLUDE_UNLESS_TIMELINED : EXCLUDE_ALL_SHARED;
   if (beforeTakenAt === null) {
     return db.getAllAsync<MediaRow>(
-      "SELECT * FROM media WHERE visibility = 'visible' ORDER BY taken_at DESC, id DESC LIMIT ?",
+      `SELECT * FROM media WHERE visibility = 'visible' ${sharedFilter}
+       ORDER BY taken_at DESC, id DESC LIMIT ?`,
       [limit]
     );
   }
   return db.getAllAsync<MediaRow>(
-    "SELECT * FROM media WHERE visibility = 'visible' AND (taken_at < ? OR (taken_at = ?)) ORDER BY taken_at DESC, id DESC LIMIT ?",
+    `SELECT * FROM media WHERE visibility = 'visible' ${sharedFilter}
+     AND (taken_at < ? OR (taken_at = ?)) ORDER BY taken_at DESC, id DESC LIMIT ?`,
     [beforeTakenAt, beforeTakenAt, limit]
   );
 }
@@ -170,11 +345,17 @@ export async function setMediaVisibility(id: number, visibility: MediaVisibility
   ]);
 }
 
-export async function enqueueUpload(mediaId: number, localUri: string, byteSize: number): Promise<void> {
+export async function enqueueUpload(
+  mediaId: number,
+  localUri: string,
+  byteSize: number,
+  chatId: string | null = null
+): Promise<void> {
   const db = await getDb();
+  // chatId NULL = Saved Messages (the default); shared-album uploads set the group.
   await db.runAsync(
-    "INSERT INTO upload_queue (media_id, local_uri, byte_size, status, enqueued_at) VALUES (?, ?, ?, 'pending', ?)",
-    [mediaId, localUri, byteSize, Date.now()]
+    "INSERT INTO upload_queue (media_id, local_uri, byte_size, chat_id, status, enqueued_at) VALUES (?, ?, ?, ?, 'pending', ?)",
+    [mediaId, localUri, byteSize, chatId, Date.now()]
   );
   await setMediaState(mediaId, "queued");
 }
@@ -267,8 +448,11 @@ export interface SyncedWithLocal {
 
 export async function getSyncedWithLocal(): Promise<SyncedWithLocal[]> {
   const db = await getDb();
+  // Family media claimed into shared albums is never eligible for Free-Up-Space
+  // (docs/S9-DESIGN.md rule 3) — only the owner's own media is.
   return db.getAllAsync<SyncedWithLocal>(
-    "SELECT id, local_uri, byte_size, file_name, media_library_id FROM media WHERE state = 'synced' AND local_uri IS NOT NULL"
+    `SELECT id, local_uri, byte_size, file_name, media_library_id FROM media
+     WHERE state = 'synced' AND local_uri IS NOT NULL ${EXCLUDE_ALL_SHARED}`
   );
 }
 
@@ -298,8 +482,13 @@ export interface RestorableRow {
 
 export async function getSyncedWithoutLocal(): Promise<RestorableRow[]> {
   const db = await getDb();
+  // Restore-to-device is for the owner's own media; claimed family media is
+  // never locally deleted in the first place (rule 3).
   return db.getAllAsync<RestorableRow>(
-    "SELECT id, byte_size, file_name, remote_chat_id, remote_message_id FROM media WHERE state = 'synced' AND local_uri IS NULL AND remote_message_id IS NOT NULL AND remote_message_id != '0' ORDER BY byte_size ASC"
+    `SELECT id, byte_size, file_name, remote_chat_id, remote_message_id FROM media
+     WHERE state = 'synced' AND local_uri IS NULL AND remote_message_id IS NOT NULL AND remote_message_id != '0'
+     ${EXCLUDE_ALL_SHARED}
+     ORDER BY byte_size ASC`
   );
 }
 
@@ -371,7 +560,10 @@ export interface GeoItem {
 export async function listGeoTagged(limit = 800): Promise<GeoItem[]> {
   const db = await getDb();
   return db.getAllAsync<GeoItem>(
-    "SELECT id, thumb_uri, latitude, longitude FROM media WHERE visibility != 'trashed' AND latitude IS NOT NULL AND longitude IS NOT NULL LIMIT ?",
+    `SELECT id, thumb_uri, latitude, longitude FROM media
+     WHERE visibility != 'trashed' AND latitude IS NOT NULL AND longitude IS NOT NULL
+     ${EXCLUDE_ALL_SHARED}
+     LIMIT ?`,
     [limit]
   );
 }
@@ -383,6 +575,7 @@ export async function searchMediaRaw(query: string, limit = 300): Promise<MediaR
     `SELECT * FROM media
      WHERE visibility = 'visible'
        AND (file_name LIKE ? OR tags LIKE ?)
+     ${EXCLUDE_ALL_SHARED}
      ORDER BY taken_at DESC LIMIT ?`,
     [like, like, limit]
   );
@@ -393,6 +586,7 @@ export async function searchByDateRange(fromMs: number, toMs: number): Promise<M
   return db.getAllAsync<MediaRow>(
     `SELECT * FROM media
      WHERE visibility = 'visible' AND taken_at >= ? AND taken_at < ?
+     ${EXCLUDE_ALL_SHARED}
      ORDER BY taken_at DESC`,
     [fromMs, toMs]
   );
