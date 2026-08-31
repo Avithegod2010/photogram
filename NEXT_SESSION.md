@@ -66,25 +66,21 @@ confirmation, queue dedupe, and the date/grid fixes. All verified live on the Sa
 - Pending owner approval (proposed 2026-08-30): OCR text search at scan time (ML Kit), auto-backup
   of specific folders via media-library change subscriptions, "Safety check" screen.
 
-### FIRST ACTIONS for the next session (2026-09-01 — verification COMPLETE, v0.9 ready to commit)
-1. **v0.9 VERIFIED ON DEVICE (2026-09-01)**: new APK (139.6 MB, gradle build 2h14m) installed with
-   ML Kit OCR native + expo-battery native; app boots clean; schema v5 migrated; **OCR read 687
-   rows** (manga captions, maps, Photogram's own login screens) and **search "Akutami" matched the
-   2 manga pages end-to-end**; Auto-backup + Safety check render and work (Safety verdict: "1319
-   items not yet safe — 14 GB only on this phone", matching the queue). v0.7 + v0.8 checklists also
-   pass (Archive/Hidden verified earlier; heartbeat now 550/1869 · 5.1 GB in cloud, last backup
-   hours ago). → Commit v0.9 (entry drafted at top of CHANGELOG.md) with owner approval.
-2. Bulk backup continues automatically: 550/1869 done (≈8 GB in cloud), ~1577 pending. Worker
-   auto-resumes on app start; auto-backup queues new photos every 5 min. The remaining ~14 GB will
-   take multiple days at 1.5 GB throttles — normal, do not "fix" the throttle.
-3. Gradle state is GOOD: mirrors in android/build.gradle + long HTTP timeouts in gradle.properties
-   are REQUIRED on this network (keep them; android/ is CNG — re-apply after any prebuild). Next
-   rebuild will be fast (fully warm cache). run-photogram-gradle-info.ps1 = --info variant.
-4. Roadmap after commit: S9 topic sub-albums (fast-follow) · Phase 2 two-way · album organizer
-   (long-term, docs/S9-DESIGN.md §3) · versioned-archive idea (long-term backlog in §0 ideas).
-5. Shared machine/phone: the other agent runs photogram-bot Metro on 8081 (E:\Tools
+### FIRST ACTIONS for the next session (2026-09-01 — v0.9 COMMITTED `53f857c`, tree clean, all verified)
+1. **State: v0.7 + v0.8 + v0.9 all committed and device-verified.** The full stack works: gallery
+   (grid + day headers + heartbeat + Stories + dice button), Albums/Shared albums (S9 one-way
+   claim), Archive/Hidden (biometric), OCR search (687 rows indexed, search-proven), auto-backup,
+   Safety check, upload-completion-confirmed worker (550+/1869 in Telegram = about 8 GB; the bulk
+   backup runs automatically over the next days — 14 GB left; the 1.5 GB throttle is BY DESIGN).
+2. Nothing is pending or broken. Next is roadmap: S9 topic sub-albums (fast-follow) · Phase 2
+   two-way · album organizer (long-term, docs/S9-DESIGN.md §3) · versioned-archive idea (long-term
+   backlog in §0 ideas). Ask the owner what they want next.
+3. Shared machine/phone: the other agent runs photogram-bot Metro on 8081 (E:\Tools
 odejs) —
-   coordinate heavy work; never touch their processes.
+   coordinate heavy work; never touch their processes. Phone: USB or wireless adb both work; after
+   any reconnect run `adb reverse tcp:8083 tcp:8083` before relaunching the app.
+4. Gradle is warm — next rebuild is fast. Keep the Aliyun/Tencent mirrors in android/build.gradle
+   and long HTTP timeouts in gradle.properties (CNG — re-apply after prebuild).
 
 ---
 
