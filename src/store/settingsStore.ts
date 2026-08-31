@@ -13,12 +13,18 @@ interface SettingsState {
   chargeOnlyUpload: boolean;
   uploadQuality: UploadQuality;
   sharedTimelineMaster: boolean;
+  ocrSearchEnabled: boolean;
+  autoBackupEnabled: boolean;
+  autoBackupFolders: string[];
   setExifPreserve: (v: boolean) => void;
   setHiddenLockEnabled: (v: boolean) => void;
   setWifiOnlyUpload: (v: boolean) => void;
   setChargeOnlyUpload: (v: boolean) => void;
   setUploadQuality: (q: UploadQuality) => void;
   setSharedTimelineMaster: (v: boolean) => void;
+  setOcrSearchEnabled: (v: boolean) => void;
+  setAutoBackupEnabled: (v: boolean) => void;
+  setAutoBackupFolders: (v: string[]) => void;
 }
 
 export const useSettingsStore = create<SettingsState>()(
@@ -30,12 +36,18 @@ export const useSettingsStore = create<SettingsState>()(
       chargeOnlyUpload: false,
       uploadQuality: "storage_saver",
       sharedTimelineMaster: false,
+      ocrSearchEnabled: false,
+      autoBackupEnabled: false,
+      autoBackupFolders: [],
       setExifPreserve: (v) => set({ exifPreserve: v }),
       setHiddenLockEnabled: (v) => set({ hiddenLockEnabled: v }),
       setWifiOnlyUpload: (v) => set({ wifiOnlyUpload: v }),
       setChargeOnlyUpload: (v) => set({ chargeOnlyUpload: v }),
       setUploadQuality: (q) => set({ uploadQuality: q }),
       setSharedTimelineMaster: (v) => set({ sharedTimelineMaster: v }),
+      setOcrSearchEnabled: (v) => set({ ocrSearchEnabled: v }),
+      setAutoBackupEnabled: (v) => set({ autoBackupEnabled: v }),
+      setAutoBackupFolders: (v) => set({ autoBackupFolders: v }),
     }),
     {
       name: "photogram-settings",

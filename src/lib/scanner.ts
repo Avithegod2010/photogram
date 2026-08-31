@@ -2,8 +2,10 @@ import * as MediaLibrary from "expo-media-library/legacy";
 import { ImageManipulator, SaveFormat } from "expo-image-manipulator";
 import * as VideoThumbnails from "expo-video-thumbnails";
 import { File, Paths } from "expo-file-system";
-import { insertMedia, updateMediaLibraryId, backfillTakenAt } from "../db/queries";
+import type * as TextRecognitionModule from "@react-native-ml-kit/text-recognition";
+import { insertMedia, updateMediaLibraryId, backfillTakenAt, updateOcrText, setMediaState } from "../db/queries";
 import { findDuplicate, quickFingerprint } from "./dedupe";
+import { useSettingsStore } from "../store/settingsStore";
 
 export interface ScanProgress {
   scanned: number;
@@ -11,6 +13,7 @@ export interface ScanProgress {
   duplicates: number;
   failed: number;
   failedNames: string[];
+  addedMediaIds: number[];
   lastError?: string;
   total: number | null;
   done: boolean;
@@ -84,6 +87,34 @@ export async function ensureMediaPermission(): Promise<boolean> {
   return perm.granted;
 }
 
+// OCR (idea 5): reads text inside photos so search can find it. Owner opt-in
+// via Settings. Soft-require — the native module only exists after the next
+// gradle rebuild; until then OCR silently does nothing.
+let textRecognition: typeof TextRecognitionModule.default | null | undefined;
+function requireTextRecognition(): typeof TextRecognitionModule.default | null {
+  if (textRecognition !== undefined) return textRecognition;
+  try {
+    const mod = require("@react-native-ml-kit/text-recognition") as typeof TextRecognitionModule;
+    const fn = mod?.default;
+    textRecognition = typeof fn?.recognize === "function" ? fn : null;
+  } catch {
+    textRecognition = null;
+  }
+  return textRecognition;
+}
+
+async function readTextFromImage(uri: string): Promise<string | null> {
+  const tr = requireTextRecognition();
+  if (!tr) return null;
+  try {
+    const result = await tr.recognize(uri);
+    const text = String(result?.text ?? "").replace(/\s+/g, " ").trim();
+    return text.length > 0 ? text.slice(0, 4000) : null;
+  } catch {
+    return null;
+  }
+}
+
 async function hasOnlySelectedAccess(): Promise<boolean> {
   try {
     const perm = await MediaLibrary.getPermissionsAsync();
@@ -107,10 +138,12 @@ export async function scanDeviceLibrary(
     duplicates: 0,
     failed: 0,
     failedNames: [],
+    addedMediaIds: [],
     total: null,
     done: false,
     partialAccess,
   };
+  const ocrOn = useSettingsStore.getState().ocrSearchEnabled;
   let cursor: string | undefined = undefined;
 
   do {
@@ -148,6 +181,11 @@ export async function scanDeviceLibrary(
           if (existing.taken_at <= 86400000) {
             await backfillTakenAt(existing.id, takenAtMsOf(asset));
           }
+          // OCR backfill for pre-existing rows missing text (photos only).
+          if (ocrOn && !isVideo && (existing.ocr_text ?? null) === null) {
+            const ocr = await readTextFromImage(localUri);
+            if (ocr) await updateOcrText(existing.id, ocr);
+          }
           progress.duplicates++;
           continue;
         }
@@ -171,8 +209,17 @@ export async function scanDeviceLibrary(
           longitude: location?.longitude ?? null,
           media_library_id: asset.id ?? null,
         });
-        if (inserted !== null) progress.added++;
-        else progress.duplicates++;
+        if (inserted !== null) {
+          progress.added++;
+          progress.addedMediaIds.push(inserted);
+          // Idea 5: index searchable text (photos only, owner opt-in).
+          if (ocrOn && !isVideo) {
+            const ocr = await readTextFromImage(localUri);
+            if (ocr) await updateOcrText(inserted, ocr);
+          }
+        } else {
+          progress.duplicates++;
+        }
       } catch (err) {
         progress.failed++;
         if (progress.failedNames.length < 8) progress.failedNames.push(asset.filename);

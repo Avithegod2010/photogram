@@ -4,6 +4,38 @@ Each entry below documents what a commit adds and what comes next. Newest first.
 
 ---
 
+## v0.9 — OCR text search (opt-in), auto-backup folders, Safety check (NOT YET COMMITTED)
+
+**Added in this commit**
+- **OCR text search — owner opt-in (idea 5)**: Settings → Search → "Read text in photos (OCR)".
+  When ON, every scan runs ML Kit text recognition (on-device) over photos and stores the text in
+  the new `media.ocr_text` column (schema v5); search now matches words inside screenshots,
+  receipts, documents. Applies to new scans AND backfills older photos that have no text yet
+  (photos only; videos skipped). Uses `@react-native-ml-kit/text-recognition`, SOFT-required — its
+  native module lands with the next gradle rebuild; until then OCR silently does nothing.
+- **Auto-backup (idea 6)**: Settings → Auto-backup → master toggle + device-folder picker
+  (none selected = all folders). A quiet pass runs 15 s after boot and every 5 minutes: rescan
+  (deduped) → any NEW photo/video in the selected folders is auto-queued for upload. Wi-Fi-only /
+  charge-only holds still apply, and the persistent queue keeps it safe across restarts.
+  `ScanProgress.addedMediaIds` feeds the enqueue decision.
+- **Safety check (idea 7)**: Collections → "Safety check" — the "drop my phone in a river" screen.
+  Verdict card (safe / X items not yet safe, GB that exist only on this phone), stat row (Safe ·
+  Cloud-only · Waiting · Failed), and an attention list sorted worst-first. Covers the owner's own
+  library; family media in shared albums is excluded (never auto-deleted, by design).
+
+**Verify on device when free** (schema v5 migrates on first launch; ML Kit needs the pending
+gradle rebuild before OCR actually reads text):
+- Settings → Search → enable OCR → ⟳ rescan → search a word visible in a screenshot.
+- Settings → Auto-backup → enable + pick folder → take a new photo → it should appear queued
+  within ~5 minutes (or force the pass by restarting the app).
+- Collections → Safety check: verdict matches the heartbeat and queue numbers.
+
+**Next plan**
+- Commit v0.9 after verification · gradle rebuild (ML Kit + expo-battery native + SDK bumps +
+  optional Maps key) · bulk backup resume · S9 topic sub-albums (fast-follow)
+
+---
+
 ## v0.8 — S9 Phase 1: Shared albums (one-way claim from a Telegram group)
 
 **Design decisions (owner, 2026-08-30 — full spec in docs/S9-DESIGN.md)**

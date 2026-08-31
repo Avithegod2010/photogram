@@ -100,6 +100,15 @@ export async function backfillTakenAt(id: number, takenAtMs: number): Promise<vo
   );
 }
 
+export async function updateOcrText(id: number, text: string): Promise<void> {
+  const db = await getDb();
+  await db.runAsync("UPDATE media SET ocr_text = ?, updated_at = ? WHERE id = ?", [
+    text,
+    Date.now(),
+    id,
+  ]);
+}
+
 // One-shot unit repair: a scan pass stored taken_at in ms*1000 (the MediaLibrary
 // timestamp fields are milliseconds on this stack). Values beyond year 2100 are
 // exactly 1000x too large, so dividing recovers the true ms timestamp.
@@ -276,6 +285,66 @@ export async function listRecentAlbumActivity(limit = 20): Promise<AlbumActivity
      LIMIT ?`,
     [limit]
   );
+}
+
+// --- Idea 7: Safety check ----------------------------------------------------
+// "If I drop my phone in a river tomorrow, what do I lose?" — counts + the
+// attention list for the owner's OWN media (family claims are always both-safe
+// by design and never locally deleted).
+export interface SafetyReport {
+  total: number;
+  safeCount: number;
+  cloudOnlyCount: number;
+  pendingCount: number;
+  failedCount: number;
+  bytesWaiting: number;
+  attention: Array<{
+    id: number;
+    file_name: string | null;
+    state: MediaState;
+    byte_size: number;
+    thumb_uri: string;
+  }>;
+}
+
+export async function getSafetyReport(): Promise<SafetyReport> {
+  const db = await getDb();
+  const filter = `visibility != 'trashed' ${EXCLUDE_ALL_SHARED}`;
+  const counts = await db.getFirstAsync<{
+    total: number;
+    safe: number;
+    cloud_only: number;
+    pending: number;
+    failed: number;
+    waiting_bytes: number;
+  }>(`
+    SELECT
+      COUNT(*) AS total,
+      COALESCE(SUM(CASE WHEN state = 'synced' AND local_uri IS NOT NULL THEN 1 ELSE 0 END), 0) AS safe,
+      COALESCE(SUM(CASE WHEN state = 'synced' AND local_uri IS NULL THEN 1 ELSE 0 END), 0) AS cloud_only,
+      COALESCE(SUM(CASE WHEN state IN ('local','queued','uploading') THEN 1 ELSE 0 END), 0) AS pending,
+      COALESCE(SUM(CASE WHEN state = 'failed' THEN 1 ELSE 0 END), 0) AS failed,
+      COALESCE(SUM(CASE WHEN state IN ('local','queued','uploading','failed') THEN byte_size ELSE 0 END), 0) AS waiting_bytes
+    FROM media
+    WHERE ${filter}
+  `);
+  const attention = await db.getAllAsync<SafetyReport["attention"][number]>(
+    `SELECT id, file_name, state, byte_size, thumb_uri FROM media
+     WHERE ${filter} AND state IN ('local','queued','uploading','failed')
+     ORDER BY CASE state WHEN 'failed' THEN 0 WHEN 'uploading' THEN 1 WHEN 'queued' THEN 2 ELSE 3 END,
+              byte_size DESC
+     LIMIT 100`,
+    []
+  );
+  return {
+    total: counts?.total ?? 0,
+    safeCount: counts?.safe ?? 0,
+    cloudOnlyCount: counts?.cloud_only ?? 0,
+    pendingCount: counts?.pending ?? 0,
+    failedCount: counts?.failed ?? 0,
+    bytesWaiting: counts?.waiting_bytes ?? 0,
+    attention,
+  };
 }
 
 export async function pageVisibleMedia(
@@ -574,10 +643,10 @@ export async function searchMediaRaw(query: string, limit = 300): Promise<MediaR
   return db.getAllAsync<MediaRow>(
     `SELECT * FROM media
      WHERE visibility = 'visible'
-       AND (file_name LIKE ? OR tags LIKE ?)
+       AND (file_name LIKE ? OR tags LIKE ? OR ocr_text LIKE ?)
      ${EXCLUDE_ALL_SHARED}
      ORDER BY taken_at DESC LIMIT ?`,
-    [like, like, limit]
+    [like, like, like, limit]
   );
 }
 

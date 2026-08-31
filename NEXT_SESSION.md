@@ -66,22 +66,25 @@ confirmation, queue dedupe, and the date/grid fixes. All verified live on the Sa
 - Pending owner approval (proposed 2026-08-30): OCR text search at scan time (ML Kit), auto-backup
   of specific folders via media-library change subscriptions, "Safety check" screen.
 
-### FIRST ACTIONS for the next session (2026-08-30 late evening)
-1. ⚠️ **SHARED PHONE**: another automation agent ALSO drives this Samsung via wireless adb.
-   Confirm with the owner that the other agent is idle before ANY adb/ui work.
-2. Reconnect: `adb mdns services` → `adb connect <ip:port>` → `adb reverse tcp:8083 tcp:8083`.
-   Metro should still be running on 8083 (restart per gotcha #7 if not).
-3. **UNCOMMITTED v0.8 (S9 Phase 1) + v0.7 on-device checklist — verify both, then commit:**
-   - v0.7: Archive/Hidden rows + biometric gate, scan-fail banner tap-for-details, Wi-Fi-only hold
-     reason in Settings → Uploads, Days-mode day headers.
-   - v0.8 S9: Collections → "Shared albums" → "+ Link group" → picker with privacy warning →
-     first claim runs with live progress → album card appears → open album grid → per-album
-     "Show in my timeline" toggle + Settings master switch flip the timeline.
-     NOTE: schema v4 migration runs on first app launch (check no redbox; DB meta.schema_version=4).
-4. **Upload queue state**: ~1,843 pending (270 done / ≈1.9 GB in Saved Messages) as of session end;
-   worker auto-resumes on app restart; Pause is session-only.
-5. Then: commit v0.8 (CHANGELOG entry already drafted at top of CHANGELOG.md) · topic sub-albums
-   (fast-follow) · S9 Phase 2 two-way · album organizer (long-term, docs/S9-DESIGN.md §3).
+### FIRST ACTIONS for the next session (2026-09-01 — verification COMPLETE, v0.9 ready to commit)
+1. **v0.9 VERIFIED ON DEVICE (2026-09-01)**: new APK (139.6 MB, gradle build 2h14m) installed with
+   ML Kit OCR native + expo-battery native; app boots clean; schema v5 migrated; **OCR read 687
+   rows** (manga captions, maps, Photogram's own login screens) and **search "Akutami" matched the
+   2 manga pages end-to-end**; Auto-backup + Safety check render and work (Safety verdict: "1319
+   items not yet safe — 14 GB only on this phone", matching the queue). v0.7 + v0.8 checklists also
+   pass (Archive/Hidden verified earlier; heartbeat now 550/1869 · 5.1 GB in cloud, last backup
+   hours ago). → Commit v0.9 (entry drafted at top of CHANGELOG.md) with owner approval.
+2. Bulk backup continues automatically: 550/1869 done (≈8 GB in cloud), ~1577 pending. Worker
+   auto-resumes on app start; auto-backup queues new photos every 5 min. The remaining ~14 GB will
+   take multiple days at 1.5 GB throttles — normal, do not "fix" the throttle.
+3. Gradle state is GOOD: mirrors in android/build.gradle + long HTTP timeouts in gradle.properties
+   are REQUIRED on this network (keep them; android/ is CNG — re-apply after any prebuild). Next
+   rebuild will be fast (fully warm cache). run-photogram-gradle-info.ps1 = --info variant.
+4. Roadmap after commit: S9 topic sub-albums (fast-follow) · Phase 2 two-way · album organizer
+   (long-term, docs/S9-DESIGN.md §3) · versioned-archive idea (long-term backlog in §0 ideas).
+5. Shared machine/phone: the other agent runs photogram-bot Metro on 8081 (E:\Tools
+odejs) —
+   coordinate heavy work; never touch their processes.
 
 ---
 

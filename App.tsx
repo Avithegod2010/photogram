@@ -8,6 +8,7 @@ import { LoginScreen } from "./src/screens/LoginScreen";
 import { RootNavigator } from "./src/navigation";
 import { purgeExpiredTrash } from "./src/lib/trash";
 import { repairTakenAtUnits } from "./src/db/queries";
+import { startAutoBackupLoop } from "./src/lib/autoBackup";
 import { theme } from "./src/theme";
 
 export default function App() {
@@ -17,6 +18,7 @@ export default function App() {
     if (phase === "ready") {
       void purgeExpiredTrash().catch(() => {});
       void repairTakenAtUnits().catch(() => {});
+      startAutoBackupLoop();
     }
   }, [phase]);
 

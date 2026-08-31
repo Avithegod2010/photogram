@@ -25,11 +25,11 @@ export function quickFingerprint(input: FileFingerprintInput): string {
 
 export async function findDuplicate(
   fingerprint: string
-): Promise<{ id: number; state: string; taken_at: number } | null> {
+): Promise<{ id: number; state: string; taken_at: number; ocr_text: string | null } | null> {
   const db = await getDb();
   return (
-    db.getFirstAsync<{ id: number; state: string; taken_at: number }>(
-      "SELECT id, state, taken_at FROM media WHERE fingerprint = ? LIMIT 1",
+    db.getFirstAsync<{ id: number; state: string; taken_at: number; ocr_text: string | null }>(
+      "SELECT id, state, taken_at, ocr_text FROM media WHERE fingerprint = ? LIMIT 1",
       [fingerprint]
     ) ?? null
   );
