@@ -231,7 +231,7 @@ export function GalleryScreen() {
 
   const beginScan = useCallback(() => {
     scanCancelRef.current.cancelled = false;
-    setScan({ scanned: 0, added: 0, duplicates: 0, failed: 0, failedNames: [], total: null, done: false });
+    setScan({ scanned: 0, added: 0, duplicates: 0, failed: 0, failedNames: [], addedMediaIds: [], total: null, done: false });
     let warnedPartial = false;
     void scanDeviceLibrary((p) => {
       setScan(p);

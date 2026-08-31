@@ -10,6 +10,7 @@ import { ArchiveScreen } from "../screens/ArchiveScreen";
 import { HiddenScreen } from "../screens/HiddenScreen";
 import { SharedAlbumsScreen } from "../screens/SharedAlbumsScreen";
 import { StoryScreen } from "../screens/StoryScreen";
+import { SafetyCheckScreen } from "../screens/SafetyCheckScreen";
 
 export type RootStackParamList = {
   Tabs: undefined;
@@ -22,6 +23,7 @@ export type RootStackParamList = {
   Archive: undefined;
   Hidden: undefined;
   SharedAlbums: undefined;
+  SafetyCheck: undefined;
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -47,6 +49,7 @@ export function RootNavigator() {
       <Stack.Screen name="Archive" component={ArchiveScreen} />
       <Stack.Screen name="Hidden" component={HiddenScreen} />
       <Stack.Screen name="SharedAlbums" component={SharedAlbumsScreen} />
+      <Stack.Screen name="SafetyCheck" component={SafetyCheckScreen} />
     </Stack.Navigator>
   );
 }

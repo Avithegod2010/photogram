@@ -12,6 +12,7 @@ type CollectionsNav = NativeStackNavigationProp<{
   Archive: undefined;
   Hidden: undefined;
   SharedAlbums: undefined;
+  SafetyCheck: undefined;
 }>;
 
 const SECTIONS = [
@@ -22,6 +23,7 @@ const SECTIONS = [
   { key: "trash", label: "Trash", sub: "Deleted items · 30-day countdown", enabled: true, route: "Trash" },
   { key: "map", label: "Map", sub: "Photos placed on the world by GPS data", enabled: true, route: "Map" },
   { key: "hidden", label: "Hidden", sub: "Locked behind your fingerprint or face", enabled: true, route: "Hidden" },
+  { key: "safety", label: "Safety check", sub: "What exists only on this phone?", enabled: true, route: "SafetyCheck" },
 ] as const;
 
 export function CollectionsScreen({ navigation }: { navigation: CollectionsNav }) {

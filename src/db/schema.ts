@@ -90,6 +90,12 @@ ALTER TABLE album_media ADD COLUMN message_id TEXT;
 ALTER TABLE upload_queue ADD COLUMN chat_id TEXT;
 `;
 
+// Idea 5: searchable text inside photos (screenshots/receipts). Only populated
+// when the owner enables OCR in Settings.
+const SCHEMA_V5 = `
+ALTER TABLE media ADD COLUMN ocr_text TEXT;
+`;
+
 export interface Migration {
   version: number;
   up: string;
@@ -100,6 +106,7 @@ export const MIGRATIONS: Migration[] = [
   { version: 2, up: SCHEMA_V2 },
   { version: 3, up: SCHEMA_V3 },
   { version: 4, up: SCHEMA_V4 },
+  { version: 5, up: SCHEMA_V5 },
 ];
 
 export function migrationsAfter(version: number): Migration[] {

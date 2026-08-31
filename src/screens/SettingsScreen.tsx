@@ -50,6 +50,38 @@ export function SettingsScreen() {
   const setUploadQuality = useSettingsStore((s) => s.setUploadQuality);
   const sharedTimelineMaster = useSettingsStore((s) => s.sharedTimelineMaster);
   const setSharedTimelineMaster = useSettingsStore((s) => s.setSharedTimelineMaster);
+  const ocrSearchEnabled = useSettingsStore((s) => s.ocrSearchEnabled);
+  const setOcrSearchEnabled = useSettingsStore((s) => s.setOcrSearchEnabled);
+  const autoBackupEnabled = useSettingsStore((s) => s.autoBackupEnabled);
+  const setAutoBackupEnabled = useSettingsStore((s) => s.setAutoBackupEnabled);
+  const autoBackupFolders = useSettingsStore((s) => s.autoBackupFolders);
+  const setAutoBackupFolders = useSettingsStore((s) => s.setAutoBackupFolders);
+
+  // Device albums for the auto-backup folder picker.
+  const [deviceAlbums, setDeviceAlbums] = useState<Array<{ id: string; title: string }>>([]);
+  useEffect(() => {
+    if (!autoBackupEnabled || deviceAlbums.length > 0) return;
+    void (async () => {
+      try {
+        const MediaLibrary = await import("expo-media-library/legacy");
+        const albums = await MediaLibrary.getAlbumsAsync({ includeSmartAlbums: false });
+        setDeviceAlbums(
+          albums
+            .filter((a) => (a.assetCount ?? 0) > 0)
+            .map((a) => ({ id: a.id, title: a.title }))
+        );
+      } catch {
+        setDeviceAlbums([]);
+      }
+    })();
+  }, [autoBackupEnabled, deviceAlbums.length]);
+
+  const toggleAutoFolder = useCallback((title: string) => {
+    const next = autoBackupFolders.includes(title)
+      ? autoBackupFolders.filter((f) => f !== title)
+      : [...autoBackupFolders, title];
+    setAutoBackupFolders(next);
+  }, [autoBackupFolders, setAutoBackupFolders]);
   const boot = useAuthStore((s) => s.boot);
   const uploadActive = useUploadStore((s) => s.active);
   const uploadPending = useUploadStore((s) => s.pending);
@@ -217,6 +249,45 @@ export function SettingsScreen() {
             </Text>
             <Switch value={sharedTimelineMaster} onValueChange={setSharedTimelineMaster} />
           </View>
+        </Section>
+
+        <Section title="Auto-backup">
+          <ToggleRow
+            label="Back up new photos automatically"
+            sub="Photogram quietly rescans every 5 minutes and queues anything new. Wi-Fi/charging rules still apply."
+            value={autoBackupEnabled}
+            onChange={setAutoBackupEnabled}
+          />
+          {autoBackupEnabled ? (
+            <>
+              <Text style={styles.rowSub}>
+                Choose which folders to watch (none selected = all folders):
+              </Text>
+              {(deviceAlbums ?? []).map((album) => (
+                <View key={album.id} style={styles.folderRow}>
+                  <Text style={styles.folderName} numberOfLines={1}>
+                    {album.title}
+                  </Text>
+                  <Switch
+                    value={autoBackupFolders.includes(album.title)}
+                    onValueChange={() => toggleAutoFolder(album.title)}
+                  />
+                </View>
+              ))}
+              {deviceAlbums !== null && deviceAlbums.length === 0 ? (
+                <Text style={styles.rowSub}>No device albums found.</Text>
+              ) : null}
+            </>
+          ) : null}
+        </Section>
+
+        <Section title="Search">
+          <ToggleRow
+            label="Read text in photos (OCR)"
+            sub="Lets search find words inside screenshots and receipts. Adds a few minutes to a full scan; applies to new scans and backfills older photos."
+            value={ocrSearchEnabled}
+            onChange={setOcrSearchEnabled}
+          />
         </Section>
 
         <Section title="Backup preferences">
@@ -531,6 +602,13 @@ const styles = StyleSheet.create({
   },
   freeBtnText: { color: theme.colors.onPrimary, fontWeight: "700", fontSize: 13 },
   btnDisabledStyle: { opacity: 0.45 },
+  folderRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingVertical: 6,
+  },
+  folderName: { color: theme.colors.onSurface, fontSize: 13.5, flex: 1, marginRight: 12 },
   statGrid: { flexDirection: "row", gap: theme.spacing.sm, padding: theme.spacing.md, paddingBottom: 0 },
   gridSecond: { paddingBottom: theme.spacing.md, paddingTop: theme.spacing.sm },
   statCard: {
