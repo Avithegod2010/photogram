@@ -5,38 +5,45 @@ Last updated: end of day 2026-09-01 (§0). Read §0, then §1–§17. CHANGELOG.
 
 ---
 
-## 0. CURRENT STATE — NIGHT 2026-09-02 · v0.10 COMMITTED `7103e08` · ONE OPEN DEVICE ISSUE (claim failures) · F1 v0.11 MIGRATION CODING STARTED
+## 0. CURRENT STATE — NIGHT 2026-09-02 (late) · v0.10.1 COMMITTED · CLAIM HOTFIX VERIFIED · F1 v0.11 IMPLEMENTED (UNDER REVIEW)
 
-**Owner's directive (2026-09-02):** commit v0.10 (DONE) and start coding the six planned features
-one by one — v0.11 F1 One-tap phone migration is FIRST. Plan: `docs/PLAN-FEATURES-v0.11-plus.md`
-(F1..F6 → v0.11..v0.16; owner approved the plan by saying "commit and get start on coding").
+**Owner directive:** one feature per version, code one-by-one. v0.10 + v0.10.1 done. F1 (v0.11
+One-tap phone migration) is IMPLEMENTED and awaiting code-review + device verification. Plan:
+`docs/PLAN-FEATURES-v0.11-plus.md`. Next features in order: F2 Junk Sweeper (v0.12), F3 Photo
+journaling (v0.13, needs TdApi.EditMessageCaption wrapper + gradle rebuild), F4 Heartbeat share
+(v0.14), F5 On this day (v0.15), F6 Vibe search (v0.16, opt-in tflite).
 
-### v0.10 COMMITTED — one open device issue
-- Committed `7103e08`: topic sub-albums (schema v6), group-picker fix (typed wrappers), native
-  getForumTopics wrapper, ScrollView picker fix, claim-alert error surfacing. tsc clean.
-- **OPEN ISSUE — claim failures (diagnose FIRST, before trusting forum verification):** the
-  owner's "Photogram" test group (chat_id -1003845444305) linked fine (album id 1 created), but
-  claim run 1 = "0 claimed · 1 failed", run 2 = "0 claimed · 0 duplicates · 51 failed", and
-  forum_topics stayed EMPTY (the claim took the flat path — either isForumChat returned false or
-  listForumTopics returned null/[]). Facts: claimOne's core is UNCHANGED from the v0.8-verified
-  claimer (diff-verified before commit); the native wrapper IS in the installed APK (classes2.dex);
-  TDLib network is fine (uploads ran during the test). Claim alerts NOW surface the stored error
-  ("N failed — <reason>") — JS-only change, hot-reloads via Metro 8083. NEXT: reload the app →
-  Collections → Shared albums → "⟳ Claim new" on the Photogram album → READ THE ERROR → fix.
-  Then finish forum verification (chips → filter → claim-twice-0-new → plain-group regression).
-  Possible causes: GetRemoteFile failing for group photos ("Could not resolve file by remote id"
-  would confirm), isForumChat false (check getSupergroup isForum read on this chat),
-  listForumTopics null (check logcat "[forum]" lines).
+### Claim engine: FIXED + device-verified (v0.10.1 `469863f`)
+- Root cause of "0 claimed · N failed": TDLib `downloadFileByRemoteId` returns a PLAIN path
+  (`/data/user/0/...`) but the expo-file-system `File` API requires an absolute `file://` URI —
+  `claimOne` now normalizes (`file://` prefix). Claim alerts also surface the stored error text.
+- Device-verified: "Claimed 1 new · 0 failed" on the "Photogram" album (album id 1, chat
+  -1003845444305); cursor advanced to 2314207232; activity feed renders the add.
+- NOTE: that run's cursor jumped past the 51 previously-failed older messages (flat-path cursor is
+  max-seen) — they will NOT re-claim; that group is the OLD plain test group anyway.
+- **PENDING: topic-chip verification needs the owner's actual TOPIC-ENABLED group** — "Photogram"
+  is a plain group (isForumChat correctly false, no chip row, flat path). Owner was asked which
+  group has Topics enabled; no answer yet. Candidates seen in the picker: "S24fe chitralaya",
+  "Papa chitralaya", or owner creates a new one. Chips render only for a forum group (AlbumScreen
+  chip row); once linked, verify: chip row with counts → chip filters grid → Viewer pager →
+  claim twice (0 new) → plain-group regression (no chip row).
 
-### S9 device retest progress (2026-09-01→02)
-- ✅ APK (20:21, native getForumTopics) installed; schema v6 migration VERIFIED on device:
-  meta.schema_version=6, album_media.forum_topic_id (TEXT), forum_topics table exist; `media`
-  1907 + `upload_queue` 2132 rows intact (zero data loss). albums/album_media/forum_topics were
-  0 rows because no shared album was linked yet (now album id 1 exists — see open issue).
-- ✅ **Picker bug fix CONFIRMED LIVE**: "+ Link group" lists real Telegram groups; ScrollView fix
-  verified (list scrolls, groups beyond the 5th reachable).
-- ✅ Link flow verified end-to-end (confirm dialog → album created → first claim runs).
-- ⏸ Remaining checks blocked on the claim open issue above.
+### F1 v0.11 (uncommitted, under review at time of writing)
+- coder (subagent) implemented per plan Path A: NEW `src/lib/rehydrate.ts` (paged Saved Messages
+  inventory → insert state='synced' rows local_uri:null + setMediaRemote; idempotent via
+  findMediaIdByRemoteMessage), NEW `src/screens/MigrateScreen.tsx` (scan/rebuild + paced restore
+  via restorer's restoreMediaToDevice with pause/resume + album re-link via listMyGroups →
+  createSharedAlbum + claimAlbumMedia), route `Migrate`, Settings row, Gallery empty-library
+  banner gated on `hasSavedMessagesMedia()` + one-time MMKV flag `migrationBannerShown`.
+- queries.ts: local_uri widened to string|null (cloud-only rows) + findMediaIdByRemoteMessage.
+- claimer.ts: ONLY `export` added to extractMedia (permitted exception). Protected files +
+  uploader/forum/chats/AlbumScreen/SharedAlbumsScreen untouched. tsc clean.
+- Deviations accepted: inventory+rebuild are ONE pass (counting requires the walk anyway);
+  migrated rows have no thumbnails until restored; no live "still uploading on old phone" counter
+  (Re-scan button covers it).
+- NEXT: code-reviewer verdict → fix findings → device verify (banner only on empty library;
+  inventory count vs real Saved Messages; restore a few items; re-link an album) → v0.11
+  CHANGELOG entry → owner approval → commit.
 
 **The full product loop works and v0.6 added S8 Auto-albums, cloud storage counts, upload-completion
 confirmation, queue dedupe, and the date/grid fixes. All verified live on the Samsung (SM-S942B).**
