@@ -4,7 +4,7 @@ Each entry below documents what a commit adds and what comes next. Newest first.
 
 ---
 
-## v0.10 — Shared-album topic sub-albums + group-picker fix (NOT YET COMMITTED)
+## v0.10 — Shared-album topic sub-albums + group-picker fix (COMMITTED `7103e08`)
 
 **Added in this commit**
 - **Topic sub-albums (S9 Phase 2)**: a Telegram group with Topics (forum) enabled becomes one album
