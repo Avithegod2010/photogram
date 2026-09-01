@@ -6,10 +6,15 @@ import {
   getSharedAlbum,
   insertMedia,
   linkMediaToAlbum,
+  listAlbumMediaWithoutTopic,
+  replaceForumTopics,
   setAlbumClaimCursor,
+  setAlbumMediaTopic,
   setMediaRemote,
+  SharedAlbumRow,
 } from "../db/queries";
 import { quickFingerprint } from "./dedupe";
+import { fetchThreadMessages, isForumChat, listForumTopics, ForumTopicRef } from "./forum";
 import { makeThumbnail } from "./scanner";
 
 // S9 Phase 1 claim engine (docs/S9-DESIGN.md): pulls media messages from a
@@ -178,7 +183,8 @@ async function claimOne(
   albumId: number,
   chatId: string,
   message: TdAny,
-  ownUserId: string | null
+  ownUserId: string | null,
+  threadId: string | null
 ): Promise<"claimed" | "duplicate" | "failed"> {
   const messageId = String(message.id);
   const info = extractMedia(message);
@@ -250,28 +256,25 @@ async function claimOne(
       albumId,
       mediaId,
       String(firstDefined(message.senderId, message.sender_id, "")) || null,
-      messageId
+      messageId,
+      threadId
     );
   }
   return outcome;
 }
 
-// Pulls new media from the group into the album. Processes oldest-first so the
-// cursor only ever moves forward; returns a progress snapshot.
-export async function claimAlbumMedia(
-  albumId: number,
-  onProgress?: (p: ClaimProgress) => void,
+// The original (non-forum) claim path (D5): groups without topics behave
+// exactly as before this feature — getChatHistory → oldest-first → max-id
+// cursor. The forum path below is fully additive behind isForumChat.
+async function claimAlbumFlat(
+  album: SharedAlbumRow,
+  progress: ClaimProgress,
+  report: () => void,
   cancelRef?: { cancelled: boolean }
-): Promise<ClaimProgress> {
-  const album = await getSharedAlbum(albumId);
-  if (!album) throw new Error("Shared album not found.");
-
-  const progress: ClaimProgress = { claimed: 0, duplicates: 0, failed: 0, done: false };
-  const report = () => onProgress?.({ ...progress });
-
-  try {
-    await TdLib.openChat(Number(album.chat_id));
-  } catch {}
+): Promise<void> {
+  const cursor = album.last_claimed_message_id
+    ? Number(album.last_claimed_message_id)
+    : 0;
 
   // Fresh chats can return empty history for a few seconds — retry briefly.
   let history: Array<{ raw_json: string }> = [];
@@ -283,9 +286,6 @@ export async function claimAlbumMedia(
     await new Promise((resolve) => setTimeout(resolve, 1500));
   }
 
-  const cursor = album.last_claimed_message_id
-    ? Number(album.last_claimed_message_id)
-    : 0;
   const messages: TdAny[] = [];
   let newestSeenId = cursor;
   for (const entry of history) {
@@ -305,7 +305,7 @@ export async function claimAlbumMedia(
   for (const message of messages) {
     if (cancelRef?.cancelled) break;
     try {
-      const outcome = await claimOne(album.id, album.chat_id, message, ownUserId);
+      const outcome = await claimOne(album.id, album.chat_id, message, ownUserId, null);
       if (outcome === "claimed") progress.claimed++;
       else if (outcome === "duplicate") progress.duplicates++;
       else {
@@ -321,7 +321,177 @@ export async function claimAlbumMedia(
   }
 
   if (batch.newestMessageId && Number(batch.newestMessageId) > cursor && !cancelRef?.cancelled) {
-    await setAlbumClaimCursor(albumId, batch.newestMessageId);
+    await setAlbumClaimCursor(album.id, batch.newestMessageId);
+  }
+}
+
+// Pulls new media from the group into the album; returns a progress snapshot.
+// Forum-enabled groups are claimed per topic (D3/D4); groups without topics
+// take claimAlbumFlat above, byte-identical to before this feature.
+export async function claimAlbumMedia(
+  albumId: number,
+  onProgress?: (p: ClaimProgress) => void,
+  cancelRef?: { cancelled: boolean }
+): Promise<ClaimProgress> {
+  const album = await getSharedAlbum(albumId);
+  if (!album) throw new Error("Shared album not found.");
+
+  const progress: ClaimProgress = { claimed: 0, duplicates: 0, failed: 0, done: false };
+  const report = () => onProgress?.({ ...progress });
+
+  try {
+    await TdLib.openChat(Number(album.chat_id));
+  } catch {}
+
+  const isForum = await isForumChat(album.chat_id);
+  if (!isForum) {
+    await claimAlbumFlat(album, progress, report, cancelRef);
+    progress.done = true;
+    report();
+    return progress;
+  }
+
+  const topics = await listForumTopics(album.chat_id);
+  if (topics === null || topics.length === 0) {
+    // null = TDLib could not be read (error / no reply after retries) — a
+    // transient failure, not an empty forum: claim flat rather than failing
+    // the whole run, note it, and the next claim retries the topic split
+    // (D2b mitigation). [] = a genuinely topic-less forum: flat is simply
+    // correct, no note.
+    if (topics === null) {
+      progress.lastError = "Could not read topics; claimed without topic split";
+    }
+    await claimAlbumFlat(album, progress, report, cancelRef);
+    progress.done = true;
+    report();
+    return progress;
+  }
+
+  await replaceForumTopics(albumId, topics);
+  const cursor = album.last_claimed_message_id
+    ? Number(album.last_claimed_message_id)
+    : 0;
+  const ownUserId = await currentUserId();
+
+  // Snapshot phase (D3): metadata-only history per topic BEFORE the slow
+  // downloads run. Message ids are globally sequential inside one chat (topics
+  // are reply-threads of one channel), so the single per-album cursor can
+  // safely advance to the MINIMUM newest id across the read, non-empty topics
+  // — a message posted into any topic mid-run always lands above that, so it
+  // can never be skipped. (Max would let a mid-run message in a slower topic
+  // fall below the cursor. The cursor only advances when EVERY topic was read
+  // this run — see the cursor update below; empty topics read fine but have
+  // no newest id.) newestId counts every message regardless of media type.
+  const snapshots: Array<{
+    topic: ForumTopicRef;
+    pending: TdAny[];
+    // READ = the fetch returned a non-null array (possibly empty). A failed
+    // fetch is NOT read and blocks the cursor; an empty topic IS read.
+    wasRead: boolean;
+    // Newest message id, or null when the topic is empty (or never read).
+    newestId: number | null;
+  }> = [];
+  for (const topic of topics) {
+    if (cancelRef?.cancelled) break;
+    const history = await fetchThreadMessages(album.chat_id, topic.threadId);
+    // null = fetch failed: this topic was NOT read, which blocks the cursor
+    // from advancing this run (see below). [] = genuinely empty topic: READ,
+    // and it contributes nothing to the min — nothing in it can be skipped.
+    const wasRead = history !== null;
+    let newestId: number | null = null;
+    const pending: TdAny[] = [];
+    for (const message of history ?? []) {
+      if (typeof message.id !== "number") continue;
+      if (newestId === null || message.id > newestId) newestId = message.id;
+      if (message.id > cursor && extractMedia(message)) pending.push(message);
+    }
+    // Oldest first per topic, as the flat path, so the library order matches.
+    pending.sort((a, b) => a.id - b.id);
+    snapshots.push({ topic, pending, wasRead, newestId });
+  }
+
+  // Claim phase: per topic, oldest-first, attributing each message to its
+  // thread. findClaimedMessage duplicate guard and progress reporting unchanged.
+  for (const snapshot of snapshots) {
+    for (const message of snapshot.pending) {
+      if (cancelRef?.cancelled) break;
+      try {
+        const outcome = await claimOne(
+          album.id,
+          album.chat_id,
+          message,
+          ownUserId,
+          snapshot.topic.threadId
+        );
+        if (outcome === "claimed") progress.claimed++;
+        else if (outcome === "duplicate") progress.duplicates++;
+        else {
+          progress.failed++;
+          if (!progress.lastError) progress.lastError = "Unsupported or unreadable media in group";
+        }
+      } catch (err) {
+        progress.failed++;
+        if (!progress.lastError && err instanceof Error) progress.lastError = err.message;
+      }
+      report();
+    }
+  }
+
+  if (!cancelRef?.cancelled) {
+    // Invariant: the cursor advances only when every topic was read this run,
+    // and never backward — otherwise a topic missed this run would be skipped
+    // permanently (its new messages would land below the advanced cursor and
+    // never be rescanned). A partial run keeps whatever it claimed above but
+    // leaves the cursor untouched so missed topics are retried next claim. An
+    // empty topic counts as read and contributes nothing to the min — it has
+    // no messages to skip, and any future message in it lands above the cursor.
+    const nonEmptyNewestIds = snapshots
+      .filter((s) => s.wasRead && s.newestId !== null)
+      .map((s) => s.newestId)
+      .filter((id): id is number => id !== null);
+    const readCount = snapshots.filter((s) => s.wasRead).length;
+    const everyTopicRead = snapshots.length === topics.length && readCount === topics.length;
+    if (everyTopicRead && nonEmptyNewestIds.length > 0) {
+      const computed = Math.min(...nonEmptyNewestIds);
+      // Missing/invalid stored cursor = no constraint (previous stays 0; real
+      // message ids are always positive, so the computed min still wins).
+      const existing = Number(album.last_claimed_message_id);
+      const previous = Number.isFinite(existing) && existing > 0 ? existing : 0;
+      if (computed > previous) {
+        await setAlbumClaimCursor(albumId, String(computed));
+      }
+    } else if (!everyTopicRead && !progress.lastError) {
+      const unread = topics.length - readCount;
+      progress.lastError = `${unread} topic(s) unread this run; will retry next claim`;
+    }
+  }
+
+  // Opportunistic backfill (Task 4b): pre-feature rows have no topic recorded.
+  // Own-sender messages get no album_media row, so only family media is here.
+  if (!cancelRef?.cancelled) {
+    const untopicRows = await listAlbumMediaWithoutTopic(albumId);
+    const chatIdNumber = Number(album.chat_id);
+    for (const row of untopicRows) {
+      if (cancelRef?.cancelled) break;
+      const messageId = Number(row.message_id);
+      if (!Number.isFinite(messageId)) continue;
+      try {
+        // getMessage returns a bare gson error object on 404 (never throws for
+        // those) — parse and check @type before trusting the payload.
+        const result = await TdLib.getMessage(chatIdNumber, messageId);
+        const m = JSON.parse(result.raw) as TdAny;
+        if (!m || m["@type"] === "error") continue;
+        const threadId = firstDefined(
+          m.messageThreadId,
+          m.message_thread_id,
+          m.replyTo?.messageReplyToMessage?.replyToMessageId,
+          m.replyTo?.messageReplyToMessage?.reply_to_message_id
+        );
+        if (typeof threadId === "number" || typeof threadId === "string") {
+          await setAlbumMediaTopic(albumId, row.message_id, String(threadId));
+        }
+      } catch {}
+    }
   }
 
   progress.done = true;

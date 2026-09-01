@@ -4,7 +4,55 @@ Each entry below documents what a commit adds and what comes next. Newest first.
 
 ---
 
-## v0.9 — OCR text search (opt-in), auto-backup folders, Safety check (NOT YET COMMITTED)
+## v0.10 — Shared-album topic sub-albums + group-picker fix (NOT YET COMMITTED)
+
+**Added in this commit**
+- **Topic sub-albums (S9 Phase 2)**: a Telegram group with Topics (forum) enabled becomes one album
+  per topic. Collections → Shared albums → open the album → chip row ("All" + one chip per topic
+  with counts) → tapping a chip filters the grid; the Viewer pager works on the filtered set.
+  Schema v6 (additive): `album_media.forum_topic_id` column + `forum_topics` cache table
+  (id, chat_id, title). Claiming walks every topic via `getForumTopics` +
+  `getMessageThreadHistory` and advances the per-album cursor only when EVERY topic read
+  succeeds (idempotent — re-claim picks up where it stopped); "General" is thread id "1".
+  Non-forum groups keep the flat claim path (no chip row).
+- **Native `getForumTopics` typed wrapper**: new entry in `scripts/patch-tdlib.js`
+  (TdApi.GetForumTopics + getForumTopics + full-chat-object fetch), requires the gradle rebuild
+  already shipped in this batch's APK. Raw `td_json_client_send` is fire-and-forget — request/
+  response TDLib calls must go through typed wrappers.
+- **Group-picker fix (the "no group found" bug)**: `src/lib/chats.ts` `listMyGroups()` now uses
+  the library's typed wrappers (`loadChats` → `getChats` → per-chat `getChat`) instead of a raw
+  fire-and-forget send that could never see the response. The picker now actually lists groups.
+  Also made the picker scrollable (was a plain View — groups past the 5th were unreachable).
+- **Shared-albums polish**: per-album "Recent activity" feed resolves sender names; claim
+  progress banner shows claimed/duplicate counts.
+
+**Verified on device**
+- APK with native `getForumTopics` installed (confirmed present in the built dex); app relaunched;
+  schema v6 migrated on launch (meta.schema_version=6, forum_topic_id column, forum_topics table;
+  `media` 1907 rows and `upload_queue` 2132 rows intact — zero data loss).
+- Picker fix confirmed live: "+ Link group" lists real groups (was "No groups found") and the list
+  now SCROLLS (was a plain View — groups past the 5th were unreachable).
+- Link flow verified: the owner's "Photogram" test group links (album row + confirm dialog + first
+  claim runs).
+
+**Verify on device when free (owner)**
+- OPEN ISSUE found during retest: the first claim reported "0 claimed · 1 failed", the second
+  "0 claimed · 0 duplicates · 51 failed", and forum_topics stayed empty (claim took the flat
+  path). The per-item claim code is UNCHANGED from the v0.8-verified claimer, so this is either
+  environmental (flaky Wi-Fi during the test) or a download/GetRemoteFile issue that needs one
+  error message. Claim alerts now surface the stored error text ("N failed — <reason>") — run
+  "⟳ Claim new" once with the phone on a stable network and read the reason. THEN: forum chip row
+  with counts → chip filters grid → Viewer pager on the filtered set → claim twice → second run
+  claims 0 new; regression: plain (non-topic) group and auto-albums show NO chip row.
+
+**Next plan**
+- `docs/PLAN-FEATURES-v0.11-plus.md` — six features v0.11–v0.16 (migration, junk sweeper,
+  photo journaling, family heartbeat, on-this-day, vibe search), planned 2026-09-01, awaiting
+  owner review before any coding.
+
+---
+
+## v0.9 — OCR text search (opt-in), auto-backup folders, Safety check (COMMITTED `53f857c`)
 
 **Added in this commit**
 - **OCR text search — owner opt-in (idea 5)**: Settings → Search → "Read text in photos (OCR)".

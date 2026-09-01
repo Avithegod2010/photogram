@@ -1,13 +1,19 @@
 import React, { useCallback, useEffect, useState } from "react";
-import { Pressable, StyleSheet, Switch, Text, View } from "react-native";
+import { Pressable, ScrollView, StyleSheet, Switch, Text, View } from "react-native";
 import { StatusBar } from "expo-status-bar";
 import { Image } from "expo-image";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { FlashList } from "@shopify/flash-list";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { getAlbumMedia } from "../lib/albums";
-import { getSharedAlbum, listAlbumMedia, setAlbumShowInTimeline } from "../db/queries";
-import { MediaRow } from "../db/queries";
+import {
+  getSharedAlbum,
+  listAlbumMedia,
+  listAlbumTopics,
+  setAlbumShowInTimeline,
+  AlbumTopicRow,
+  MediaRow,
+} from "../db/queries";
 import { theme } from "../theme";
 
 export function AlbumScreen({
@@ -22,20 +28,44 @@ export function AlbumScreen({
   const [rows, setRows] = useState<MediaRow[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [inTimeline, setInTimeline] = useState(false);
+  // Forum topic sub-albums (docs/PLAN-S9-TOPICS.md D6): empty for groups
+  // without topics — the screen then renders exactly as before.
+  const [topics, setTopics] = useState<AlbumTopicRow[]>([]);
+  const [activeTopic, setActiveTopic] = useState<string | "all">("all");
+  const [totalCount, setTotalCount] = useState(0);
 
   useEffect(() => {
-    const loader = sharedAlbumId !== undefined ? listAlbumMedia(sharedAlbumId) : getAlbumMedia(key);
-    void loader
-      .then(setRows)
-      .catch(() => setRows([]))
+    if (sharedAlbumId === undefined) {
+      void getAlbumMedia(key)
+        .then(setRows)
+        .catch(() => setRows([]))
+        .finally(() => setLoaded(true));
+      return;
+    }
+    void Promise.all([
+      listAlbumMedia(sharedAlbumId, activeTopic === "all" ? undefined : activeTopic),
+      listAlbumTopics(sharedAlbumId),
+    ])
+      .then(([media, topicList]) => {
+        setRows(media);
+        setTopics(topicList);
+      })
+      .catch(() => {
+        setRows([]);
+        setTopics([]);
+      })
       .finally(() => setLoaded(true));
-  }, [key, sharedAlbumId]);
+  }, [key, sharedAlbumId, activeTopic]);
 
-  // Shared albums: load the current "show in my timeline" choice.
+  // Shared albums: load the "show in my timeline" choice and the album's total
+  // item count (the All chip's label must not follow the active topic filter).
   useEffect(() => {
     if (sharedAlbumId === undefined) return;
     void getSharedAlbum(sharedAlbumId)
-      .then((a) => setInTimeline(!!a?.show_in_timeline))
+      .then((a) => {
+        setInTimeline(!!a?.show_in_timeline);
+        setTotalCount(a?.count ?? 0);
+      })
       .catch(() => {});
   }, [sharedAlbumId]);
 
@@ -98,6 +128,39 @@ export function AlbumScreen({
           <Switch value={inTimeline} onValueChange={toggleTimeline} />
         </View>
       ) : null}
+      {sharedAlbumId !== undefined && topics.length > 0 ? (
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.chipRow}
+        >
+          <Pressable
+            style={[styles.chip, activeTopic === "all" && styles.chipOn]}
+            onPress={() => setActiveTopic("all")}
+          >
+            <Text style={[styles.chipText, activeTopic === "all" && styles.chipTextOn]}>
+              All ({totalCount})
+            </Text>
+          </Pressable>
+          {topics.map((t) => {
+            // D4: a hidden General topic with no claimed media is just noise.
+            if (t.thread_id === "1" && t.is_hidden === 1 && t.count === 0) return null;
+            const selected = activeTopic === t.thread_id;
+            return (
+              <Pressable
+                key={t.thread_id}
+                style={[styles.chip, selected && styles.chipOn]}
+                onPress={() => setActiveTopic(t.thread_id)}
+              >
+                <Text style={[styles.chipText, selected && styles.chipTextOn]}>
+                  {t.title}
+                  {t.count ? ` · ${t.count}` : ""}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </ScrollView>
+      ) : null}
       <FlashList
         data={rows}
         numColumns={3}
@@ -134,6 +197,22 @@ const styles = StyleSheet.create({
   },
   toggleLabel: { color: theme.colors.onSurface, fontSize: 14, fontWeight: "600" },
   toggleNote: { color: theme.colors.onSurfaceVariant, fontSize: 11.5, marginTop: 1 },
+  // Topic sub-album chips (D6), matching the SharedAlbumsScreen mini-chip look.
+  chipRow: {
+    flexDirection: "row",
+    gap: theme.spacing.sm,
+    paddingHorizontal: theme.spacing.md,
+    paddingVertical: theme.spacing.xs,
+  },
+  chip: {
+    backgroundColor: theme.colors.surfaceContainer,
+    borderRadius: theme.radius.full,
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+  },
+  chipText: { color: theme.colors.onSurface, fontSize: 12, fontWeight: "600" },
+  chipOn: { backgroundColor: theme.colors.primaryContainer },
+  chipTextOn: { color: theme.colors.onPrimaryContainer },
   listContent: { paddingBottom: 40, paddingTop: theme.spacing.sm },
   cell: {
     flex: 1,
