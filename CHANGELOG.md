@@ -4,6 +4,20 @@ Each entry below documents what a commit adds and what comes next. Newest first.
 
 ---
 
+## v0.10.1 — Claim hotfix: file:// URI normalization (COMMITTED in this commit)
+
+**Added in this commit**
+- **Fix (found via device retest + new error-surfacing alerts):** claiming from a shared album
+  failed for every item with "FileSystemFile.copy rejected — URI is not absolute". TDLib's
+  `downloadFileByRemoteId` result gives a plain filesystem path; the expo-file-system `File` API
+  requires an absolute `file://` URI. `claimOne` now normalizes the path before copying.
+- Claim result alerts now include the stored error reason ("N failed — <reason>").
+- Device-verified after fix: claim reports "1 new · 0 failed", album row + cursor + activity feed
+  correct. Note: the "Photogram" test group is a plain (non-forum) group — chip-row verification
+  still needs the topic-enabled test group (forum path untouched by this fix).
+
+---
+
 ## v0.10 — Shared-album topic sub-albums + group-picker fix (COMMITTED `7103e08`)
 
 **Added in this commit**

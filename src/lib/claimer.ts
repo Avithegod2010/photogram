@@ -66,7 +66,9 @@ interface RemoteMediaInfo {
   height: number | null;
 }
 
-function extractMedia(message: TdAny): RemoteMediaInfo | null {
+// Exported for the F1 migration engine (src/lib/rehydrate.ts) — same
+// extraction, do not change behavior.
+export function extractMedia(message: TdAny): RemoteMediaInfo | null {
   const content: TdAny = message?.content ?? {};
   const type: string = content["@type"] ?? "";
 
@@ -206,7 +208,10 @@ async function claimOne(
   const fileName = info.fileName ?? `shared-${messageId}`;
   const dest = new File(sharedDir(), `${messageId}-${fileName}`);
   if (!dest.exists) {
-    await new File(localPath).copy(dest);
+    // TDLib's local.path is a plain filesystem path; the expo-file-system
+    // File API rejects non-absolute URIs ("URI is not absolute").
+    const srcUri = localPath.startsWith("file://") ? localPath : `file://${localPath}`;
+    await new File(srcUri).copy(dest);
   }
   const byteSize = new File(dest.uri).size ?? info.byteSize;
 
