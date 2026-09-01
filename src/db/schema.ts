@@ -96,6 +96,23 @@ const SCHEMA_V5 = `
 ALTER TABLE media ADD COLUMN ocr_text TEXT;
 `;
 
+// S9 fast-follow: forum topic sub-albums (docs/PLAN-S9-TOPICS.md, D1).
+// forum_topic_id records which Telegram topic (message_thread_id) each claimed
+// message came from; forum_topics caches the group's topic list per album,
+// rebuilt by each claim run. Thread ids are TEXT: Telegram ids exceed JS safe
+// integers.
+const SCHEMA_V6 = `
+ALTER TABLE album_media ADD COLUMN forum_topic_id TEXT;
+CREATE TABLE IF NOT EXISTS forum_topics (
+  album_id  INTEGER NOT NULL REFERENCES albums(id) ON DELETE CASCADE,
+  thread_id TEXT NOT NULL,
+  title     TEXT NOT NULL,
+  is_hidden INTEGER NOT NULL DEFAULT 0,
+  updated_at INTEGER NOT NULL,
+  PRIMARY KEY (album_id, thread_id)
+);
+`;
+
 export interface Migration {
   version: number;
   up: string;
@@ -107,6 +124,7 @@ export const MIGRATIONS: Migration[] = [
   { version: 3, up: SCHEMA_V3 },
   { version: 4, up: SCHEMA_V4 },
   { version: 5, up: SCHEMA_V5 },
+  { version: 6, up: SCHEMA_V6 },
 ];
 
 export function migrationsAfter(version: number): Migration[] {

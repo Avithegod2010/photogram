@@ -215,23 +215,100 @@ export async function linkMediaToAlbum(
   albumId: number,
   mediaId: number,
   senderId: string | null,
-  messageId: string
+  messageId: string,
+  forumTopicId: string | null = null
 ): Promise<void> {
   const db = await getDb();
   await db.runAsync(
-    "INSERT OR IGNORE INTO album_media (album_id, media_id, sender_id, message_id, added_at) VALUES (?, ?, ?, ?, ?)",
-    [albumId, mediaId, senderId, messageId, Date.now()]
+    "INSERT OR IGNORE INTO album_media (album_id, media_id, sender_id, message_id, forum_topic_id, added_at) VALUES (?, ?, ?, ?, ?, ?)",
+    [albumId, mediaId, senderId, messageId, forumTopicId, Date.now()]
   );
 }
 
-export async function listAlbumMedia(albumId: number, limit = 800): Promise<MediaRow[]> {
+// --- S9 fast-follow: forum topic sub-albums (docs/PLAN-S9-TOPICS.md) ---------
+
+// Rebuilds an album's cached topic list from the live TDLib list (D7): DELETE +
+// INSERT in one transaction, so renames propagate after the next claim run.
+export async function replaceForumTopics(
+  albumId: number,
+  topics: Array<{ threadId: string; title: string; isHidden: boolean }>
+): Promise<void> {
   const db = await getDb();
+  const base = Date.now();
+  await db.withTransactionAsync(async () => {
+    await db.runAsync("DELETE FROM forum_topics WHERE album_id = ?", [albumId]);
+    for (let i = 0; i < topics.length; i++) {
+      const topic = topics[i];
+      // updated_at carries the insertion index so listAlbumTopics' ASC tiebreak
+      // keeps the live Telegram order (General is ordered first by the query).
+      await db.runAsync(
+        "INSERT OR REPLACE INTO forum_topics (album_id, thread_id, title, is_hidden, updated_at) VALUES (?, ?, ?, ?, ?)",
+        [albumId, topic.threadId, topic.title, topic.isHidden ? 1 : 0, base + i]
+      );
+    }
+  });
+}
+
+export interface AlbumTopicRow {
+  thread_id: string;
+  title: string;
+  is_hidden: number;
+  count: number;
+}
+
+export async function listAlbumTopics(albumId: number): Promise<AlbumTopicRow[]> {
+  const db = await getDb();
+  return db.getAllAsync<AlbumTopicRow>(
+    `SELECT ft.thread_id, ft.title, ft.is_hidden,
+       (SELECT COUNT(*) FROM album_media am
+         WHERE am.album_id = ft.album_id AND am.forum_topic_id = ft.thread_id) AS count
+     FROM forum_topics ft WHERE ft.album_id = ?
+     ORDER BY (ft.thread_id = '1') DESC, ft.updated_at ASC`,
+    [albumId]
+  );
+}
+
+export async function listAlbumMedia(
+  albumId: number,
+  topicId?: string | null,
+  limit = 800
+): Promise<MediaRow[]> {
+  const db = await getDb();
+  const topicFilter = topicId ? "AND am.forum_topic_id = ?" : "";
   return db.getAllAsync<MediaRow>(
     `SELECT m.* FROM media m
      JOIN album_media am ON am.media_id = m.id
      WHERE am.album_id = ?
+     ${topicFilter}
      ORDER BY m.taken_at DESC, m.id DESC LIMIT ?`,
+    topicId ? [albumId, topicId, limit] : [albumId, limit]
+  );
+}
+
+// Pre-topic rows (forum_topic_id IS NULL) for the claimer's opportunistic
+// backfill; message_id is the TDLib lookup key.
+export async function listAlbumMediaWithoutTopic(
+  albumId: number,
+  limit = 200
+): Promise<Array<{ message_id: string }>> {
+  const db = await getDb();
+  return db.getAllAsync<{ message_id: string }>(
+    `SELECT message_id FROM album_media
+     WHERE album_id = ? AND message_id IS NOT NULL AND forum_topic_id IS NULL
+     ORDER BY CAST(message_id AS INTEGER) ASC LIMIT ?`,
     [albumId, limit]
+  );
+}
+
+export async function setAlbumMediaTopic(
+  albumId: number,
+  messageId: string,
+  threadId: string
+): Promise<void> {
+  const db = await getDb();
+  await db.runAsync(
+    "UPDATE album_media SET forum_topic_id = ? WHERE album_id = ? AND message_id = ? AND forum_topic_id IS NULL",
+    [threadId, albumId, messageId]
   );
 }
 

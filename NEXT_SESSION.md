@@ -1,11 +1,37 @@
 # PHOTOGRAM — MASTER HANDOFF (read this fully before coding)
 
 _This file is the single source of truth for any AI agent or developer picking up this project cold.
-Last updated: end of day 2026-08-29 (§0). Read §0, then §1–§17. CHANGELOG.md has per-version notes._
+Last updated: end of day 2026-09-01 (§0). Read §0, then §1–§17. CHANGELOG.md has per-version notes._
 
 ---
 
-## 0. CURRENT STATE — END OF DAY 2026-08-30 · v0.6 COMMITTED · WORKING TREE CLEAN
+## 0. CURRENT STATE — LATE NIGHT 2026-09-01 · v0.10 S9 VERIFICATION ~80% DONE (PICKER FIX LIVE) · OWNER DIRECTED: PLAN 6 NEW FEATURES, CODE NOTHING YET
+
+**Owner's latest directive (verbatim intent):** finish the in-flight S9 device retest, then PLAN (do
+NOT code) six new features — they will be coded one-by-one in later sessions, in the owner's order:
+(2) One-tap phone migration → (4) Junk Sweeper → (5) Photo journaling → (7) Family heartbeat share →
+(1) Time Machine "On this day" → (3) Vibe search. **The plan is DONE: `docs/PLAN-FEATURES-v0.11-plus.md`**
+(F1..F6 → v0.11..v0.16, verified deps, additive schema v7/v8/v9, only one new TDLib wrapper needed
+(editMessageCaption, F3), assumptions for the owner in its §5). Present it to the owner; await answers.
+
+### S9 device retest progress (this session)
+- ✅ APK (20:21, native getForumTopics) installed; app relaunched; **schema v6 migration VERIFIED on
+  device**: meta.schema_version=6, album_media.forum_topic_id (TEXT), forum_topics table exist;
+  `media` 1907 + `upload_queue` 2132 rows intact (zero data loss). albums/album_media/forum_topics
+  are 0 rows simply because no shared album is linked yet.
+- ✅ **Picker bug fix CONFIRMED LIVE**: "+ Link group" now lists real Telegram groups (was "No groups
+  found") — typed-wrapper fix works. NOTE: list truncates after ~5 groups because pickerContent was a
+  plain View (no scrolling) — **fixed during this session** (ScrollView wrapper in
+  SharedAlbumsScreen.tsx, JS-only, hot-reloadable; needs an on-device re-check + it is an additional
+  uncommitted diff on top of the S9 work).
+- ⏸ REMAINING device checks (blocked ONLY on wireless adb — phone dropped off adb mid-test, port
+  33705 refuses connections though mDNS still lists it; phone likely dozed with Wireless debugging
+  inactive; ping works, so just needs owner to wake/open the Wireless debugging screen, port may
+  change): (c) link owner's topic-enabled test group → claim → chip row with counts → chip filters
+  grid → Viewer pager on filtered set; (d) DB: forum_topic_id populated, forum_topics titles sane;
+  claim twice → 0 new second time; (e) regression: plain group + auto-albums show NO chip row;
+  (f) test group needs a few photos in different topics first.
+- v0.10 CHANGELOG entry: DRAFTED (top of CHANGELOG.md, marked NOT YET COMMITTED). Commit = owner gate.
 
 **The full product loop works and v0.6 added S8 Auto-albums, cloud storage counts, upload-completion
 confirmation, queue dedupe, and the date/grid fixes. All verified live on the Samsung (SM-S942B).**
@@ -66,21 +92,71 @@ confirmation, queue dedupe, and the date/grid fixes. All verified live on the Sa
 - Pending owner approval (proposed 2026-08-30): OCR text search at scan time (ML Kit), auto-backup
   of specific folders via media-library change subscriptions, "Safety check" screen.
 
-### FIRST ACTIONS for the next session (2026-09-01 — v0.9 COMMITTED `53f857c`, tree clean, all verified)
-1. **State: v0.7 + v0.8 + v0.9 all committed and device-verified.** The full stack works: gallery
-   (grid + day headers + heartbeat + Stories + dice button), Albums/Shared albums (S9 one-way
-   claim), Archive/Hidden (biometric), OCR search (687 rows indexed, search-proven), auto-backup,
-   Safety check, upload-completion-confirmed worker (550+/1869 in Telegram = about 8 GB; the bulk
-   backup runs automatically over the next days — 14 GB left; the 1.5 GB throttle is BY DESIGN).
-2. Nothing is pending or broken. Next is roadmap: S9 topic sub-albums (fast-follow) · Phase 2
-   two-way · album organizer (long-term, docs/S9-DESIGN.md §3) · versioned-archive idea (long-term
-   backlog in §0 ideas). Ask the owner what they want next.
-3. Shared machine/phone: the other agent runs photogram-bot Metro on 8081 (E:\Tools
-odejs) —
+### FIRST ACTIONS for the next session (2026-09-02 — S9 topic sub-albums BUILT, needs device verification + commit)
+1. **State: v0.7 + v0.8 + v0.9 all committed and device-verified** (`27bac96` / `5ea074e` /
+   `53f857c`, handoff `4d26fe9`). The full stack works: gallery (grid + day headers + heartbeat +
+   Stories + dice button), Albums/Shared albums (S9 one-way claim), Archive/Hidden (biometric),
+   OCR search (687 rows indexed, search-proven), auto-backup, Safety check,
+   upload-completion-confirmed worker. The bulk backup runs automatically over the next days
+   (~8 GB done; the 1.5 GB throttle is BY DESIGN).
+2. **UNCOMMITTED in the tree (owner approved the plan; commit only after verification):**
+   S9 topic sub-albums per docs/PLAN-S9-TOPICS.md — when a shared album's Telegram group has
+   Topics enabled, each topic renders as a filter chip inside AlbumScreen and the claim engine
+   records each claimed message's topic. Files: `src/db/schema.ts` (additive v6 — owner-approved),
+   `src/db/queries.ts`, `src/lib/claimer.ts`, `src/screens/AlbumScreen.tsx`, NEW `src/lib/forum.ts`,
+   plus untracked `docs/PLAN-S9-TOPICS.md`. tsc clean; code-reviewed twice (2 critical
+   cursor-safety bugs found & fixed, re-review PASS).
+3. **Key design facts (don't re-litigate):** forum detection via getSupergroup.isForum; topics via
+   raw `getForumTopics` (General = thread id "1", ensured only on success); per-topic history via
+   raw `getMessageThreadHistory`. The claim cursor stays per-album (albums.last_claimed_message_id)
+   but advances ONLY to min(newest ids) when EVERY topic was read this run, and never backward; an
+   EMPTY topic counts as read (contributes nothing to the min); a FAILED read blocks advancement
+   and surfaces "N topic(s) unread this run". `listForumTopics` returns null on failure, `[]` only
+   for a genuinely empty list; `fetchThreadMessages` returns null on failure, `[]` for genuinely
+   empty history. Non-forum groups take the untouched flat claim path. All gson reads via
+   firstDefined(camelCase, snake_case).
+4. **CRITICAL TDLib fact (root-caused 2026-09-01 — this WAS the owner-reported "No groups found"
+   picker bug):** native `td_json_client_send` is FIRE-AND-FORGET — it always resolves the string
+   "Request sent successfully", never the TDLib response. So `JSON.parse(await
+   TdLib.td_json_client_send(req))` ALWAYS throws → null. The request IS still delivered (updates
+   arrive via the `tdlib-update` event fan-out), which is why QR login and the uploader kept
+   working while `listMyGroups()` saw nothing. The ONLY working request/response paths are the
+   typed native wrappers (getChats/getChat/getSupergroup/getForumTopics/getMessageThreadHistory —
+   they register native handlers and resolve `TdRawResult {raw}`). `chats.ts` + `forum.ts` now use
+   typed wrappers exclusively. Remaining raw-send users are deliberate: protected `tdlib.ts`
+   sendRaw (always throws; authStore works anyway via update events) and `uploader.ts`
+   sendMessage (works; its JSON.parse error-detection branch is dead code — parsed stays null; a
+   typed `sendMessage` wrapper exists for a future cleanup — do NOT touch mid-bulk-backup).
+5. **Verify on device (~20–30 min):** (a) REBUILT APK IS READY (build successful 2026-09-01
+   20:21 IST, includes native getForumTopics): `E:\Opencode CLI\Projects\photogram\android\app\build\outputs\apk\debug\app-debug.apk`.
+   ONLY BLOCKER: phone's Wireless debugging was OFF at last check (ping failed, no open adb port
+   in 32768–53247, mDNS silent — phone dozed or toggled off). Owner: open Settings → Developer
+   options → Wireless debugging, then tell the agent the IP:port shown (or just say "phone ready").
+   Then: `adb connect <ip>:<port>` → `adb reverse tcp:8083 tcp:8083` → check logcat for in-flight
+   uploads → `adb install -r android\app\build\outputs\apk\debug\app-debug.apk` (install kills the
+   app process — never interrupt mid-upload); Metro 8083 (start
+   `powershell -ExecutionPolicy Bypass -File E:\Dev\run-photogram-metro-fast.ps1` if dead), then
+   force-stop + relaunch the app → schema v6 migrates on launch;
+   (b) pull DB (`adb exec-out run-as com.photogram.app cat files/SQLite/photogram.db*`) → check
+   meta.schema_version=6, album_media.forum_topic_id exists, forum_topics table exists, existing
+   rows unchanged; (c) owner's topic-enabled test group: Collections → Shared albums → open the
+   album → chip row (All + one chip per topic with counts) → tapping a chip filters the grid →
+   Viewer pager works on the filtered set; (d) "⟳ Claim new" → DB shows forum_topic_id populated
+   on new rows + forum_topics titles sane; claim twice → second run claims 0 new; (e) regression:
+   a plain (non-topic) group and the auto-albums render with NO chip row; (f) if the test group has
+   no photos yet, owner sends a few into different topics first. Before force-stopping the app,
+   check logcat for in-flight uploads (never interrupt mid-upload — wait 30–60 s if one is flying).
+6. **After verification passes:** CHANGELOG v0.10 entry → commit with owner approval.
+7. Shared machine/phone: the other agent runs photogram-bot Metro on 8081 (E:\Tools\nodejs) —
    coordinate heavy work; never touch their processes. Phone: USB or wireless adb both work; after
    any reconnect run `adb reverse tcp:8083 tcp:8083` before relaunching the app.
-4. Gradle is warm — next rebuild is fast. Keep the Aliyun/Tencent mirrors in android/build.gradle
-   and long HTTP timeouts in gradle.properties (CNG — re-apply after prebuild).
+8. Gradle is warm — next rebuild is fast. Keep the Aliyun/Tencent mirrors in android/build.gradle
+   and long HTTP timeouts in gradle.properties (CNG — re-apply after prebuild). NOTE: the S9 topics
+   work DOES need a gradle rebuild once (new native `getForumTopics` method in TdLibModule.java);
+   after that APK is installed, further JS/SQLite-only iterations need no rebuild. The patch script
+   `scripts/patch-tdlib.js` now also re-applies the 3 getForumTopics edits inside node_modules
+   react-native-tdlib (idempotent insert entries; proven by 2 identical runs) — never edit
+   node_modules without adding a matching insert entry.
 
 ---
 

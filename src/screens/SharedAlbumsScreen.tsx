@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from "react";
-import { Alert, Pressable, StyleSheet, Text, View } from "react-native";
+import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { StatusBar } from "expo-status-bar";
 import { Image } from "expo-image";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -67,7 +67,7 @@ export function SharedAlbumsScreen({ navigation }: { navigation: SharedNav }) {
             "Shared album ready",
             `Claimed ${p.claimed} new item${p.claimed === 1 ? "" : "s"}${
               p.duplicates ? ` · ${p.duplicates} already in your library` : ""
-            }${p.failed ? ` · ${p.failed} failed` : ""}.`
+            }${p.failed ? ` · ${p.failed} failed${p.lastError ? ` — ${p.lastError}` : ""}` : ""}.`
           );
         })
         .catch((err) =>
@@ -116,7 +116,9 @@ export function SharedAlbumsScreen({ navigation }: { navigation: SharedNav }) {
         .then((p) => {
           Alert.alert(
             "Up to date",
-            `Claimed ${p.claimed} new · ${p.duplicates} duplicates · ${p.failed} failed.`
+            `Claimed ${p.claimed} new · ${p.duplicates} duplicates · ${p.failed} failed${
+              p.lastError ? ` — ${p.lastError}` : ""
+            }.`
           );
         })
         .catch((err) =>
@@ -160,7 +162,7 @@ export function SharedAlbumsScreen({ navigation }: { navigation: SharedNav }) {
   }, []);
 
   const pickerContent = () => (
-    <View style={styles.pickerWrap}>
+    <ScrollView style={styles.pickerWrap} contentContainerStyle={styles.pickerContent}>
       <Text style={styles.pickerTitle}>Pick a Telegram group</Text>
       <Text style={styles.pickerNote}>
         One group = one album. Everyone in the group can see everything sent to it.
@@ -190,7 +192,7 @@ export function SharedAlbumsScreen({ navigation }: { navigation: SharedNav }) {
       <Pressable style={styles.cancelBtn} onPress={() => setPicking(false)}>
         <Text style={styles.cancelText}>Cancel</Text>
       </Pressable>
-    </View>
+    </ScrollView>
   );
 
   return (
@@ -372,6 +374,7 @@ const styles = StyleSheet.create({
   miniBtnText: { color: theme.colors.onSurface, fontSize: 10.5, fontWeight: "600" },
   dangerText: { color: theme.colors.error },
   pickerWrap: { padding: theme.spacing.md },
+  pickerContent: { paddingBottom: theme.spacing.lg },
   pickerTitle: { color: theme.colors.onSurface, fontSize: 18, fontWeight: "700" },
   pickerNote: { color: theme.colors.onSurfaceVariant, fontSize: 12.5, marginTop: 4, marginBottom: theme.spacing.md },
   pickerEmpty: { color: theme.colors.onSurfaceVariant, fontSize: 13, marginTop: theme.spacing.md },
