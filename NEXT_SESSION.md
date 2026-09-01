@@ -5,33 +5,38 @@ Last updated: end of day 2026-09-01 (§0). Read §0, then §1–§17. CHANGELOG.
 
 ---
 
-## 0. CURRENT STATE — LATE NIGHT 2026-09-01 · v0.10 S9 VERIFICATION ~80% DONE (PICKER FIX LIVE) · OWNER DIRECTED: PLAN 6 NEW FEATURES, CODE NOTHING YET
+## 0. CURRENT STATE — NIGHT 2026-09-02 · v0.10 COMMITTED `7103e08` · ONE OPEN DEVICE ISSUE (claim failures) · F1 v0.11 MIGRATION CODING STARTED
 
-**Owner's latest directive (verbatim intent):** finish the in-flight S9 device retest, then PLAN (do
-NOT code) six new features — they will be coded one-by-one in later sessions, in the owner's order:
-(2) One-tap phone migration → (4) Junk Sweeper → (5) Photo journaling → (7) Family heartbeat share →
-(1) Time Machine "On this day" → (3) Vibe search. **The plan is DONE: `docs/PLAN-FEATURES-v0.11-plus.md`**
-(F1..F6 → v0.11..v0.16, verified deps, additive schema v7/v8/v9, only one new TDLib wrapper needed
-(editMessageCaption, F3), assumptions for the owner in its §5). Present it to the owner; await answers.
+**Owner's directive (2026-09-02):** commit v0.10 (DONE) and start coding the six planned features
+one by one — v0.11 F1 One-tap phone migration is FIRST. Plan: `docs/PLAN-FEATURES-v0.11-plus.md`
+(F1..F6 → v0.11..v0.16; owner approved the plan by saying "commit and get start on coding").
 
-### S9 device retest progress (this session)
-- ✅ APK (20:21, native getForumTopics) installed; app relaunched; **schema v6 migration VERIFIED on
-  device**: meta.schema_version=6, album_media.forum_topic_id (TEXT), forum_topics table exist;
-  `media` 1907 + `upload_queue` 2132 rows intact (zero data loss). albums/album_media/forum_topics
-  are 0 rows simply because no shared album is linked yet.
-- ✅ **Picker bug fix CONFIRMED LIVE**: "+ Link group" now lists real Telegram groups (was "No groups
-  found") — typed-wrapper fix works. NOTE: list truncates after ~5 groups because pickerContent was a
-  plain View (no scrolling) — **fixed during this session** (ScrollView wrapper in
-  SharedAlbumsScreen.tsx, JS-only, hot-reloadable; needs an on-device re-check + it is an additional
-  uncommitted diff on top of the S9 work).
-- ⏸ REMAINING device checks (blocked ONLY on wireless adb — phone dropped off adb mid-test, port
-  33705 refuses connections though mDNS still lists it; phone likely dozed with Wireless debugging
-  inactive; ping works, so just needs owner to wake/open the Wireless debugging screen, port may
-  change): (c) link owner's topic-enabled test group → claim → chip row with counts → chip filters
-  grid → Viewer pager on filtered set; (d) DB: forum_topic_id populated, forum_topics titles sane;
-  claim twice → 0 new second time; (e) regression: plain group + auto-albums show NO chip row;
-  (f) test group needs a few photos in different topics first.
-- v0.10 CHANGELOG entry: DRAFTED (top of CHANGELOG.md, marked NOT YET COMMITTED). Commit = owner gate.
+### v0.10 COMMITTED — one open device issue
+- Committed `7103e08`: topic sub-albums (schema v6), group-picker fix (typed wrappers), native
+  getForumTopics wrapper, ScrollView picker fix, claim-alert error surfacing. tsc clean.
+- **OPEN ISSUE — claim failures (diagnose FIRST, before trusting forum verification):** the
+  owner's "Photogram" test group (chat_id -1003845444305) linked fine (album id 1 created), but
+  claim run 1 = "0 claimed · 1 failed", run 2 = "0 claimed · 0 duplicates · 51 failed", and
+  forum_topics stayed EMPTY (the claim took the flat path — either isForumChat returned false or
+  listForumTopics returned null/[]). Facts: claimOne's core is UNCHANGED from the v0.8-verified
+  claimer (diff-verified before commit); the native wrapper IS in the installed APK (classes2.dex);
+  TDLib network is fine (uploads ran during the test). Claim alerts NOW surface the stored error
+  ("N failed — <reason>") — JS-only change, hot-reloads via Metro 8083. NEXT: reload the app →
+  Collections → Shared albums → "⟳ Claim new" on the Photogram album → READ THE ERROR → fix.
+  Then finish forum verification (chips → filter → claim-twice-0-new → plain-group regression).
+  Possible causes: GetRemoteFile failing for group photos ("Could not resolve file by remote id"
+  would confirm), isForumChat false (check getSupergroup isForum read on this chat),
+  listForumTopics null (check logcat "[forum]" lines).
+
+### S9 device retest progress (2026-09-01→02)
+- ✅ APK (20:21, native getForumTopics) installed; schema v6 migration VERIFIED on device:
+  meta.schema_version=6, album_media.forum_topic_id (TEXT), forum_topics table exist; `media`
+  1907 + `upload_queue` 2132 rows intact (zero data loss). albums/album_media/forum_topics were
+  0 rows because no shared album was linked yet (now album id 1 exists — see open issue).
+- ✅ **Picker bug fix CONFIRMED LIVE**: "+ Link group" lists real Telegram groups; ScrollView fix
+  verified (list scrolls, groups beyond the 5th reachable).
+- ✅ Link flow verified end-to-end (confirm dialog → album created → first claim runs).
+- ⏸ Remaining checks blocked on the claim open issue above.
 
 **The full product loop works and v0.6 added S8 Auto-albums, cloud storage counts, upload-completion
 confirmation, queue dedupe, and the date/grid fixes. All verified live on the Samsung (SM-S942B).**
