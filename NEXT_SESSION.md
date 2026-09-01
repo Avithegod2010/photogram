@@ -5,46 +5,67 @@ Last updated: end of day 2026-09-01 (§0). Read §0, then §1–§17. CHANGELOG.
 
 ---
 
-## 0. CURRENT STATE — NIGHT 2026-09-02 (late) · v0.10.1 COMMITTED · CLAIM HOTFIX VERIFIED · F1 v0.11 IMPLEMENTED (UNDER REVIEW)
+## 0. CURRENT STATE — END OF DAY 2026-09-02 · v0.10 + v0.10.1 COMMITTED · BIG UNCOMMITTED BATCH · ONE OPEN BLOCKER (forum topics list)
 
-**Owner directive:** one feature per version, code one-by-one. v0.10 + v0.10.1 done. F1 (v0.11
-One-tap phone migration) is IMPLEMENTED and awaiting code-review + device verification. Plan:
-`docs/PLAN-FEATURES-v0.11-plus.md`. Next features in order: F2 Junk Sweeper (v0.12), F3 Photo
-journaling (v0.13, needs TdApi.EditMessageCaption wrapper + gradle rebuild), F4 Heartbeat share
-(v0.14), F5 On this day (v0.15), F6 Vibe search (v0.16, opt-in tflite).
+**Owner is done for the day; resume 2026-09-03.** Committed today: v0.10 `7103e08` (S9 topics +
+picker fix), v0.10.1 `469863f` (claim file:// hotfix), `a4de939` + `36bdead` (handoff docs).
+Everything below is UNCOMMITTED and works (tsc clean) — verify then commit with owner approval.
 
-### Claim engine: FIXED + device-verified (v0.10.1 `469863f`)
-- Root cause of "0 claimed · N failed": TDLib `downloadFileByRemoteId` returns a PLAIN path
-  (`/data/user/0/...`) but the expo-file-system `File` API requires an absolute `file://` URI —
-  `claimOne` now normalizes (`file://` prefix). Claim alerts also surface the stored error text.
-- Device-verified: "Claimed 1 new · 0 failed" on the "Photogram" album (album id 1, chat
-  -1003845444305); cursor advanced to 2314207232; activity feed renders the add.
-- NOTE: that run's cursor jumped past the 51 previously-failed older messages (flat-path cursor is
-  max-seen) — they will NOT re-claim; that group is the OLD plain test group anyway.
-- **PENDING: topic-chip verification needs the owner's actual TOPIC-ENABLED group** — "Photogram"
-  is a plain group (isForumChat correctly false, no chip row, flat path). Owner was asked which
-  group has Topics enabled; no answer yet. Candidates seen in the picker: "S24fe chitralaya",
-  "Papa chitralaya", or owner creates a new one. Chips render only for a forum group (AlbumScreen
-  chip row); once linked, verify: chip row with counts → chip filters grid → Viewer pager →
-  claim twice (0 new) → plain-group regression (no chip row).
+### UNCOMMITTED batch in the working tree (3 logical changes)
+1. **getSupergroup overflow fix (S9 blocker — device-VERIFIED working):** this TdApi's
+   `GetSupergroup.supergroupId` is LONG but the library wrapper cast (int) -> ids > 2^31
+   (4411892879!) overflowed -> isForumChat always false -> topic path never ran. Fixed via NEW
+   replacePatches mechanism in scripts/patch-tdlib.js (marker = wrong text; idempotent). New APK
+   BUILT (03:35) AND INSTALLED. Proven live: `[forum] isForumChat(-1004411892879):
+   supergroupId=4411892879 sg=ok isForum=true`. forum.ts also got permanent diagnostic logging.
+2. **Upload format change (owner-requested, implemented, NOT yet device-verified):** preview photo
+   first (320px scan-time thumb, caption `filename - preview`), then the ORIGINAL file sent as a
+   REPLY to the preview. Saved Messages queue rows only (`item.chat_id == null`); shared-album
+   rows stay single-message. Toggle `previewReplyUploads` (default ON) + Settings row "Preview
+   first, file as reply". New `src/lib/uploadFormat.ts` (PREVIEW_CAPTION_SUFFIX + isPreviewCaption);
+   restorer filename-fallback now SKIPS preview captions (restoring a preview = wrong bytes).
+   Files: uploader.ts (preview send + reply_to + findSentMessage excludePreview), uploadFormat.ts,
+   restorer.ts, settingsStore.ts, SettingsScreen.tsx.
+3. **F1 v0.11 One-tap phone migration (implemented + code-reviewed + all review findings FIXED):**
+   NEW src/lib/rehydrate.ts + src/screens/MigrateScreen.tsx; edits: queries.ts (local_uri string|
+   null, findMediaIdByRemoteMessage, findMediaIdByMediaLibraryId, countMediaRows,
+   repairSyncedRowsWithoutRemote), navigation (Migrate route), SettingsScreen (Migration row),
+   GalleryScreen (empty-library banner gated on hasSavedMessagesMedia + one-time MMKV flag
+   migrationBannerShown), scanner.ts (dedupe also matches media_library_id - restored files are
+   recognized on rescan), rehydrate (short-page settlement loop, zombie-row repair at run start,
+   tightened hasSavedMessagesMedia heuristic >=3 caption==fileName hits). claimer.ts: export only.
+   Protected files + uploader untouched by F1. Code-review verdict: PASS after these fixes.
 
-### F1 v0.11 (uncommitted, under review at time of writing)
-- coder (subagent) implemented per plan Path A: NEW `src/lib/rehydrate.ts` (paged Saved Messages
-  inventory → insert state='synced' rows local_uri:null + setMediaRemote; idempotent via
-  findMediaIdByRemoteMessage), NEW `src/screens/MigrateScreen.tsx` (scan/rebuild + paced restore
-  via restorer's restoreMediaToDevice with pause/resume + album re-link via listMyGroups →
-  createSharedAlbum + claimAlbumMedia), route `Migrate`, Settings row, Gallery empty-library
-  banner gated on `hasSavedMessagesMedia()` + one-time MMKV flag `migrationBannerShown`.
-- queries.ts: local_uri widened to string|null (cloud-only rows) + findMediaIdByRemoteMessage.
-- claimer.ts: ONLY `export` added to extractMedia (permitted exception). Protected files +
-  uploader/forum/chats/AlbumScreen/SharedAlbumsScreen untouched. tsc clean.
-- Deviations accepted: inventory+rebuild are ONE pass (counting requires the walk anyway);
-  migrated rows have no thumbnails until restored; no live "still uploading on old phone" counter
-  (Re-scan button covers it).
-- NEXT: code-reviewer verdict → fix findings → device verify (banner only on empty library;
-  inventory count vs real Saved Messages; restore a few items; re-link an album) → v0.11
-  CHANGELOG entry → owner approval → commit.
+### OPEN BLOCKER — topic chips (NEXT ACTION #1)
+isForumChat=true now, but forum_topics cache STILL EMPTY and claims still take the flat path.
+Timeline: relink of "Photos" (owner's new 4-topic test group, chat -1004411892879) claimed 10 items
+flat (all forum_topic_id ''), then a later relink said "0 new - 1 already" - cursor stuck at
+15728640 (= 0xF00000, looks like a topic-root/pinned id, NOT a photo). getChatHistory on a forum
+chat appears to return only the General/root view (1 media message), so the flat claim cannot see
+topic photos. NEXT SESSION FIRST ACTION: restart app (newest bundle has listForumTopics logging)
+-> Collections -> Shared albums -> "Claim new" on Photos -> read
+`[forum] listForumTopics(-1004411892879): ...` in logcat.
+- If "no topics array - raw=..." shows an error object -> the getForumTopics wrapper response is
+  the problem (check request params / gson shape of ForumTopics response).
+- If "0 topics" -> TDLib returned an empty list (check offset params / chat must be open first).
+- If topics are found but chips still missing -> replaceForumTopics/query issue.
+Then verify: chip row (All + General + 1..4 with counts) -> chip filters grid -> Viewer pager on
+filtered set -> claim twice (0 new) -> plain-group regression (Photogram album shows NO chips).
 
+### Also verify tomorrow (owner's Telegram visual check)
+- NEW UPLOAD FORMAT: the next queued backup item should appear in Saved Messages as a small
+  preview (caption `name - preview`) with the original REPL YING to it; Photogram DB must record
+  the ORIGINAL's message id (remote_message_id), state flips to synced. Queue currently has ~55
+  pending items so the next app start will exercise this automatically.
+- F1: banner must NOT show on this non-empty phone; MigrateScreen (Settings -> Migration)
+  inventory count ~= real Saved Messages count; restore 2-3 items works.
+
+### Commits pending owner approval (suggest)
+- v0.10.2: getSupergroup fix + forum.ts logging (bug fix, verified).
+- v0.11: F1 migration (plan doc F1) + optionally the preview-reply upload (owner's request, NOT in
+  the original plan - owner decides whether it is its own version or rides with v0.11).
+
+### Key facts newer agents must not re-trip (v0.6)
 **The full product loop works and v0.6 added S8 Auto-albums, cloud storage counts, upload-completion
 confirmation, queue dedupe, and the date/grid fixes. All verified live on the Samsung (SM-S942B).**
 
