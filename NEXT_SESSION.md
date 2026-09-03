@@ -5,68 +5,60 @@ Last updated: end of day 2026-09-01 (§0). Read §0, then §1–§17. CHANGELOG.
 
 ---
 
-## 0. CURRENT STATE — END OF DAY 2026-09-02 · v0.10 + v0.10.1 COMMITTED · BIG UNCOMMITTED BATCH · ONE OPEN BLOCKER (forum topics list)
+## 0. CURRENT STATE — 2026-09-04 · TEMPORARY PAUSE (owner away) · TOPIC PIPELINE 95% DONE — final wiring verified next session
 
-**Owner is done for the day; resume 2026-09-03.** Committed today: v0.10 `7103e08` (S9 topics +
-picker fix), v0.10.1 `469863f` (claim file:// hotfix), `a4de939` + `36bdead` (handoff docs).
-Everything below is UNCOMMITTED and works (tsc clean) — verify then commit with owner approval.
+**Owner stepped away mid-session 2026-09-04. Everything below is in the working tree (tsc clean,
+uncommitted). Resume = one link+claim test, then chips verification, then commits.**
 
-### UNCOMMITTED batch in the working tree (3 logical changes)
-1. **getSupergroup overflow fix (S9 blocker — device-VERIFIED working):** this TdApi's
-   `GetSupergroup.supergroupId` is LONG but the library wrapper cast (int) -> ids > 2^31
-   (4411892879!) overflowed -> isForumChat always false -> topic path never ran. Fixed via NEW
-   replacePatches mechanism in scripts/patch-tdlib.js (marker = wrong text; idempotent). New APK
-   BUILT (03:35) AND INSTALLED. Proven live: `[forum] isForumChat(-1004411892879):
-   supergroupId=4411892879 sg=ok isForum=true`. forum.ts also got permanent diagnostic logging.
-2. **Upload format change (owner-requested, implemented, NOT yet device-verified):** preview photo
-   first (320px scan-time thumb, caption `filename - preview`), then the ORIGINAL file sent as a
-   REPLY to the preview. Saved Messages queue rows only (`item.chat_id == null`); shared-album
-   rows stay single-message. Toggle `previewReplyUploads` (default ON) + Settings row "Preview
-   first, file as reply". New `src/lib/uploadFormat.ts` (PREVIEW_CAPTION_SUFFIX + isPreviewCaption);
-   restorer filename-fallback now SKIPS preview captions (restoring a preview = wrong bytes).
-   Files: uploader.ts (preview send + reply_to + findSentMessage excludePreview), uploadFormat.ts,
-   restorer.ts, settingsStore.ts, SettingsScreen.tsx.
-3. **F1 v0.11 One-tap phone migration (implemented + code-reviewed + all review findings FIXED):**
-   NEW src/lib/rehydrate.ts + src/screens/MigrateScreen.tsx; edits: queries.ts (local_uri string|
-   null, findMediaIdByRemoteMessage, findMediaIdByMediaLibraryId, countMediaRows,
-   repairSyncedRowsWithoutRemote), navigation (Migrate route), SettingsScreen (Migration row),
-   GalleryScreen (empty-library banner gated on hasSavedMessagesMedia + one-time MMKV flag
-   migrationBannerShown), scanner.ts (dedupe also matches media_library_id - restored files are
-   recognized on rescan), rehydrate (short-page settlement loop, zombie-row repair at run start,
-   tightened hasSavedMessagesMedia heuristic >=3 caption==fileName hits). claimer.ts: export only.
-   Protected files + uploader untouched by F1. Code-review verdict: PASS after these fixes.
+### WHERE THE TOPIC INVESTIGATION LANDED (read this first)
+Two session-length bugs were found and fixed; the topic pipeline now WORKS end-to-end except one
+final on-device confirmation:
+1. **IPv4 binding bug:** `--host localhost` made Metro bind ::1 (IPv6) only, but adb reverse
+   forwards to 127.0.0.1 (IPv4) → every phone fetch died mid-stream ("unexpected end of stream"),
+   and the dev-launcher then silently served its CACHED OLD bundle. Fix: always start Metro with
+   `--host lan` (binds 0.0.0.0). THIS WAS THE "stale bundle" mystery all day. USB adb now works
+   too (<redacted-serial>, file-transfer mode) — prefer it.
+2. **gson parser bug:** ForumTopicInfo gson fields are `forumTopicId`/`name`/`isHidden` — the old
+   parser read `messageThreadId`/`title` (wire names that never appear), so all topics were
+   dropped → forum_topics stayed empty forever. FIXED: topics now parse
+   [General#1, 4#11, 3#6, 2#5, 1#2] (owner's topics are NAMED 1..4; thread ids are 2,5,6,11).
+3. **API fix (needs the rebuild already done):** getMessageThreadHistory needs each topic's root
+   message pre-loaded and 400s "Message not found"/"Scheduled..." on cold chats. Switched to a NEW
+   typed wrapper `getForumTopicHistory(chatId, forumTopicId, fromMessageId, offset, limit)` added
+   to scripts/patch-tdlib.js (idempotent, verified), gradle REBUILT (22m59s BUILD SUCCESSFUL) and
+   APK INSTALLED 2026-09-04 ~03:45.
+4. VERIFIED LIVE on device: getForumTopics parses 5 topics; forum_topics table POPULATED (album 4:
+   General/1/2/3/4 with thread ids 1/2/5/6/11); AlbumScreen CHIP ROW RENDERS ("All (1) | General |
+   4 | 3 | 2") and tapping a chip FILTERS the grid (chip 4 → empty state, correct).
 
-### OPEN BLOCKER — topic chips (NEXT ACTION #1)
-isForumChat=true now, but forum_topics cache STILL EMPTY and claims still take the flat path.
-Timeline: relink of "Photos" (owner's new 4-topic test group, chat -1004411892879) claimed 10 items
-flat (all forum_topic_id ''), then a later relink said "0 new - 1 already" - cursor stuck at
-15728640 (= 0xF00000, looks like a topic-root/pinned id, NOT a photo). getChatHistory on a forum
-chat appears to return only the General/root view (1 media message), so the flat claim cannot see
-topic photos. NEXT SESSION FIRST ACTION: restart app (newest bundle has listForumTopics logging)
--> Collections -> Shared albums -> "Claim new" on Photos -> read
-`[forum] listForumTopics(-1004411892879): ...` in logcat.
-- If "no topics array - raw=..." shows an error object -> the getForumTopics wrapper response is
-  the problem (check request params / gson shape of ForumTopics response).
-- If "0 topics" -> TDLib returned an empty list (check offset params / chat must be open first).
-- If topics are found but chips still missing -> replaceForumTopics/query issue.
-Then verify: chip row (All + General + 1..4 with counts) -> chip filters grid -> Viewer pager on
-filtered set -> claim twice (0 new) -> plain-group regression (Photogram album shows NO chips).
+### REMAINING (next session, ~20 min)
+- The owner's 4-topic test group (titled "Photos", chat -1004411892879) DISAPPEARED from
+  getChats(100) — likely archived in Telegram. It was UNLINKED from albums during testing (album 4
+  gone). ASK OWNER to unarchive it (or send a message in it) → then link via picker → first claim
+  → verify per-topic attribution in album_media.forum_topic_id → claim-twice = 0 new.
+  NOTE: I accidentally linked "photos [TD]" (-1004411859127) and UNLINKED it again — 1 stray media
+  row may exist in the library (harmless, tag "shared").
+- Regression: plain group (album 1 "Photogram") + auto-albums show NO chip row. All-but-General
+  chips showed correct empty states already.
+- Then: CHANGELOG v0.11 finalization → owner-gated commit of the whole batch.
 
-### Also verify tomorrow (owner's Telegram visual check)
-- NEW UPLOAD FORMAT: the next queued backup item should appear in Saved Messages as a small
-  preview (caption `name - preview`) with the original REPL YING to it; Photogram DB must record
-  the ORIGINAL's message id (remote_message_id), state flips to synced. Queue currently has ~55
-  pending items so the next app start will exercise this automatically.
-- F1: banner must NOT show on this non-empty phone; MigrateScreen (Settings -> Migration)
-  inventory count ~= real Saved Messages count; restore 2-3 items works.
+### UNCOMMITTED batch in the working tree (all tsc clean)
+- S9 topic fixes: scripts/patch-tdlib.js (getSupergroup int→long + NEW getForumTopicHistory
+  wrapper), src/lib/forum.ts (parser fix + retry loop + diagnostics + getForumTopicHistory call),
+  APK rebuilt+installed.
+- Preview-reply upload (owner request): src/lib/uploadFormat.ts, uploader.ts (preview photo first,
+  original as reply_to), restorer.ts (skips preview captions), settingsStore.ts + SettingsScreen.tsx
+  (toggle, default ON). NOT device-verified yet.
+- F1 v0.11 migration: rehydrate.ts, MigrateScreen.tsx, queries.ts, scanner.ts (dedupe by
+  media_library_id), navigation, GalleryScreen banner, settingsStore. Code-review PASS after fixes.
+- CHANGELOG.md has a drafted v0.11 entry (migration + preview-reply + supergroup fix).
+- Debug-logging leftovers to trim before commit: TOPICLIST-RAW/RESULT console.logs in forum.ts.
 
 ### Commits pending owner approval (suggest)
-- v0.10.2: getSupergroup fix + forum.ts logging (bug fix, verified).
-- v0.11: F1 migration (plan doc F1) + optionally the preview-reply upload (owner's request, NOT in
-  the original plan - owner decides whether it is its own version or rides with v0.11).
+- v0.10.2: getSupergroup fix + forum.ts fixes + getForumTopicHistory wrapper (fix).
+- v0.11: F1 migration + preview-reply upload (owner decides split or together).
 
-### Key facts newer agents must not re-trip (v0.6)
-**The full product loop works and v0.6 added S8 Auto-albums, cloud storage counts, upload-completion
+### Key facts newer agents must not re-trip (v0.6)**The full product loop works and v0.6 added S8 Auto-albums, cloud storage counts, upload-completion
 confirmation, queue dedupe, and the date/grid fixes. All verified live on the Samsung (SM-S942B).**
 
 ### What works (verified on device 2026-08-30)
