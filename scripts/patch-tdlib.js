@@ -80,6 +80,79 @@ const insertPatches = [
     snippet: "    getForumTopics: typeof getForumTopics;\n",
     why: "register getForumTopics on the default-export typings object",
   },
+  {
+    file: path.join(pkgDir, "android", "src", "main", "java", "com", "reactnativetdlib", "tdlibclient", "TdLibModule.java"),
+    marker: "public void getForumTopicHistory(",
+    anchor: "    @ReactMethod\n    public void getMessageThreadHistory(double chatId,",
+    snippet:
+`    @ReactMethod
+    public void getForumTopicHistory(double chatId, int forumTopicId, double fromMessageId, int offset, int limit, Promise promise) {
+        try {
+            if (client == null) {
+                promise.reject("CLIENT_NOT_INITIALIZED", "TDLib client is not initialized");
+                return;
+            }
+            TdApi.GetForumTopicHistory request = new TdApi.GetForumTopicHistory(
+                (long) chatId,
+                Math.max(forumTopicId, 1),
+                (long) fromMessageId,
+                offset,
+                Math.max(limit, 1)
+            );
+            client.send(request, object -> {
+                WritableMap result = Arguments.createMap();
+                result.putString("raw", gson.toJson(object));
+                promise.resolve(result);
+            });
+        } catch (Exception e) {
+            promise.reject("GET_FORUM_TOPIC_HISTORY_ERROR", e.getMessage());
+        }
+    }
+
+`,
+    why: "getForumTopicHistory typed wrapper (S9 topics: addresses topics by forumTopicId without needing root messages loaded)",
+  },
+  {
+    file: path.join(pkgDir, "index.js"),
+    marker: "getForumTopicHistory: TdLibModule.getForumTopicHistory,",
+    anchor: "  getMessageThreadHistory: TdLibModule.getMessageThreadHistory,\n",
+    snippet: "  getForumTopicHistory: TdLibModule.getForumTopicHistory,\n",
+    why: "register getForumTopicHistory in the JS export object",
+  },
+  {
+    file: path.join(pkgDir, "index.d.ts"),
+    marker: "export function getForumTopicHistory(",
+    anchor: "  export function getMessageThreadHistory(",
+    snippet:
+`  export function getForumTopicHistory(
+    chatId: number,
+    forumTopicId: number,
+    fromMessageId: number,
+    offset: number,
+    limit: number,
+  ): Promise<TdRawResult>;
+`,
+    why: "declare getForumTopicHistory in the typings",
+  },
+  {
+    file: path.join(pkgDir, "index.d.ts"),
+    marker: "getForumTopicHistory: typeof getForumTopicHistory;",
+    anchor: "    getMessageThreadHistory: typeof getMessageThreadHistory;\n",
+    snippet: "    getForumTopicHistory: typeof getForumTopicHistory;\n",
+    why: "register getForumTopicHistory on the default-export typings object",
+  },
+];
+
+// Replace patches: fix an upstream bug by swapping an exact wrong snippet for
+// the corrected one. Marker IS the wrong text — once replaced it's gone, so
+// re-runs are no-ops (idempotent by construction).
+const replacePatches = [
+  {
+    file: path.join(pkgDir, "android", "src", "main", "java", "com", "reactnativetdlib", "tdlibclient", "TdLibModule.java"),
+    marker: "new TdApi.GetSupergroup((int) supergroupId)",
+    replacement: "new TdApi.GetSupergroup((long) supergroupId)",
+    why: "GetSupergroup.supergroupId is long in this TdApi — (int) cast overflows for supergroup ids > 2^31, breaking isForumChat (S9 topic detection)",
+  },
 ];
 
 try {
@@ -100,6 +173,13 @@ try {
       }
       fs.writeFileSync(p.file, content.replace(p.anchor, p.snippet + p.anchor));
       console.log(`[patch-tdlib] inserted into ${path.basename(p.file)} (${p.why})`);
+    }
+    for (const p of replacePatches) {
+      if (!fs.existsSync(p.file)) continue;
+      const content = fs.readFileSync(p.file, "utf8");
+      if (!content.includes(p.marker)) continue; // already fixed (marker gone)
+      fs.writeFileSync(p.file, content.replace(p.marker, p.replacement));
+      console.log(`[patch-tdlib] replaced in ${path.basename(p.file)} (${p.why})`);
     }
   }
 } catch (e) {

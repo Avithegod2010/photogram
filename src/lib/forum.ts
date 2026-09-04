@@ -11,7 +11,9 @@ import TdLib from "react-native-tdlib";
 
 type TdAny = Record<string, any>;
 
-// General topic = Telegram's constant thread id "1" (D2d).
+// General topic = Telegram's constant thread id "1" as reported by the server
+// (forumTopicInfo.forumTopicId). getForumTopicHistory addresses topics by that
+// same id, so one constant serves both display and history fetches.
 const GENERAL_THREAD_ID = "1";
 
 export interface ForumTopicRef {
@@ -45,13 +47,22 @@ export async function isForumChat(chatId: string): Promise<boolean> {
   try {
     const chat = await parseRawResult(await TdLib.getChat(Number(chatId)));
     const type = chat?.type as TdAny | undefined;
-    if (type?.["@type"] !== "chatTypeSupergroup") return false;
+    if (type?.["@type"] !== "chatTypeSupergroup") {
+      console.log(`[forum] isForumChat(${chatId}): chat type=${type?.["@type"] ?? "null"}`);
+      return false;
+    }
     const supergroupId = Number(firstDefined(type.supergroupId, type.supergroup_id));
-    if (!Number.isFinite(supergroupId) || supergroupId <= 0) return false;
+    if (!Number.isFinite(supergroupId) || supergroupId <= 0) {
+      console.log(`[forum] isForumChat(${chatId}): bad supergroupId=${supergroupId}`);
+      return false;
+    }
 
     const sg = await parseRawResult(await TdLib.getSupergroup(supergroupId));
-    return firstDefined(sg?.isForum, sg?.is_forum) === true;
-  } catch {
+    const isForum = firstDefined(sg?.isForum, sg?.is_forum) === true;
+    console.log(`[forum] isForumChat(${chatId}): supergroupId=${supergroupId} sg=${sg ? "ok" : "null"} isForum=${isForum}`);
+    return isForum;
+  } catch (err) {
+    console.log(`[forum] isForumChat(${chatId}) threw:`, err instanceof Error ? err.message : err);
     return false;
   }
 }
@@ -67,30 +78,57 @@ export async function isForumChat(chatId: string): Promise<boolean> {
 // never clobber the cache with a lone General row.
 export async function listForumTopics(chatId: string): Promise<ForumTopicRef[] | null> {
   try {
-    const parsed = await parseRawResult(await TdLib.getForumTopics(Number(chatId), 100));
-    if (!parsed || !Array.isArray(parsed.topics)) return null;
+    // TDLib loads a chat's topic list lazily: right after openChat on a cold
+    // chat, getForumTopics can legitimately answer forumTopics with an EMPTY
+    // array while the server sync is still in flight (observed live: 0 topics
+    // on a 4-topic group). An empty first answer is therefore retried briefly
+    // before being accepted — a topic-less forum still terminates after the
+    // same bounded window, just ~3s later.
+    const EMPTY_RETRIES = 3;
+    const EMPTY_RETRY_DELAY_MS = 1200;
+    let parsed: TdAny | null = null;
+    let emptyRuns = 0;
+    while (true) {
+      const result = await TdLib.getForumTopics(Number(chatId), 100);
+      parsed = await parseRawResult(result);
+      if (!parsed || !Array.isArray(parsed.topics)) {
+        console.log(`[forum] listForumTopics(${chatId}): no topics array — raw=${String(result?.raw?.slice(0, 300))}`);
+        return null;
+      }
+      if (parsed.topics.length > 0 || emptyRuns >= EMPTY_RETRIES) break;
+      emptyRuns++;
+      console.log(`[forum] TOPICLIST ${chatId} empty (lazy sync), retry ${emptyRuns}/${EMPTY_RETRIES}`);
+      await new Promise((resolve) => setTimeout(resolve, EMPTY_RETRY_DELAY_MS));
+    }
     const raw: TdAny[] = parsed.topics;
     const topics: ForumTopicRef[] = [];
     const seen = new Set<string>();
     for (const t of raw) {
       const info: TdAny = (t?.info as TdAny) ?? {};
-      const threadId = String(firstDefined(info.messageThreadId, info.message_thread_id, t?.id, ""));
-      if (!threadId || seen.has(threadId)) continue;
+      // gson JAVA names: ForumTopicInfo{forumTopicId, name, isHidden} — the wire
+      // names (message_thread_id/title) never appear in this library's output.
+      const threadId = String(firstDefined(info.forumTopicId, info.forum_topic_id, t?.id, ""));
+      if (!threadId || threadId === "0" || seen.has(threadId)) continue;
       seen.add(threadId);
       topics.push({
         threadId,
-        title: String(firstDefined(info.title, "Topic")) || "Topic",
+        title: String(firstDefined(info.name, info.title, "Topic")) || "Topic",
         isHidden: firstDefined(info.isHidden, info.is_hidden) === true,
       });
     }
     // General is ensured only on a successfully read, non-empty list (D2d);
     // an empty list stays [] so a topic-less forum legitimately claims flat.
+    // The server reports General with forumTopicId=1; getForumTopicHistory
+    // addresses topics by that id, so no remapping is needed.
     if (topics.length > 0 && !seen.has(GENERAL_THREAD_ID)) {
       // TDLib did not report General's real is_hidden here; false keeps the
       // chip visible (worst case an empty General chip shows, never the
       // opposite: hiding an active General topic).
       topics.unshift({ threadId: GENERAL_THREAD_ID, title: "General", isHidden: false });
     }
+    // Concise diagnostics: the parsed topic list (raw dump was removed after
+    // the gson field-name debugging that found forumTopicId/name).
+    console.log(`[forum] TOPICLIST ${chatId} count=${topics.length} [${topics.map((t) => `${t.title}#${t.threadId}`).join(", ")}]`);
     return topics;
   } catch (err) {
     console.log("[forum] listForumTopics failed:", err instanceof Error ? err.message : err);
@@ -98,8 +136,10 @@ export async function listForumTopics(chatId: string): Promise<ForumTopicRef[] |
   }
 }
 
-// Newest-first page of one topic's history via the typed
-// getMessageThreadHistory wrapper (D2c). Message ids come from the loop
+// Newest-first page of one topic's history via the typed getForumTopicHistory
+// wrapper (D2c — addresses topics by forumTopicId directly; the earlier
+// getMessageThreadHistory route needed each topic's root message pre-loaded and
+// 400'd "Message not found" on cold chats). Message ids come from the loop
 // variable in the claimer, so topic attribution never depends on the drifted
 // message_thread_id / replyTo message fields here. Contract: null = the fetch
 // FAILED (TDLib error or an unreadable payload) — the topic must NOT be
@@ -114,7 +154,7 @@ export async function fetchThreadMessages(
 ): Promise<TdAny[] | null> {
   try {
     const parsed = await parseRawResult(
-      await TdLib.getMessageThreadHistory(Number(chatId), Number(threadId), 0, 0, limit)
+      await TdLib.getForumTopicHistory(Number(chatId), Number(threadId), 0, 0, limit)
     );
     const raw: unknown = firstDefined(parsed?.messages, parsed?.Messages);
     if (!Array.isArray(raw)) return null;
