@@ -4,6 +4,51 @@ Each entry below documents what a commit adds and what comes next. Newest first.
 
 ---
 
+## v0.11 — One-tap phone migration + preview-first uploads (NOT YET COMMITTED — owner gate)
+
+**Added in this commit** (two features; owner can ask to split into separate versions)
+- **One-tap phone migration (plan F1):** after a fresh QR login on a new phone, Photogram detects
+  the Telegram backup in Saved Messages and offers "Restore your backup": walks Saved Messages
+  history (paged, idempotent — re-runs pick up only new items), rebuilds the local index as
+  cloud-only rows (state `synced`, no local file), then restores the original files to the device
+  gallery at the owner's pace (pause/resume/stop), and re-links shared albums via the existing
+  claim flow. New `src/lib/rehydrate.ts` + `src/screens/MigrateScreen.tsx`; Settings → Migration
+  entry; empty-library banner (one-time). Review findings fixed: scanner dedupe also matches
+  `media_library_id` (restored files are recognized on rescan — no duplicates), short-page
+  pagination settles instead of ending early, zombie-row repair at run start, non-empty-library
+  warning before migrating.
+- **Preview-first upload format (owner request):** each Saved Messages backup now sends a small
+  preview photo first (the 320px thumbnail made at scan time, caption `filename · preview`), then
+  the original file as a REPLY to that preview — Telegram shows something instantly and the big
+  original threads beneath it. Shared-album queue rows stay single-message (the claimer must not
+  see double posts). Settings → "Preview first, file as reply" toggle (default ON). Restorer's
+  filename fallback skips preview captions (restoring a preview would fetch the wrong bytes).
+- **Topic pipeline fixes (S9 — three stacked bugs found via live debugging):**
+  1. `GetSupergroup.supergroupId` is LONG in this TdApi but the library wrapper cast (int) —
+     supergroup ids > 2³¹ overflowed, so every forum read failed. New idempotent replace-patch in
+     `scripts/patch-tdlib.js` + gradle rebuild.
+  2. gson field names: ForumTopicInfo carries `forumTopicId`/`name`/`isHidden`; the parser read
+     wire-format `message_thread_id`/`title` that never appear, dropping every topic. Fixed.
+  3. Switched topic history to a NEW typed wrapper `getForumTopicHistory(chatId, forumTopicId, …)`
+     (getMessageThreadHistory needed root messages pre-loaded and 400'd on cold chats). Patch
+     entry + gradle rebuild (both wrappers in the installed APK).
+  Also: lazy topic-list retry (TDLib answers empty while syncing a fresh chat), permanent concise
+  `[forum]` logcat diagnostics.
+- **Verified on device (2026-09-05, owner's "Photos testing" group — 4 topics named 1..4):**
+  topics parse [General#1, 1#2, 2#5, 3#6, 4#11]; forum_topics cache populated; first claim
+  attributed 11 media rows per topic (General 1, "1" 2, "2" 2, "3" 2, "4" 4); chip row renders
+  with counts ("All (11) | General · 1 | 1 · 2 | 2 · 2 | 3 · 2 | 4 · 4"); tapping a chip filters
+  the grid (chip "4" → 4 items); claim-twice = 0 new · 0 failed (idempotent); plain non-topic
+  group and auto-albums show NO chip row (regression PASS).
+
+**Verify on device when free (owner)**
+- New upload format: next backed-up photo appears in Saved Messages as a small preview with the
+  original replying to it.
+- Migration: on THIS phone the gallery banner must NOT appear (library not empty); Settings →
+  Migration → inventory count ≈ real Saved Messages count; restore 2-3 items.
+
+---
+
 ## v0.10.1 — Claim hotfix: file:// URI normalization (COMMITTED in this commit)
 
 **Added in this commit**
