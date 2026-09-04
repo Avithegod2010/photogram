@@ -5,58 +5,32 @@ Last updated: end of day 2026-09-01 (§0). Read §0, then §1–§17. CHANGELOG.
 
 ---
 
-## 0. CURRENT STATE — 2026-09-04 · TEMPORARY PAUSE (owner away) · TOPIC PIPELINE 95% DONE — final wiring verified next session
+## 0. CURRENT STATE — NIGHT 2026-09-05 · v0.10.2 + v0.11 COMMITTED · UI POLISH BATCH 1/3 DONE (LIVE ON PHONE) · BATCH 2+3 AWAIT "GO"
 
-**Owner stepped away mid-session 2026-09-04. Everything below is in the working tree (tsc clean,
-uncommitted). Resume = one link+claim test, then chips verification, then commits.**
+**Owner is heading to sleep. Committed with owner approval: v0.10.2 `ed9e2b3` (topic pipeline
+fixes: int overflow + gson fields + getForumTopicHistory wrapper) and v0.11 `1207bee` (F1 phone
+migration + preview-first uploads). Topic chips FULLY verified on device: attribution (11 rows),
+chip counts, filtering, claim-twice idempotent, plain-group regression — ALL PASS.**
 
-### WHERE THE TOPIC INVESTIGATION LANDED (read this first)
-Two session-length bugs were found and fixed; the topic pipeline now WORKS end-to-end except one
-final on-device confirmation:
-1. **IPv4 binding bug:** `--host localhost` made Metro bind ::1 (IPv6) only, but adb reverse
-   forwards to 127.0.0.1 (IPv4) → every phone fetch died mid-stream ("unexpected end of stream"),
-   and the dev-launcher then silently served its CACHED OLD bundle. Fix: always start Metro with
-   `--host lan` (binds 0.0.0.0). THIS WAS THE "stale bundle" mystery all day. USB adb now works
-   too (RZGL3039AAA, file-transfer mode) — prefer it.
-2. **gson parser bug:** ForumTopicInfo gson fields are `forumTopicId`/`name`/`isHidden` — the old
-   parser read `messageThreadId`/`title` (wire names that never appear), so all topics were
-   dropped → forum_topics stayed empty forever. FIXED: topics now parse
-   [General#1, 4#11, 3#6, 2#5, 1#2] (owner's topics are NAMED 1..4; thread ids are 2,5,6,11).
-3. **API fix (needs the rebuild already done):** getMessageThreadHistory needs each topic's root
-   message pre-loaded and 400s "Message not found"/"Scheduled..." on cold chats. Switched to a NEW
-   typed wrapper `getForumTopicHistory(chatId, forumTopicId, fromMessageId, offset, limit)` added
-   to scripts/patch-tdlib.js (idempotent, verified), gradle REBUILT (22m59s BUILD SUCCESSFUL) and
-   APK INSTALLED 2026-09-04 ~03:45.
-4. VERIFIED LIVE on device: getForumTopics parses 5 topics; forum_topics table POPULATED (album 4:
-   General/1/2/3/4 with thread ids 1/2/5/6/11); AlbumScreen CHIP ROW RENDERS ("All (1) | General |
-   4 | 3 | 2") and tapping a chip FILTERS the grid (chip 4 → empty state, correct).
-
-### REMAINING (next session, ~20 min)
-- The owner's 4-topic test group (titled "Photos", chat -1004411892879) DISAPPEARED from
-  getChats(100) — likely archived in Telegram. It was UNLINKED from albums during testing (album 4
-  gone). ASK OWNER to unarchive it (or send a message in it) → then link via picker → first claim
-  → verify per-topic attribution in album_media.forum_topic_id → claim-twice = 0 new.
-  NOTE: I accidentally linked "photos [TD]" (-1004411859127) and UNLINKED it again — 1 stray media
-  row may exist in the library (harmless, tag "shared").
-- Regression: plain group (album 1 "Photogram") + auto-albums show NO chip row. All-but-General
-  chips showed correct empty states already.
-- Then: CHANGELOG v0.11 finalization → owner-gated commit of the whole batch.
-
-### UNCOMMITTED batch in the working tree (all tsc clean)
-- S9 topic fixes: scripts/patch-tdlib.js (getSupergroup int→long + NEW getForumTopicHistory
-  wrapper), src/lib/forum.ts (parser fix + retry loop + diagnostics + getForumTopicHistory call),
-  APK rebuilt+installed.
-- Preview-reply upload (owner request): src/lib/uploadFormat.ts, uploader.ts (preview photo first,
-  original as reply_to), restorer.ts (skips preview captions), settingsStore.ts + SettingsScreen.tsx
-  (toggle, default ON). NOT device-verified yet.
-- F1 v0.11 migration: rehydrate.ts, MigrateScreen.tsx, queries.ts, scanner.ts (dedupe by
-  media_library_id), navigation, GalleryScreen banner, settingsStore. Code-review PASS after fixes.
-- CHANGELOG.md has a drafted v0.11 entry (migration + preview-reply + supergroup fix).
-- Debug-logging leftovers to trim before commit: TOPICLIST-RAW/RESULT console.logs in forum.ts.
-
-### Commits pending owner approval (suggest)
-- v0.10.2: getSupergroup fix + forum.ts fixes + getForumTopicHistory wrapper (fix).
-- v0.11: F1 migration + preview-reply upload (owner decides split or together).
+### IN PROGRESS: UI polish, 6 items in batches of 2 (owner directive, subagent-coded)
+- **Batch 1 DONE, LIVE on phone, UNCOMMITTED (working tree)**: src/navigation/RootTabs.tsx
+  (useTabEntrance fade+slide on every tab focus; TabIcon per-tab animations — cloud pop, search
+  wiggle, gear 360° spin replaying on every Settings landing) + src/screens/SettingsScreen.tsx
+  (Row overflow fix: label+sub grouped in flex:1 toggleText container). Code-reviewed PASS;
+  smoke-tested live via Metro Connect flow: tabs switch, zero JS errors, worklet plugin active.
+- **Batch 2 (NEXT, owner said "go" via permission gate — actually owner went to sleep BEFORE the
+  gate; ASK AGAIN before coding)**: Settings reorder — Uploads section to TOP, Account + Migration
+  to BOTTOM; Collections tab scrollable (CollectionsScreen.tsx uses plain Views — wrap content in
+  ScrollView; watch insets/padding).
+- **Batch 3**: "Show date in every photo" toggle in Settings (default OFF; when off, gallery grid
+  tiles hide the per-photo date overlay — the date badge lives in GalleryScreen tiles) + Viewer
+  action chips get icons with tiny labels underneath (ViewerScreen ActionChip component, icons via
+  @expo/vector-icons, no new deps).
+- **Then**: final device visual pass (NEED PHONE BACK from the other chatbot — owner lent wireless
+  debugging to a sibling chatbot during UI coding) + commit batches with owner approval + CHANGELOG.
+- Metro must run with `--host lan` (IPv6-only localhost bug — see §0b traps). Connect flow on the
+  launcher: URL field 127.0.0.1:8083 → Connect. Wireless bundle fetches still flaky; USB
+  (file-transfer mode) is the reliable path.
 
 ### Key facts newer agents must not re-trip (v0.6)**The full product loop works and v0.6 added S8 Auto-albums, cloud storage counts, upload-completion
 confirmation, queue dedupe, and the date/grid fixes. All verified live on the Samsung (SM-S942B).**
