@@ -13,6 +13,8 @@ import {
 import { StatusBar } from "expo-status-bar";
 import TdLib from "react-native-tdlib";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useNavigation } from "@react-navigation/native";
+import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { fetchProfile } from "../lib/tdlib";
 import { formatBytes, getMonthlyBuckets, getStorageTotals, MonthBucket, StorageTotals } from "../lib/stats";
 import { canUseBiometrics } from "../lib/biometrics";
@@ -26,8 +28,11 @@ import { useSettingsStore, UploadQuality } from "../store/settingsStore";
 import { useAuthStore } from "../auth/authStore";
 import { theme } from "../theme";
 
+type SettingsNav = NativeStackNavigationProp<{ Migrate: undefined }>;
+
 export function SettingsScreen() {
   const insets = useSafeAreaInsets();
+  const navigation = useNavigation<SettingsNav>();
   const [totals, setTotals] = useState<StorageTotals | null>(null);
   const [buckets, setBuckets] = useState<MonthBucket[]>([]);
   const [profileName, setProfileName] = useState<string | null>(null);
@@ -48,6 +53,8 @@ export function SettingsScreen() {
   const setChargeOnlyUpload = useSettingsStore((s) => s.setChargeOnlyUpload);
   const uploadQuality = useSettingsStore((s) => s.uploadQuality);
   const setUploadQuality = useSettingsStore((s) => s.setUploadQuality);
+  const previewReplyUploads = useSettingsStore((s) => s.previewReplyUploads);
+  const setPreviewReplyUploads = useSettingsStore((s) => s.setPreviewReplyUploads);
   const sharedTimelineMaster = useSettingsStore((s) => s.sharedTimelineMaster);
   const setSharedTimelineMaster = useSettingsStore((s) => s.setSharedTimelineMaster);
   const ocrSearchEnabled = useSettingsStore((s) => s.ocrSearchEnabled);
@@ -193,6 +200,23 @@ export function SettingsScreen() {
           </Pressable>
         </Section>
 
+        <Section title="Migration">
+          <Pressable
+            style={({ pressed }) => [styles.row, pressed && styles.pressed]}
+            android_ripple={{ color: theme.colors.outlineVariant }}
+            onPress={() => navigation.navigate("Migrate")}
+          >
+            <View style={styles.toggleText}>
+              <Text style={styles.rowLabel}>Migrate from another phone</Text>
+              <Text style={styles.rowSub}>
+                Rebuild this phone's library from your Telegram backup — index, originals and
+                shared albums.
+              </Text>
+            </View>
+            <Text style={styles.chevron}>›</Text>
+          </Pressable>
+        </Section>
+
         <Section title="Storage">
           {totals === null ? (
             <ActivityIndicator color={theme.colors.primary} style={{ padding: theme.spacing.lg }} />
@@ -317,6 +341,12 @@ export function SettingsScreen() {
                 : "Photos larger than 2048px are recompressed (~85% quality). Videos always stay original."}
             </Text>
           </View>
+          <ToggleRow
+            label="Preview first, file as reply"
+            sub="Send a small preview photo instantly, then upload the original as a reply to it. Keeps Saved Messages browsable while big files upload."
+            value={previewReplyUploads}
+            onChange={setPreviewReplyUploads}
+          />
           <ToggleRow
             label="Preserve EXIF metadata"
             sub="Keep date, camera and GPS data when uploading"
@@ -601,6 +631,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
   },
   freeBtnText: { color: theme.colors.onPrimary, fontWeight: "700", fontSize: 13 },
+  chevron: { color: theme.colors.onSurfaceVariant, fontSize: 22, fontWeight: "600" },
   btnDisabledStyle: { opacity: 0.45 },
   folderRow: {
     flexDirection: "row",

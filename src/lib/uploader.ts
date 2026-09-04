@@ -18,6 +18,7 @@ import {
   updateQueueStatus,
 } from "../db/queries";
 import { TdError, onUpdate } from "./tdlib";
+import { PREVIEW_CAPTION_SUFFIX } from "./uploadFormat";
 import {
   THROTTLE_LIMIT_BYTES,
   THROTTLE_PAUSE_MS,
@@ -287,12 +288,58 @@ async function runOne(item: QueueItem): Promise<void> {
           caption: { "@type": "formattedText", text: fileName },
         };
 
+    // Preview-then-reply scheme: send a small preview photo first (the 320px
+    // thumbnail made at scan time — tiny upload, instantly visible in
+    // Telegram), then send the original as a REPLY to it so the heavy file
+    // threads beneath its preview. Shared-album queue rows stay single-message
+    // (the claimer walks group history and must not see double posts).
+    let replyToMessageId: number | null = null;
+    if (useSettingsStore.getState().previewReplyUploads && !item.chat_id) {
+      const previewSource = media.thumb_uri || localUri;
+      try {
+        const previewPath = previewSource.replace(/^file:\/\//, "");
+        const previewContent = {
+          "@type": "inputMessagePhoto",
+          photo: { "@type": "inputFileLocal", path: previewPath },
+          caption: {
+            "@type": "formattedText",
+            text: `${fileName}${PREVIEW_CAPTION_SUFFIX}`,
+          },
+        };
+        await withTimeout(
+          TdLib.td_json_client_send({
+            "@type": "sendMessage",
+            chat_id: Number(chatId),
+            input_message_content: previewContent,
+          }),
+          5 * 60 * 1000
+        );
+        // Locate the preview just sent (its caption is unique per file) —
+        // findSentMessage matches by caption substring.
+        const preview = await findSentMessage(Number(chatId), `${fileName}${PREVIEW_CAPTION_SUFFIX}`);
+        if (preview.messageId && preview.messageId !== "0") {
+          replyToMessageId = Number(preview.messageId);
+        }
+      } catch {
+        // Preview is cosmetic — a failed preview must never block the original.
+        replyToMessageId = null;
+      }
+    }
+
+    const sendPayload: Record<string, unknown> = {
+      "@type": "sendMessage",
+      chat_id: Number(chatId),
+      input_message_content: content,
+    };
+    if (replyToMessageId !== null) {
+      sendPayload.reply_to = {
+        "@type": "inputMessageReplyToMessage",
+        message_id: replyToMessageId,
+      };
+    }
+
     const response = await withTimeout(
-      TdLib.td_json_client_send({
-        "@type": "sendMessage",
-        chat_id: Number(chatId),
-        input_message_content: content,
-      }),
+      TdLib.td_json_client_send(sendPayload),
       15 * 60 * 1000
     );
 
@@ -311,7 +358,8 @@ async function runOne(item: QueueItem): Promise<void> {
     // The message exists in the chat immediately (possibly with a pending id),
     // but its bytes may still be uploading — record the remote ids as
     // "uploading" and flip to "synced" only after confirmation below.
-    const sent = await findSentMessage(Number(chatId), fileName);
+    // excludePreview skips "· preview" captions so we always track the ORIGINAL.
+    const sent = await findSentMessage(Number(chatId), fileName, replyToMessageId !== null);
     await setMediaRemote(media.id, chatId, sent.messageId ?? "0", "uploading");
 
     const confirmed =
@@ -371,7 +419,8 @@ async function runOne(item: QueueItem): Promise<void> {
 // like restorer.ts does.
 async function findSentMessage(
   chatIdNumber: number,
-  fileName: string
+  fileName: string,
+  excludePreview = false
 ): Promise<{ messageId: string | null; fileId: number | null; uploadComplete: boolean }> {
   for (let attempt = 0; attempt < 5; attempt++) {
     try {
@@ -386,6 +435,7 @@ async function findSentMessage(
               message?.content?.document?.file_name
             ) ??
             "";
+          if (excludePreview && caption.endsWith(PREVIEW_CAPTION_SUFFIX)) continue;
           if (typeof caption === "string" && caption.includes(fileName)) {
             const info = extractUploadFile(message);
             return { messageId: String(message.id), fileId: info.fileId, uploadComplete: info.uploadComplete };
