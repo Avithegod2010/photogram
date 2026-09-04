@@ -21,6 +21,7 @@ import { formatBytes } from "../lib/stats";
 import { runSearch } from "../lib/search";
 import { scanDeviceLibrary, ScanProgress } from "../lib/scanner";
 import { enqueueForUpload, startWorker } from "../lib/uploader";
+import { hasSavedMessagesMedia } from "../lib/rehydrate";
 import { MemoriesCarousel } from "../components/MemoriesCarousel";
 import { useSettingsStore } from "../store/settingsStore";
 import { theme } from "../theme";
@@ -28,6 +29,7 @@ import { theme } from "../theme";
 type StackNav = NativeStackNavigationProp<{
   Viewer: { ids: number[]; index: number };
   Story: { ids: number[]; title: string };
+  Migrate: undefined;
 }>;
 
 export type ZoomLevel = "days" | "months" | "years";
@@ -109,6 +111,12 @@ export function GalleryScreen() {
   const [searchOpen, setSearchOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<MediaRow[] | null>(null);
+  // F1: one-time "Restore your backup" banner on a fresh install — shown only
+  // when the library is empty AND Saved Messages actually holds Photogram
+  // uploads, then never again (MMKV-persisted flag).
+  const [migrationBanner, setMigrationBanner] = useState(false);
+  const migrationBannerShown = useSettingsStore((s) => s.migrationBannerShown);
+  const setMigrationBannerShown = useSettingsStore((s) => s.setMigrationBannerShown);
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const scanCancelRef = useRef({ cancelled: false });
   const cursorRef = useRef<number | null>(null);
@@ -131,6 +139,18 @@ export function GalleryScreen() {
   useEffect(() => {
     void loadFirstPage().then(() => startWorker());
   }, [loadFirstPage]);
+
+  // Probe the backup once per mount, only while the library is still empty.
+  useEffect(() => {
+    if (loading || rows.length > 0 || migrationBannerShown) return;
+    let alive = true;
+    void hasSavedMessagesMedia().then((hasBackup) => {
+      if (alive && hasBackup) setMigrationBanner(true);
+    });
+    return () => {
+      alive = false;
+    };
+  }, [loading, rows.length, migrationBannerShown]);
 
   const loadMore = useCallback(async () => {
     if (exhaustedRef.current || loading) return;
@@ -436,6 +456,26 @@ export function GalleryScreen() {
 
       {showEmptyState ? (
         <View style={styles.emptyWrap}>
+          {migrationBanner ? (
+            <View style={styles.migrateBanner}>
+              <Text style={styles.migrateTitle}>Restore your backup</Text>
+              <Text style={styles.migrateBody}>
+                We found your Photogram backup in Telegram on this phone — rebuild your library
+                from it.
+              </Text>
+              <View style={styles.migrateActions}>
+                <Pressable
+                  style={styles.cta}
+                  onPress={() => navigation.navigate("Migrate")}
+                >
+                  <Text style={styles.ctaText}>Restore</Text>
+                </Pressable>
+                <Pressable hitSlop={8} onPress={() => setMigrationBannerShown(true)}>
+                  <Text style={styles.migrateDismiss}>Dismiss</Text>
+                </Pressable>
+              </View>
+            </View>
+          ) : null}
           <Text style={styles.emptyTitle}>No photos yet</Text>
           <Text style={styles.emptyBody}>
             Scan your device library to build your local index and start backing up.
@@ -601,6 +641,26 @@ const styles = StyleSheet.create({
     paddingHorizontal: theme.spacing.xl,
   },
   ctaText: { color: theme.colors.onPrimary, fontWeight: "700" },
+  migrateBanner: {
+    width: "100%",
+    backgroundColor: theme.colors.surfaceContainer,
+    borderRadius: theme.radius.xl,
+    borderWidth: 1,
+    borderColor: theme.colors.outlineVariant,
+    padding: theme.spacing.lg,
+    marginBottom: theme.spacing.xl,
+    alignItems: "center",
+  },
+  migrateTitle: { color: theme.colors.onSurface, fontSize: 18, fontWeight: "700" },
+  migrateBody: {
+    color: theme.colors.onSurfaceVariant,
+    fontSize: 13.5,
+    textAlign: "center",
+    lineHeight: 19,
+    marginTop: theme.spacing.sm,
+  },
+  migrateActions: { flexDirection: "row", alignItems: "center", gap: theme.spacing.lg, marginTop: theme.spacing.lg },
+  migrateDismiss: { color: theme.colors.onSurfaceVariant, fontWeight: "600", fontSize: 13.5 },
   loader: { flex: 1 },
   scanBanner: {
     flexDirection: "row",

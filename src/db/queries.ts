@@ -27,7 +27,9 @@ export interface MediaRow {
 }
 
 export interface NewMediaInput {
-  local_uri: string;
+  // Null for cloud-only rows built by the F1 migration (src/lib/rehydrate.ts):
+  // the Telegram message exists but nothing is on this device yet.
+  local_uri: string | null;
   thumb_uri: string;
   file_name: string;
   mime_type: string;
@@ -315,6 +317,65 @@ export async function setAlbumMediaTopic(
 export async function deleteSharedAlbum(id: number): Promise<void> {
   const db = await getDb();
   await db.runAsync("DELETE FROM albums WHERE id = ?", [id]);
+}
+
+// F1 migration idempotency: has this Saved Messages message already been
+// indexed by a previous inventory run? chat_id = the own user id (Saved
+// Messages); matching both columns keeps album-claimed rows (group chat ids)
+// out of the lookup.
+export async function findMediaIdByRemoteMessage(
+  chatId: string,
+  messageId: string
+): Promise<number | null> {
+  const db = await getDb();
+  const row = await db.getFirstAsync<{ id: number }>(
+    "SELECT id FROM media WHERE remote_chat_id = ? AND remote_message_id = ? LIMIT 1",
+    [chatId, messageId]
+  );
+  return row?.id ?? null;
+}
+
+// F1 migration: recognizes a device asset the restorer already saved (the
+// restorer's setLocalUri stores the media-library id on the cloud-only row).
+// The scanner checks this BEFORE its fingerprint gate: a restored file's
+// MediaStore fingerprint (mtime·1000 + real filename) can never match the
+// Telegram-side fingerprint recorded at migration time, so without this
+// lookup every restored item would come back from a scan as a second row.
+export async function findMediaIdByMediaLibraryId(
+  libraryId: string
+): Promise<number | null> {
+  const db = await getDb();
+  const row = await db.getFirstAsync<{ id: number }>(
+    "SELECT id FROM media WHERE media_library_id = ? LIMIT 1",
+    [libraryId]
+  );
+  return row?.id ?? null;
+}
+
+// F1 migration UI guard: how many rows this phone's library already has, so
+// the Migrate screen can warn before rebuilding on a non-empty device.
+export async function countMediaRows(): Promise<number> {
+  const db = await getDb();
+  const row = await db.getFirstAsync<{ n: number }>(
+    "SELECT COUNT(*) AS n FROM media"
+  );
+  return row?.n ?? 0;
+}
+
+// F1 self-heal (review fix): a crash between insertMedia (state 'synced') and
+// setMediaRemote leaves a permanent zombie — synced, no remote ids, no local
+// file. Restore can never serve it (no remote copy) and every re-run skips it
+// (its fingerprint already exists). Such rows can carry no album_media link
+// (the claimer always inserts rows with a local file) and no upload_queue row
+// (enqueue requires a local file), so a plain DELETE is complete.
+export async function repairSyncedRowsWithoutRemote(): Promise<void> {
+  const db = await getDb();
+  await db.runAsync(
+    `DELETE FROM media WHERE state = 'synced'
+       AND (remote_message_id IS NULL OR remote_message_id = '0')
+       AND local_uri IS NULL`,
+    []
+  );
 }
 
 export async function findMediaIdByFingerprint(fingerprint: string): Promise<number | null> {

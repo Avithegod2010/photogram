@@ -3,7 +3,7 @@ import { ImageManipulator, SaveFormat } from "expo-image-manipulator";
 import * as VideoThumbnails from "expo-video-thumbnails";
 import { File, Paths } from "expo-file-system";
 import type * as TextRecognitionModule from "@react-native-ml-kit/text-recognition";
-import { insertMedia, updateMediaLibraryId, backfillTakenAt, updateOcrText, setMediaState } from "../db/queries";
+import { findMediaIdByMediaLibraryId, getMediaByIds, insertMedia, updateMediaLibraryId, backfillTakenAt, updateOcrText, setMediaState } from "../db/queries";
 import { findDuplicate, quickFingerprint } from "./dedupe";
 import { useSettingsStore } from "../store/settingsStore";
 
@@ -173,7 +173,25 @@ export async function scanDeviceLibrary(
           fileName: asset.filename,
         });
 
-        const existing = await findDuplicate(fingerprint);
+        // Media-library id gate (F1): a file the restorer saved to the gallery
+        // carries the migration's cloud-side fingerprint (message date + tg
+        // name), which this device-side fingerprint can never equal — so also
+        // match the stored media_library_id and treat the hit exactly like a
+        // fingerprint duplicate (same taken_at / OCR backfill path below).
+        let existing = await findDuplicate(fingerprint);
+        if (!existing && asset.id) {
+          const byLibraryId = await findMediaIdByMediaLibraryId(asset.id);
+          if (byLibraryId !== null) {
+            const rows = await getMediaByIds([byLibraryId]);
+            const row = rows[0];
+            // findDuplicate's narrow shape; MediaRow doesn't expose ocr_text,
+            // so null lets the OCR backfill below cover migrated+restored
+            // photos (they never had text indexed).
+            if (row) {
+              existing = { id: row.id, state: row.state, taken_at: row.taken_at, ocr_text: null };
+            }
+          }
+        }
         if (existing) {
           if (asset.id && existing.id) {
             await updateMediaLibraryId(existing.id, asset.id);

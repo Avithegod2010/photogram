@@ -2,6 +2,7 @@ import TdLib from "react-native-tdlib";
 import * as MediaLibrary from "expo-media-library/legacy";
 import { getMediaByIds, setLocalUri, updateRemoteMessageIdById } from "../db/queries";
 import { onUpdate } from "./tdlib";
+import { isPreviewCaption } from "./uploadFormat";
 
 export interface RestoreProgress {
   phase: "fetching" | "downloading" | "saving" | "done";
@@ -129,7 +130,14 @@ async function fetchMessage(
         }
         // The uploader recorded PENDING message ids that TDLib later replaced with
         // final ones (low bits differ) — fall back to matching by filename.
-        if (!byName && fileName && messageContentFileName(message) === fileName) {
+        // Preview captions ("name.jpg · preview") are skipped: restoring a
+        // preview would fetch the tiny preview file instead of the original.
+        if (
+          !byName &&
+          fileName &&
+          !isPreviewCaption(messageContentFileName(message)) &&
+          messageContentFileName(message) === fileName
+        ) {
           byName = message;
         }
       } catch {}
