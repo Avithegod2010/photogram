@@ -9,7 +9,9 @@ export interface UploadActiveItem {
   uploadedBytes: number;
 }
 
-const uploadsMmkv = createMMKV({ id: "uploads" });
+// Shared `uploads` MMKV store — uploadSafety.ts reuses this exact instance for
+// its persisted counters/pauses so all upload state lives in one place.
+export const uploadsMmkv = createMMKV({ id: "uploads" });
 
 function todayKey(): string {
   const d = new Date();

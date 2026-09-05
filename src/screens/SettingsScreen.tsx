@@ -22,13 +22,14 @@ import { countFreeableBytes } from "../lib/trash";
 import { freeUpDeviceSpace } from "../lib/space";
 import { restoreMediaToDevice } from "../lib/restorer";
 import { getSyncedWithoutLocal, RestorableRow } from "../db/queries";
-import { pauseUploads, refreshCounts, resumeUploads } from "../lib/uploader";
+import { pauseUploads, refreshCounts, resumeUploads, simulateRateLimitForTesting } from "../lib/uploader";
 import { useUploadStore } from "../store/uploadStore";
+import { safetyState, type SafetyStatus } from "../lib/uploadSafety";
 import { useSettingsStore, UploadQuality } from "../store/settingsStore";
 import { useAuthStore } from "../auth/authStore";
 import { theme } from "../theme";
 
-type SettingsNav = NativeStackNavigationProp<{ Migrate: undefined }>;
+type SettingsNav = NativeStackNavigationProp<{ Migrate: undefined; JunkSweeper: undefined }>;
 
 export function SettingsScreen() {
   const insets = useSafeAreaInsets();
@@ -42,6 +43,8 @@ export function SettingsScreen() {
   const [freeing, setFreeing] = useState(false);
   const [restorable, setRestorable] = useState<RestorableRow[]>([]);
   const [restoringText, setRestoringText] = useState<string | null>(null);
+  // Danger zone status rows — re-read on mount, pull-to-refresh and simulate.
+  const [safety, setSafety] = useState<SafetyStatus>(() => safetyState());
 
   const exifPreserve = useSettingsStore((s) => s.exifPreserve);
   const hiddenLockEnabled = useSettingsStore((s) => s.hiddenLockEnabled);
@@ -59,12 +62,18 @@ export function SettingsScreen() {
   const setSharedTimelineMaster = useSettingsStore((s) => s.setSharedTimelineMaster);
   const ocrSearchEnabled = useSettingsStore((s) => s.ocrSearchEnabled);
   const setOcrSearchEnabled = useSettingsStore((s) => s.setOcrSearchEnabled);
+  const junkSweeperEnabled = useSettingsStore((s) => s.junkSweeperEnabled);
+  const setJunkSweeperEnabled = useSettingsStore((s) => s.setJunkSweeperEnabled);
   const autoBackupEnabled = useSettingsStore((s) => s.autoBackupEnabled);
   const setAutoBackupEnabled = useSettingsStore((s) => s.setAutoBackupEnabled);
   const autoBackupFolders = useSettingsStore((s) => s.autoBackupFolders);
   const setAutoBackupFolders = useSettingsStore((s) => s.setAutoBackupFolders);
   const showDateOnPhotos = useSettingsStore((s) => s.showDateOnPhotos);
   const setShowDateOnPhotos = useSettingsStore((s) => s.setShowDateOnPhotos);
+  const uploadGapSeconds = useSettingsStore((s) => s.uploadGapSeconds);
+  const setUploadGapSeconds = useSettingsStore((s) => s.setUploadGapSeconds);
+  const dailyBudgetGb = useSettingsStore((s) => s.dailyBudgetGb);
+  const setDailyBudgetGb = useSettingsStore((s) => s.setDailyBudgetGb);
 
   // Device albums for the auto-backup folder picker.
   const [deviceAlbums, setDeviceAlbums] = useState<Array<{ id: string; title: string }>>([]);
@@ -101,6 +110,7 @@ export function SettingsScreen() {
   const todayBytes = useUploadStore((s) => s.todayBytes);
 
   const load = useCallback(async () => {
+    setSafety(safetyState());
     try {
       const [t, b, f, r] = await Promise.all([
         getStorageTotals(),
@@ -424,6 +434,38 @@ export function SettingsScreen() {
           ) : null}
         </Section>
 
+        <Section title="Junk sweeper">
+          <ToggleRow
+            label="Find junk photos automatically"
+            sub="Photogram looks at thumbnails on this phone only and suggests blurry shots, pocket pictures, near-duplicates and old screenshots. Nothing is deleted without your review — Telegram keeps the original. A sweep runs about once a week."
+            value={junkSweeperEnabled}
+            onChange={(v) => {
+              setJunkSweeperEnabled(v);
+              if (v) {
+                Alert.alert(
+                  "Junk sweeper on",
+                  "Photogram will scan your thumbnails on this phone only. Nothing is deleted without your review, and your Telegram backup always keeps the original."
+                );
+              }
+            }}
+          />
+          <View style={styles.row}>
+            <View style={styles.toggleText}>
+              <Text style={styles.rowLabel}>Review junk findings</Text>
+              <Text style={styles.rowSub}>
+                See what the sweep found and choose what to delete — locally, from Telegram, or both.
+              </Text>
+            </View>
+            <Pressable
+              style={[styles.freeBtn, junkSweeperEnabled ? null : styles.btnDisabledStyle]}
+              disabled={!junkSweeperEnabled}
+              onPress={() => navigation.navigate("JunkSweeper")}
+            >
+              <Text style={styles.freeBtnText}>Sweep now</Text>
+            </Pressable>
+          </View>
+        </Section>
+
         <Section title="Search">
           <ToggleRow
             label="Read text in photos (OCR)"
@@ -491,16 +533,112 @@ export function SettingsScreen() {
           </Pressable>
         </Section>
 
+        <Section title="Danger zone" danger>
+          <View style={styles.qualityRow}>
+            <Text style={styles.rowLabel}>Inter-message gap</Text>
+            <View style={styles.qualityChips}>
+              {[0, 1, 2, 3, 4].map((s) => (
+                <Pressable
+                  key={s}
+                  onPress={() => setUploadGapSeconds(s)}
+                  style={[styles.qualityChip, uploadGapSeconds === s && styles.qualityChipActive]}
+                >
+                  <Text
+                    style={[
+                      styles.qualityChipText,
+                      uploadGapSeconds === s && styles.qualityChipTextActive,
+                    ]}
+                  >
+                    {s === 0 ? "Off" : `${s}s`}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
+            <Text style={styles.rowSub}>
+              Pause between every message sent to Telegram. Higher is safer and slower. Safety
+              pauses can force a bigger gap temporarily.
+            </Text>
+          </View>
+          <View style={styles.qualityRow}>
+            <Text style={styles.rowLabel}>Daily upload budget</Text>
+            <View style={styles.qualityChips}>
+              {[5, 10, 25, 50, 0].map((gb) => (
+                <Pressable
+                  key={gb}
+                  onPress={() => setDailyBudgetGb(gb)}
+                  style={[styles.qualityChip, dailyBudgetGb === gb && styles.qualityChipActive]}
+                >
+                  <Text
+                    style={[
+                      styles.qualityChipText,
+                      dailyBudgetGb === gb && styles.qualityChipTextActive,
+                    ]}
+                  >
+                    {gb === 0 ? "∞" : `${gb} GB`}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
+            <Text style={styles.rowSub}>
+              {formatBytes(safety.todayBytes)} used today
+              {dailyBudgetGb > 0 ? ` of ${dailyBudgetGb} GB` : " — no cap"}. When the budget is
+              reached, uploads pause until midnight (local time).
+            </Text>
+          </View>
+          <Row
+            label="Status"
+            sub={safety.modeDetail || `Normal — uploads running${uploadGapSeconds > 0 ? ` with a ${uploadGapSeconds}s gap` : ""}`}
+            muted={!safety.modeDetail}
+          />
+          <Row label="Last rate limit" sub={safety.lastHit || "None recorded"} muted={!safety.lastHit} />
+          <Row label="Rate-limit hits" sub={`${safety.hits1h} in the last hour · ${safety.hits24h} in the last 24 h`} />
+          <Row
+            label="Budget used"
+            sub={`${formatBytes(safety.todayBytes)} today · ${formatBytes(safety.hourBytes)} this hour`}
+          />
+          <Pressable
+            style={({ pressed }) => [styles.dangerBtn, pressed && styles.pressed]}
+            android_ripple={{ color: theme.colors.errorContainer }}
+            onPress={() => {
+              Alert.alert(
+                "Simulate rate limit?",
+                "Injects a fake 30-second FLOOD_WAIT through the real safety ladder: the worker will pause and the escalation counters will count it as a real hit.",
+                [
+                  { text: "Cancel", style: "cancel" },
+                  {
+                    text: "Simulate",
+                    style: "destructive",
+                    onPress: () => {
+                      simulateRateLimitForTesting(30_000);
+                      setSafety(safetyState());
+                    },
+                  },
+                ]
+              );
+            }}
+          >
+            <Text style={styles.dangerBtnText}>Simulate rate limit (testing)</Text>
+          </Pressable>
+        </Section>
+
         <Text style={styles.footer}>Photogram 0.1.0 · Your cloud is your Telegram</Text>
       </ScrollView>
     </View>
   );
 }
 
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
+function Section({
+  title,
+  children,
+  danger,
+}: {
+  title: string;
+  children: React.ReactNode;
+  danger?: boolean;
+}) {
   return (
     <View style={styles.section}>
-      <Text style={styles.sectionTitle}>{title}</Text>
+      <Text style={[styles.sectionTitle, danger && styles.sectionTitleDanger]}>{title}</Text>
       <View style={styles.sectionCard}>{children}</View>
     </View>
   );
@@ -560,6 +698,7 @@ const styles = StyleSheet.create({
     marginLeft: theme.spacing.sm,
     marginBottom: theme.spacing.sm,
   },
+  sectionTitleDanger: { color: theme.colors.error },
   sectionCard: {
     backgroundColor: theme.colors.surfaceContainer,
     borderRadius: theme.radius.xl,
@@ -621,6 +760,17 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   pauseText: { color: theme.colors.onSurface, fontWeight: "600", fontSize: 14 },
+  dangerBtn: {
+    marginHorizontal: theme.spacing.md,
+    marginTop: 4,
+    marginBottom: theme.spacing.md,
+    borderRadius: theme.radius.full,
+    borderWidth: 1,
+    borderColor: theme.colors.error,
+    paddingVertical: 10,
+    alignItems: "center",
+  },
+  dangerBtnText: { color: theme.colors.error, fontWeight: "600", fontSize: 14 },
   qualityRow: { paddingHorizontal: theme.spacing.md, paddingVertical: 14 },
   qualityChips: { flexDirection: "row", gap: theme.spacing.sm, marginTop: 10, marginBottom: 8 },
   qualityChip: {

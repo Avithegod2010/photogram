@@ -1,4 +1,5 @@
 import TdLib from "react-native-tdlib";
+import { Alert } from "react-native";
 import { ImageManipulator, SaveFormat } from "expo-image-manipulator";
 import { File } from "expo-file-system";
 import * as Network from "expo-network";
@@ -10,6 +11,7 @@ import {
   dedupeUploadQueue,
   enqueueUpload,
   getMediaByIds,
+  getQueueStatus,
   nextQueued,
   resetActiveToPending,
   replaceRemoteMessageId,
@@ -19,11 +21,20 @@ import {
 } from "../db/queries";
 import { TdError, onUpdate } from "./tdlib";
 import { PREVIEW_CAPTION_SUFFIX } from "./uploadFormat";
+import { useUploadStore } from "../store/uploadStore";
 import {
-  THROTTLE_LIMIT_BYTES,
-  THROTTLE_PAUSE_MS,
-  useUploadStore,
-} from "../store/uploadStore";
+  formatResumeTime,
+  interMessageDelayMs,
+  parseRateLimitError,
+  recordBytes,
+  recordHit,
+  setForcedGap,
+  setSafetyPause,
+  simulateHit,
+  activeSafetyGate,
+  waitForBudget,
+  type LadderResponse,
+} from "./uploadSafety";
 
 const MAX_ATTEMPTS = 5;
 const UPLOAD_CONFIRM_TIMEOUT_MS = 2 * 60 * 60 * 1000;
@@ -154,6 +165,27 @@ export function startWorker(): void {
     } catch {}
   });
 
+  // Rate-limit & account-safety: TDLib reports failed sends ONLY through this
+  // fan-out (td_json_client_send is fire-and-forget — see plan §2.1 G1), so a
+  // FLOOD_WAIT / PEER_FLOOD arrives here as updateMessageSendFailed carrying
+  // error{code,message}. Attribute it to the active item (the worker is
+  // single-item sequential), run the escalation ladder and park the item back
+  // in "pending" WITHOUT burning an attempt — a rate limit is not a failure.
+  onUpdate((update) => {
+    if (update.type !== "updateMessageSendFailed") return;
+    try {
+      const parsed = parseRateLimitError(update.payload);
+      if (parsed.kind === "other") return;
+      // The worker is single-item sequential, so the active item at failure
+      // time is the one that failed (plan §2.1 correlation). With nothing
+      // active the ladder still runs worker-wide — and any row stuck in
+      // "active" is orphaned by definition, so park it too.
+      const active = useUploadStore.getState().active;
+      handleRateLimit(parsed.kind, parsed.waitMs, active ? active.queueId : null);
+      if (!active) void resetActiveToPending();
+    } catch {}
+  });
+
   onUpdate((update) => {
     if (update.type !== "updateFile") return;
     const store = useUploadStore.getState();
@@ -176,6 +208,53 @@ export function startWorker(): void {
   void workerLoop();
 }
 
+// The escalation ladder, applied worker-wide from ONE place (failed-update
+// listener, thrown-error path and the dev simulator all route through here).
+// Persists the pause + forced gap to MMKV so a restart mid-wait keeps them.
+function applyLadder(response: LadderResponse, queueId: number | null): void {
+  const store = useUploadStore.getState();
+  if (response.pauseMs > 0) {
+    const until = Date.now() + response.pauseMs;
+    setSafetyPause(until, response.reason);
+    store.setThrottledUntil(until);
+    store.setError(`${response.reason} Resumes at ${formatResumeTime(until)}.`);
+  }
+  if (response.gapMs > 0 && response.gapUntil) {
+    setForcedGap(response.gapMs, response.gapUntil);
+  }
+  if (queueId !== null) {
+    // Rate-limit errors must NOT burn attempts or permanently fail items —
+    // park the row back to "pending" for an automatic retry after the pause.
+    // If the item already finished ("done" — a late failed update), leave it
+    // untouched: re-parking it would cause a duplicate re-upload.
+    void getQueueStatus(queueId)
+      .then((status) => (status === "done" ? undefined : updateQueueStatus(queueId, "pending")))
+      .catch(() => {})
+      .then(() => refreshCounts());
+  }
+  if (response.warn) {
+    Alert.alert("Uploads paused for your account's safety", response.reason, [{ text: "OK" }]);
+  }
+}
+
+function handleRateLimit(kind: "flood" | "peer", waitMs: number, queueId: number | null): void {
+  rateLimitActive = true;
+  applyLadder(recordHit(kind, waitMs), queueId);
+}
+
+// Dev/testing entry (Settings → Danger zone): injects a FAKE 30 s FLOOD_WAIT
+// through the REAL ladder path — same persistence, pause, forced gap and
+// status rows as a genuine hit. Nothing is parked (no queue row involved).
+export function simulateRateLimitForTesting(waitMs: number = 30_000): void {
+  applyLadder(simulateHit(waitMs), null);
+  void refreshCounts();
+}
+
+// Module-level flag: when a rate limit fires mid-item, runOne must not treat
+// the aborted send as a normal error (the failed-update handler already parked
+// the row). Checked by the catch block in runOne.
+let rateLimitActive = false;
+
 async function workerLoop(): Promise<void> {
   const store = useUploadStore.getState();
 
@@ -194,6 +273,18 @@ async function workerLoop(): Promise<void> {
     }
     if (throttleUntil && Date.now() >= throttleUntil) {
       state.setThrottledUntil(null);
+    }
+
+    // Persisted safety gates (ladder pause + day/hour budgets) — re-checked on
+    // EVERY loop pass and on startWorker, so a restart can never bypass them.
+    // Budget state is re-derived from the persisted counters each check, which
+    // also rolls the day/hour counters at their boundaries.
+    const gate = activeSafetyGate();
+    if (gate) {
+      state.setHoldReason(gate.reason);
+      state.setError(`${gate.reason} Resumes at ${formatResumeTime(gate.until)}.`);
+      await sleep(Math.min(4000, Math.max(1000, gate.until - Date.now())));
+      continue;
     }
 
     const hold = await uploadHoldReason();
@@ -252,6 +343,17 @@ async function runOne(item: QueueItem): Promise<void> {
   const chatId = item.chat_id ?? (await resolveSavedMessagesChat());
 
   try {
+    // Safety gate immediately before any sendMessage: the worker loop checks
+    // budgets before dequeuing, but time passes while an item uploads — if a
+    // budget was hit meanwhile, hand the item back to the queue untouched and
+    // let the loop gate handle the pause.
+    const budgetGate = waitForBudget();
+    if (budgetGate.waitMs > 0) {
+      await updateQueueStatus(item.id, "pending");
+      useUploadStore.getState().setHoldReason(budgetGate.reason);
+      return;
+    }
+
     let path = localUri.replace(/^file:\/\//, "");
     const isVideo = media.mime_type.startsWith("video/");
     const quality = useSettingsStore.getState().uploadQuality;
@@ -298,6 +400,8 @@ async function runOne(item: QueueItem): Promise<void> {
       const previewSource = media.thumb_uri || localUri;
       try {
         const previewPath = previewSource.replace(/^file:\/\//, "");
+        // Inter-message gap applies before EVERY sendMessage (preview included).
+        await sleep(interMessageDelayMs());
         const previewContent = {
           "@type": "inputMessagePhoto",
           photo: { "@type": "inputFileLocal", path: previewPath },
@@ -326,6 +430,17 @@ async function runOne(item: QueueItem): Promise<void> {
       }
     }
 
+    // A pause can become active while this item is mid-flight (the owner
+    // pressed "Simulate rate limit", or a budget boundary was crossed) —
+    // re-run the worker's safety gate before the original send and park the
+    // item pending, exactly like the pre-preview budget gate would.
+    const midItemGate = activeSafetyGate();
+    if (midItemGate) {
+      await updateQueueStatus(item.id, "pending");
+      useUploadStore.getState().setHoldReason(midItemGate.reason);
+      return;
+    }
+
     const sendPayload: Record<string, unknown> = {
       "@type": "sendMessage",
       chat_id: Number(chatId),
@@ -337,6 +452,26 @@ async function runOne(item: QueueItem): Promise<void> {
         message_id: replyToMessageId,
       };
     }
+
+    // The preview's own failure is swallowed by design — but if that failure
+    // was a rate limit (flagged by the failed-update handler), never push the
+    // original into the same flood wall.
+    if (rateLimitActive) {
+      rateLimitActive = false;
+      // Park pending: the row must retry after the pause (it never failed).
+      await updateQueueStatus(item.id, "pending");
+      await resetActiveToPending();
+      useUploadStore.getState().setActive(null);
+      return;
+    }
+
+    // Inter-message gap before the original send as well.
+    await sleep(interMessageDelayMs());
+
+    // Timestamp for findSentMessage's fallback gate — the failed update of a
+    // rate-limited send arrives ~0.3–2 s after td_json_client_send resolves,
+    // so the latest-message fallback must not bind before that window closes.
+    const sendAttemptedAt = Date.now();
 
     const response = await withTimeout(
       TdLib.td_json_client_send(sendPayload),
@@ -359,7 +494,23 @@ async function runOne(item: QueueItem): Promise<void> {
     // but its bytes may still be uploading — record the remote ids as
     // "uploading" and flip to "synced" only after confirmation below.
     // excludePreview skips "· preview" captions so we always track the ORIGINAL.
-    const sent = await findSentMessage(Number(chatId), fileName, replyToMessageId !== null);
+    // If a rate limit fired while the send was in flight, the failed-update
+    // handler already parked the row — do NOT bind a wrong history message.
+    const sent = await findSentMessage(
+      Number(chatId),
+      fileName,
+      replyToMessageId !== null,
+      () => rateLimitActive,
+      sendAttemptedAt
+    );
+    if (sent.aborted || rateLimitActive) {
+      // The ladder already handled the pause — do not bind a remote id and do
+      // not mark anything done. Re-assert the park so the item is guaranteed
+      // to sit in "pending" for the automatic retry after the pause.
+      rateLimitActive = false;
+      await updateQueueStatus(item.id, "pending");
+      return;
+    }
     await setMediaRemote(media.id, chatId, sent.messageId ?? "0", "uploading");
 
     const confirmed =
@@ -373,6 +524,14 @@ async function runOne(item: QueueItem): Promise<void> {
       ));
 
     if (!confirmed) {
+      if (rateLimitActive) {
+        // A rate-limit state arrived while we were waiting for confirmation
+        // (late updateMessageSendFailed) — the ladder already handled it, so
+        // park the item pending for the automatic retry instead of failing it.
+        rateLimitActive = false;
+        await updateQueueStatus(item.id, "pending");
+        return;
+      }
       await updateQueueStatus(
         item.id,
         "failed",
@@ -387,13 +546,18 @@ async function runOne(item: QueueItem): Promise<void> {
     await setMediaState(media.id, "synced");
     await updateQueueStatus(item.id, "done");
     store.addSessionBytes(item.byte_size);
-    if (
-      store.sessionBytes >= THROTTLE_LIMIT_BYTES &&
-      !store.throttledUntil
-    ) {
-      store.setThrottledUntil(Date.now() + THROTTLE_PAUSE_MS);
-    }
+    // Budget counters: day bytes via addSessionBytes ("today" key), the hourly
+    // circuit-breaker via recordBytes ("hour" key) — both persisted in MMKV.
+    recordBytes(item.byte_size);
   } catch (err) {
+    // A limit-shaped error reaching this catch (thrown error path) goes through
+    // the SAME ladder as updateMessageSendFailed — and must not burn attempts.
+    const limitParsed = parseRateLimitError(null, err);
+    if (limitParsed.kind !== "other") {
+      handleRateLimit(limitParsed.kind, limitParsed.waitMs, item.id);
+      return;
+    }
+
     const retryAfter = parseRetryAfterSeconds(err);
     const attempts = await bumpQueueAttempt(item.id);
 
@@ -410,21 +574,44 @@ async function runOne(item: QueueItem): Promise<void> {
       useUploadStore.getState().setError(err instanceof Error ? err.message : String(err));
     }
   } finally {
+    rateLimitActive = false;
     useUploadStore.getState().setActive(null);
     await refreshCounts();
   }
 }
 
 // Freshly created chats return empty history for a few seconds — retry briefly,
-// like restorer.ts does.
+// like restorer.ts does. `isAborted` lets a rate-limited send bail out BEFORE
+// any binding could grab the wrong history entry (plan §2.1 G2 — a failed send
+// produced no message at all). `sentAtMs` (the moment the sendMessage went out)
+// gates the latest-message fallback: td_json_client_send resolves instantly
+// while updateMessageSendFailed arrives ~0.3–2 s later, so `history[0]` must
+// never be bound on the first pass or a stale message gets attached to a
+// rate-limited item.
+const FALLBACK_MIN_ELAPSED_MS = 2_000;
 async function findSentMessage(
   chatIdNumber: number,
   fileName: string,
-  excludePreview = false
-): Promise<{ messageId: string | null; fileId: number | null; uploadComplete: boolean }> {
+  excludePreview = false,
+  isAborted?: () => boolean,
+  sentAtMs: number = Date.now()
+): Promise<{
+  messageId: string | null;
+  fileId: number | null;
+  uploadComplete: boolean;
+  aborted?: boolean;
+}> {
   for (let attempt = 0; attempt < 5; attempt++) {
+    if (isAborted?.()) {
+      return { messageId: null, fileId: null, uploadComplete: false, aborted: true };
+    }
     try {
       const history = await TdLib.getChatHistory(chatIdNumber, 0, 5, 0);
+      // The send result may have raced this history read — re-check AFTER it
+      // resolves and BEFORE any binding (caption match or fallback).
+      if (isAborted?.()) {
+        return { messageId: null, fileId: null, uploadComplete: false, aborted: true };
+      }
       for (const entry of history) {
         try {
           const message = JSON.parse(entry.raw_json);
@@ -442,14 +629,39 @@ async function findSentMessage(
           }
         } catch {}
       }
-      if (history.length > 0) {
+      // Latest-message fallback: only once a full retry cycle (1.5 s) has run
+      // AND ~2 s elapsed since the send — by then a failed update has had its
+      // chance to set the abort flag, which is re-checked right before binding.
+      if (
+        history.length > 0 &&
+        attempt > 0 &&
+        Date.now() - sentAtMs >= FALLBACK_MIN_ELAPSED_MS
+      ) {
+        if (isAborted?.()) {
+          return { messageId: null, fileId: null, uploadComplete: false, aborted: true };
+        }
+        // A late failed update can slip past the 2 s window on a busy thread —
+        // never let the fallback bind the just-sent preview as the original.
         const latest = JSON.parse(history[0].raw_json);
+        const latestCaption =
+          latest?.content?.caption?.text ??
+          firstDefined(
+            latest?.content?.document?.fileName,
+            latest?.content?.document?.file_name
+          ) ??
+          "";
+        if (excludePreview && String(latestCaption).endsWith(PREVIEW_CAPTION_SUFFIX)) {
+          return { messageId: null, fileId: null, uploadComplete: false, aborted: true };
+        }
         if (latest?.id) {
           const info = extractUploadFile(latest);
           return { messageId: String(latest.id), fileId: info.fileId, uploadComplete: info.uploadComplete };
         }
       }
     } catch {}
+    if (isAborted?.()) {
+      return { messageId: null, fileId: null, uploadComplete: false, aborted: true };
+    }
     await sleep(1500);
   }
   return { messageId: null, fileId: null, uploadComplete: false };
