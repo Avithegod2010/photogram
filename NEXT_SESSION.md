@@ -5,32 +5,54 @@ Last updated: end of day 2026-09-01 (§0). Read §0, then §1–§17. CHANGELOG.
 
 ---
 
-## 0. CURRENT STATE — NIGHT 2026-09-05 · v0.10.2 + v0.11 COMMITTED · UI POLISH BATCH 1/3 DONE (LIVE ON PHONE) · BATCH 2+3 AWAIT "GO"
+## 0. CURRENT STATE — 2026-09-05 LATE · HANDOFF TO A NEW AI CHATBOT (/transfer) · ALL MY WORK COMMITTED · JUNK SWEEPER IN FLIGHT BY SIBLING
 
-**Owner is heading to sleep. Committed with owner approval: v0.10.2 `ed9e2b3` (topic pipeline
-fixes: int overflow + gson fields + getForumTopicHistory wrapper) and v0.11 `1207bee` (F1 phone
-migration + preview-first uploads). Topic chips FULLY verified on device: attribution (11 rows),
-chip counts, filtering, claim-twice idempotent, plain-group regression — ALL PASS.**
+**The previous agent (ZCode) transferred away with every line of its work committed. Read §0 fully,
+then the recent CHANGELOG entries (v0.10 → v0.11.2) for the last week's ground covered.**
 
-### IN PROGRESS: UI polish, 6 items in batches of 2 (owner directive, subagent-coded)
-- **Batch 1 DONE, LIVE on phone, UNCOMMITTED (working tree)**: src/navigation/RootTabs.tsx
-  (useTabEntrance fade+slide on every tab focus; TabIcon per-tab animations — cloud pop, search
-  wiggle, gear 360° spin replaying on every Settings landing) + src/screens/SettingsScreen.tsx
-  (Row overflow fix: label+sub grouped in flex:1 toggleText container). Code-reviewed PASS;
-  smoke-tested live via Metro Connect flow: tabs switch, zero JS errors, worklet plugin active.
-- **Batch 2 (NEXT, owner said "go" via permission gate — actually owner went to sleep BEFORE the
-  gate; ASK AGAIN before coding)**: Settings reorder — Uploads section to TOP, Account + Migration
-  to BOTTOM; Collections tab scrollable (CollectionsScreen.tsx uses plain Views — wrap content in
-  ScrollView; watch insets/padding).
-- **Batch 3**: "Show date in every photo" toggle in Settings (default OFF; when off, gallery grid
-  tiles hide the per-photo date overlay — the date badge lives in GalleryScreen tiles) + Viewer
-  action chips get icons with tiny labels underneath (ViewerScreen ActionChip component, icons via
-  @expo/vector-icons, no new deps).
-- **Then**: final device visual pass (NEED PHONE BACK from the other chatbot — owner lent wireless
-  debugging to a sibling chatbot during UI coding) + commit batches with owner approval + CHANGELOG.
-- Metro must run with `--host lan` (IPv6-only localhost bug — see §0b traps). Connect flow on the
-  launcher: URL field 127.0.0.1:8083 → Connect. Wireless bundle fetches still flaky; USB
-  (file-transfer mode) is the reliable path.
+### Committed state (newest first, all owner-approved)
+- `116b116` **v0.11.2 — upload safety**: real FLOOD_WAIT handling (the old error branch was DEAD
+  CODE — td_json_client_send is fire-and-forget), owner escalation ladder (1st = X+3 min; 2nd in
+  1 h = X+30 min + forced 2 s gap; 3rd in 24 h = 6 h pause + warning + 4 s gap 24 h; wait > 1 h =
+  rest of day; PEER_FLOOD = 24 h + warning), persisted budgets 25 GB/day + 4 GB/hour, Settings →
+  "Danger zone" (red, at bottom: gap chips 0–4 s, budget chips 5/10/25/50/∞, live status rows,
+  simulate-rate-limit test button). TWO adversarial review rounds; a send-binding race that could
+  mark rate-limited photos as synced-without-upload was found and FIXED; midnight-edge pause bug
+  fixed. Static verification ONLY — owner forbids triggering real rate limits.
+- `398e072` plan doc; `3df821a` **v0.11.1 — UI polish** (tab animations incl. gear 360° spin,
+  settings reorder with Uploads top / Account+Migration last, Collections scrollable,
+  "Show date in every photo" toggle default OFF, Viewer icon mini-buttons).
+- `1207bee` **v0.11 — phone migration (rehydrate.ts + MigrateScreen.tsx) + preview-first uploads**
+  (preview photo first, original as REPLY; toggle in Settings). `ed9e2b3` **v0.10.2 — topic
+  pipeline fixes** (int overflow, gson forumTopicId/name fields, getForumTopicHistory wrapper).
+- Topic sub-albums FULLY VERIFIED on device ("Photos testing" group = renamed "Photos",
+  chat -1004411892879): attribution, chip counts, filtering, claim-twice idempotent, regression.
+
+### UNCOMMITTED in the tree — THE SIBLING CHATBOT'S Junk Sweeper (v0.12), THEIR COMMIT TO MAKE
+Modified: App.tsx, package.json, package-lock.json, src/db/queries.ts (junk_findings CRUD),
+src/db/schema.ts (v7 additive), src/navigation/index.tsx (JunkSweeper route).
+Untracked: src/lib/imageAnalysis.ts, src/lib/junk.ts, src/lib/junkAutoSweep.ts,
+src/screens/JunkSweeperScreen.tsx. **Do NOT commit or revert these — coordinate with the sibling
+agent / owner.** settingsStore.ts + SettingsScreen.tsx were touched by BOTH agents and are already
+committed coherently in v0.11.2 (tsc clean on the combined tree).
+
+### First actions for the new agent
+1. Read AGENTS.md rules (protected files, no commits without owner approval, Metro --host lan,
+   sibling folder photogram-bot untouchable) and skim CHANGELOG.md v0.10→v0.11.2.
+2. Ask the owner what to work on next. Known open threads:
+   - Junk Sweeper belongs to the sibling agent (v0.12 slot).
+   - Final VISUAL pass of the UI animations needs the phone's wireless debugging back from the
+     sibling chatbot (owner eyeballs: tab transitions, gear spin, Collections scroll, Viewer icons,
+     date toggle both ways).
+   - If a REAL Telegram rate limit ever lands, Settings → Danger zone shows it — tune ladder
+     numbers with the owner if needed (docs/PLAN-RATE-LIMIT-SAFETY.md).
+   - v0.13+ roadmap: photo journaling (needs editMessageCaption wrapper), family heartbeat,
+     on-this-day, vibe search — docs/PLAN-FEATURES-v0.11-plus.md.
+3. Traps (all still true): Metro MUST start with `--host lan` (localhost = IPv6-only → phone
+   fetches die, dev-launcher serves stale cached bundles silently). USB file-transfer mode = the
+   reliable adb path (serial <redacted-serial>). Wireless drops for 10 MB+ bundle fetches. DB pulls need
+   -wal + -shm. uiautomator dump needs MSYS_NO_PATHCONV=1. Reviewer regex for dialog text needs
+   >160-char headroom. uiautomator can't dump while animations run.
 
 ### Key facts newer agents must not re-trip (v0.6)**The full product loop works and v0.6 added S8 Auto-albums, cloud storage counts, upload-completion
 confirmation, queue dedupe, and the date/grid fixes. All verified live on the Samsung (SM-S942B).**
