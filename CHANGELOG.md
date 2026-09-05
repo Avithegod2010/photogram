@@ -4,6 +4,41 @@ Each entry below documents what a commit adds and what comes next. Newest first.
 
 ---
 
+## v0.11.2 — Upload safety: real FLOOD_WAIT handling, escalation ladder, Danger zone (NOT YET COMMITTED)
+
+**Added in this commit** (owner-directed account-safety hardening; static verification only — the
+owner forbids device testing, so no rate limit was ever triggered for real)
+- **Real FLOOD_WAIT detection (was dead code):** `updateMessageSendFailed` events (carrying
+  error{code,message}) are now listened for and parsed — gson camelCase, wire snake_case, code
+  429/420, "FLOOD_WAIT_X", "retry after N", "slow down", "PEER_FLOOD". Previously the error branch
+  after td_json_client_send could never fire, so rate limits were silently ignored.
+- **The owner's escalation ladder, implemented exactly:**
+  1st hit → obey X + 3 min. 2nd within 1 h → obey X + 30 min + forced 2 s gap. 3rd within 24 h →
+  6 h safety pause + user warning + 4 s gap for 24 h. Wait > 1 h → rest-of-day pause. PEER_FLOOD →
+  24 h pause + warning + 4 s gap. Every rung guaranteed ≥ X + buffer (midnight-edge fixed).
+  Rate-limited items return to "pending" WITHOUT burning attempts; a done row can never be
+  un-done by a late failure; the send-matching fallback can never bind a wrong message after a
+  rate-limited send (double-checked guard + preview-suffix skip).
+- **Persisted budgets** (survive restarts; the old session throttle forgot itself): 25 GB/day
+  (settings-adjustable) + 4 GB/hour circuit-breaker, day rolls at local midnight. Gate checked
+  before every dequeue; gated status shows resume time.
+- **Inter-message gap** before every send: OFF by default; Settings → Danger zone lets the owner
+  set 0–4 s. Ladder windows can force 2 s / 4 s gaps regardless.
+- **Settings → "Danger zone"** (bottom, red-tinted): inter-message gap chips (Off–4s), daily
+  budget chips (5/10/25/50/∞ GB, used-today readout), status rows (mode, last rate-limit, hits
+  1 h/24 h, budget used), and a "Simulate rate limit (testing)" button routing through the real
+  ladder path (testing-only; increments real counters).
+- Static verification: two adversarial code-review rounds (first found a send-binding race that
+  could mark a rate-limited photo as synced — fixed; plus midnight-edge pause bug — fixed), then
+  PASS with the two residual narrow races also hardened. `npx tsc --noEmit` clean. No device
+  testing was performed by design.
+
+**Next**
+- Ladder can only be truly proven by Telegram itself — if a real FLOOD_WAIT lands, the Settings
+  Danger zone will show the hit and the pause; report back to the agent for tuning if needed.
+
+---
+
 ## v0.11.1 — UI polish: animated tabs, settings reorder, scrollable Collections, date toggle, Viewer icons (NOT YET COMMITTED)
 
 **Added in this commit** (owner-requested polish, 3 batches, all subagent-coded + code-reviewed PASS)

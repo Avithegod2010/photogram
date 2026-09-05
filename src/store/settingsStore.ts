@@ -18,6 +18,9 @@ interface SettingsState {
   previewReplyUploads: boolean;
   sharedTimelineMaster: boolean;
   ocrSearchEnabled: boolean;
+  // F2 Junk Sweeper: opt-in. When on, a weekly in-app sweep analyzes thumbnails
+  // and suggests junk in the review screen; nothing is ever auto-deleted.
+  junkSweeperEnabled: boolean;
   autoBackupEnabled: boolean;
   autoBackupFolders: string[];
   // F1: the "Restore your backup" banner on GalleryScreen shows once per fresh
@@ -26,6 +29,11 @@ interface SettingsState {
   // Batch 3: when true, gallery photo tiles in Days mode also show the
   // per-tile capture-date badge (default off for a cleaner grid).
   showDateOnPhotos: boolean;
+  // Danger zone (rate-limit & account-safety hardening): forced pause between
+  // every sendMessage in seconds, 0 = off. Ladder windows can force more.
+  uploadGapSeconds: number;
+  // Daily upload budget in GB, 0 = no cap. The gate lives in uploadSafety.ts.
+  dailyBudgetGb: number;
   setExifPreserve: (v: boolean) => void;
   setHiddenLockEnabled: (v: boolean) => void;
   setWifiOnlyUpload: (v: boolean) => void;
@@ -38,6 +46,9 @@ interface SettingsState {
   setAutoBackupFolders: (v: string[]) => void;
   setMigrationBannerShown: (v: boolean) => void;
   setShowDateOnPhotos: (v: boolean) => void;
+  setJunkSweeperEnabled: (v: boolean) => void;
+  setUploadGapSeconds: (v: number) => void;
+  setDailyBudgetGb: (v: number) => void;
 }
 
 export const useSettingsStore = create<SettingsState>()(
@@ -51,10 +62,13 @@ export const useSettingsStore = create<SettingsState>()(
       previewReplyUploads: true,
       sharedTimelineMaster: false,
       ocrSearchEnabled: false,
+      junkSweeperEnabled: false,
       autoBackupEnabled: false,
       autoBackupFolders: [],
       migrationBannerShown: false,
       showDateOnPhotos: false,
+      uploadGapSeconds: 0,
+      dailyBudgetGb: 25,
       setExifPreserve: (v) => set({ exifPreserve: v }),
       setHiddenLockEnabled: (v) => set({ hiddenLockEnabled: v }),
       setWifiOnlyUpload: (v) => set({ wifiOnlyUpload: v }),
@@ -67,6 +81,9 @@ export const useSettingsStore = create<SettingsState>()(
       setAutoBackupFolders: (v) => set({ autoBackupFolders: v }),
       setMigrationBannerShown: (v) => set({ migrationBannerShown: v }),
       setShowDateOnPhotos: (v) => set({ showDateOnPhotos: v }),
+      setJunkSweeperEnabled: (v) => set({ junkSweeperEnabled: v }),
+      setUploadGapSeconds: (v) => set({ uploadGapSeconds: v }),
+      setDailyBudgetGb: (v) => set({ dailyBudgetGb: v }),
     }),
     {
       name: "photogram-settings",
