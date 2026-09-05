@@ -117,6 +117,8 @@ export function GalleryScreen() {
   const [migrationBanner, setMigrationBanner] = useState(false);
   const migrationBannerShown = useSettingsStore((s) => s.migrationBannerShown);
   const setMigrationBannerShown = useSettingsStore((s) => s.setMigrationBannerShown);
+  // Batch 3: the per-tile date badge only shows when this setting is on.
+  const showDateOnPhotos = useSettingsStore((s) => s.showDateOnPhotos);
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const scanCancelRef = useRef({ cancelled: false });
   const cursorRef = useRef<number | null>(null);
@@ -322,7 +324,7 @@ export function GalleryScreen() {
             recyclingKey={`m-${item.id}`}
             transition={120}
           />
-          {cols >= 4 ? (
+          {cols >= 4 && showDateOnPhotos ? (
             <View style={styles.badge}>
               <Text style={styles.badgeText}>{formatDayBadge(item.taken_at)}</Text>
             </View>
@@ -331,7 +333,7 @@ export function GalleryScreen() {
         </Pressable>
       );
     },
-    [navigation, rows, zoomLevel]
+    [navigation, rows, zoomLevel, showDateOnPhotos]
   );
 
   const showEmptyState = !loading && data.length === 0;

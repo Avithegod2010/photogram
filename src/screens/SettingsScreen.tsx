@@ -63,6 +63,8 @@ export function SettingsScreen() {
   const setAutoBackupEnabled = useSettingsStore((s) => s.setAutoBackupEnabled);
   const autoBackupFolders = useSettingsStore((s) => s.autoBackupFolders);
   const setAutoBackupFolders = useSettingsStore((s) => s.setAutoBackupFolders);
+  const showDateOnPhotos = useSettingsStore((s) => s.showDateOnPhotos);
+  const setShowDateOnPhotos = useSettingsStore((s) => s.setShowDateOnPhotos);
 
   // Device albums for the auto-backup folder picker.
   const [deviceAlbums, setDeviceAlbums] = useState<Array<{ id: string; title: string }>>([]);
@@ -187,131 +189,46 @@ export function SettingsScreen() {
       >
         <Text style={styles.screenTitle}>Settings</Text>
 
-        <Section title="Account">
-          <Row label={profileName ?? "Loading…"} sub="Logged in via Telegram" />
-          <Pressable
-            style={({ pressed }) => [styles.logoutBtn, pressed && styles.pressed]}
-            android_ripple={{ color: theme.colors.errorContainer }}
-            onPress={() => {
-              void TdLib.logout().finally(() => void boot());
-            }}
-          >
-            <Text style={styles.logoutText}>Log out of Telegram</Text>
-          </Pressable>
-        </Section>
-
-        <Section title="Migration">
-          <Pressable
-            style={({ pressed }) => [styles.row, pressed && styles.pressed]}
-            android_ripple={{ color: theme.colors.outlineVariant }}
-            onPress={() => navigation.navigate("Migrate")}
-          >
-            <View style={styles.toggleText}>
-              <Text style={styles.rowLabel}>Migrate from another phone</Text>
-              <Text style={styles.rowSub}>
-                Rebuild this phone's library from your Telegram backup — index, originals and
-                shared albums.
+        <Section title="Uploads">
+          {uploadActive ? (
+            <View style={styles.uploadCard}>
+              <Text style={styles.uploadName} numberOfLines={1}>
+                {uploadActive.fileName}
+              </Text>
+              <View style={styles.uploadBarTrack}>
+                <View
+                  style={[
+                    styles.uploadBarFill,
+                    {
+                      width: `${uploadActive.byteSize > 0 ? Math.max(4, (uploadActive.uploadedBytes / uploadActive.byteSize) * 100) : 6}%`,
+                    },
+                  ]}
+                />
+              </View>
+              <Text style={styles.uploadMeta}>
+                {formatBytes(uploadActive.uploadedBytes)} / {formatBytes(uploadActive.byteSize)}
               </Text>
             </View>
-            <Text style={styles.chevron}>›</Text>
-          </Pressable>
-        </Section>
-
-        <Section title="Storage">
-          {totals === null ? (
-            <ActivityIndicator color={theme.colors.primary} style={{ padding: theme.spacing.lg }} />
           ) : (
-            <>
-              <View style={styles.statGrid}>
-                <StatCard value={String(totals.photos)} caption="Local photos" />
-                <StatCard value={String(totals.videos)} caption="Local videos" />
-              </View>
-              <View style={[styles.statGrid, styles.gridSecond]}>
-                <StatCard value={String(totals.cloudPhotos)} caption="Cloud photos" />
-                <StatCard value={String(totals.cloudVideos)} caption="Cloud videos" />
-                <StatCard value={formatBytes(totals.syncedBytes)} caption="In cloud" />
-                <StatCard value={String(totals.pendingCount)} caption="In queue" />
-              </View>
-              <View style={[styles.statGrid, styles.gridSecond]}>
-                <StatCard value={String(totals.archived)} caption="Archived" />
-                <StatCard value={String(totals.trashed)} caption="Trash" />
-                <StatCard value={String(totals.hidden)} caption="Hidden" />
-                <StatCard value={String(totals.failedCount)} caption="Failed" />
-              </View>
-              <Text style={styles.chartTitle}>Last 6 months</Text>
-              <View style={styles.chart}>
-                {buckets.map((b) => (
-                  <View key={b.label + String(b.count)} style={styles.chartCol}>
-                    <View style={styles.barWrap}>
-                      <View
-                        style={[
-                          styles.bar,
-                          {
-                            height: Math.max(4, (b.count / maxBucketCount) * 72),
-                            opacity: b.count === 0 ? 0.25 : 1,
-                          },
-                        ]}
-                      />
-                    </View>
-                    <Text style={styles.barLabel}>{b.label}</Text>
-                  </View>
-                ))}
-              </View>
-            </>
+            <Row
+              label="No active upload"
+              sub={uploadPaused ? "Uploads are paused" : uploadHoldReason ?? "Queue is idle"}
+              muted
+            />
           )}
-        </Section>
-
-        <Section title="Shared albums">
-          <Row
-            label="Show shared albums in my timeline"
-            sub="Master switch — each album has its own toggle too. Default: album-only."
-            muted
-          />
-          <View style={styles.qualityRow}>
-            <Text style={styles.rowLabel}>
-              {sharedTimelineMaster ? "Family photos appear in your Days/Months/Years" : "Family photos stay inside their albums"}
-            </Text>
-            <Switch value={sharedTimelineMaster} onValueChange={setSharedTimelineMaster} />
+          <View style={styles.queueStats}>
+            <StatCard value={String(uploadPending)} caption="Queued" />
+            <StatCard value={String(uploadDone)} caption="Uploaded" />
+            <StatCard value={String(uploadFailed)} caption="Failed" />
+            <StatCard value={formatBytes(todayBytes)} caption="Backed up today" />
           </View>
-        </Section>
-
-        <Section title="Auto-backup">
-          <ToggleRow
-            label="Back up new photos automatically"
-            sub="Photogram quietly rescans every 5 minutes and queues anything new. Wi-Fi/charging rules still apply."
-            value={autoBackupEnabled}
-            onChange={setAutoBackupEnabled}
-          />
-          {autoBackupEnabled ? (
-            <>
-              <Text style={styles.rowSub}>
-                Choose which folders to watch (none selected = all folders):
-              </Text>
-              {(deviceAlbums ?? []).map((album) => (
-                <View key={album.id} style={styles.folderRow}>
-                  <Text style={styles.folderName} numberOfLines={1}>
-                    {album.title}
-                  </Text>
-                  <Switch
-                    value={autoBackupFolders.includes(album.title)}
-                    onValueChange={() => toggleAutoFolder(album.title)}
-                  />
-                </View>
-              ))}
-              {deviceAlbums !== null && deviceAlbums.length === 0 ? (
-                <Text style={styles.rowSub}>No device albums found.</Text>
-              ) : null}
-            </>
-          ) : null}
-        </Section>
-
-        <Section title="Search">
-          <ToggleRow
-            label="Read text in photos (OCR)"
-            sub="Lets search find words inside screenshots and receipts. Adds a few minutes to a full scan; applies to new scans and backfills older photos."
-            value={ocrSearchEnabled}
-            onChange={setOcrSearchEnabled}
-          />
+          <Pressable
+            style={({ pressed }) => [styles.pauseBtn, pressed && styles.pressed]}
+            android_ripple={{ color: theme.colors.outlineVariant }}
+            onPress={() => void (uploadPaused ? resumeUploads() : pauseUploads())}
+          >
+            <Text style={styles.pauseText}>{uploadPaused ? "Resume uploads" : "Pause uploads"}</Text>
+          </Pressable>
         </Section>
 
         <Section title="Backup preferences">
@@ -364,6 +281,86 @@ export function SettingsScreen() {
             value={chargeOnlyUpload}
             onChange={setChargeOnlyUpload}
           />
+          <ToggleRow
+            label="Show date in every photo"
+            sub="Show the capture date on every photo tile in the gallery. Turn off for a cleaner grid."
+            value={showDateOnPhotos}
+            onChange={setShowDateOnPhotos}
+          />
+        </Section>
+
+        <Section title="Auto-backup">
+          <ToggleRow
+            label="Back up new photos automatically"
+            sub="Photogram quietly rescans every 5 minutes and queues anything new. Wi-Fi/charging rules still apply."
+            value={autoBackupEnabled}
+            onChange={setAutoBackupEnabled}
+          />
+          {autoBackupEnabled ? (
+            <>
+              <Text style={styles.rowSub}>
+                Choose which folders to watch (none selected = all folders):
+              </Text>
+              {(deviceAlbums ?? []).map((album) => (
+                <View key={album.id} style={styles.folderRow}>
+                  <Text style={styles.folderName} numberOfLines={1}>
+                    {album.title}
+                  </Text>
+                  <Switch
+                    value={autoBackupFolders.includes(album.title)}
+                    onValueChange={() => toggleAutoFolder(album.title)}
+                  />
+                </View>
+              ))}
+              {deviceAlbums !== null && deviceAlbums.length === 0 ? (
+                <Text style={styles.rowSub}>No device albums found.</Text>
+              ) : null}
+            </>
+          ) : null}
+        </Section>
+
+        <Section title="Storage">
+          {totals === null ? (
+            <ActivityIndicator color={theme.colors.primary} style={{ padding: theme.spacing.lg }} />
+          ) : (
+            <>
+              <View style={styles.statGrid}>
+                <StatCard value={String(totals.photos)} caption="Local photos" />
+                <StatCard value={String(totals.videos)} caption="Local videos" />
+              </View>
+              <View style={[styles.statGrid, styles.gridSecond]}>
+                <StatCard value={String(totals.cloudPhotos)} caption="Cloud photos" />
+                <StatCard value={String(totals.cloudVideos)} caption="Cloud videos" />
+                <StatCard value={formatBytes(totals.syncedBytes)} caption="In cloud" />
+                <StatCard value={String(totals.pendingCount)} caption="In queue" />
+              </View>
+              <View style={[styles.statGrid, styles.gridSecond]}>
+                <StatCard value={String(totals.archived)} caption="Archived" />
+                <StatCard value={String(totals.trashed)} caption="Trash" />
+                <StatCard value={String(totals.hidden)} caption="Hidden" />
+                <StatCard value={String(totals.failedCount)} caption="Failed" />
+              </View>
+              <Text style={styles.chartTitle}>Last 6 months</Text>
+              <View style={styles.chart}>
+                {buckets.map((b) => (
+                  <View key={b.label + String(b.count)} style={styles.chartCol}>
+                    <View style={styles.barWrap}>
+                      <View
+                        style={[
+                          styles.bar,
+                          {
+                            height: Math.max(4, (b.count / maxBucketCount) * 72),
+                            opacity: b.count === 0 ? 0.25 : 1,
+                          },
+                        ]}
+                      />
+                    </View>
+                    <Text style={styles.barLabel}>{b.label}</Text>
+                  </View>
+                ))}
+              </View>
+            </>
+          )}
         </Section>
 
         <Section title="Device storage">
@@ -427,6 +424,29 @@ export function SettingsScreen() {
           ) : null}
         </Section>
 
+        <Section title="Search">
+          <ToggleRow
+            label="Read text in photos (OCR)"
+            sub="Lets search find words inside screenshots and receipts. Adds a few minutes to a full scan; applies to new scans and backfills older photos."
+            value={ocrSearchEnabled}
+            onChange={setOcrSearchEnabled}
+          />
+        </Section>
+
+        <Section title="Shared albums">
+          <Row
+            label="Show shared albums in my timeline"
+            sub="Master switch — each album has its own toggle too. Default: album-only."
+            muted
+          />
+          <View style={styles.qualityRow}>
+            <Text style={styles.rowLabel}>
+              {sharedTimelineMaster ? "Family photos appear in your Days/Months/Years" : "Family photos stay inside their albums"}
+            </Text>
+            <Switch value={sharedTimelineMaster} onValueChange={setSharedTimelineMaster} />
+          </View>
+        </Section>
+
         <Section title="Privacy">
           <ToggleRow
             label="Biometric lock for Hidden"
@@ -441,45 +461,33 @@ export function SettingsScreen() {
           />
         </Section>
 
-        <Section title="Uploads">
-          {uploadActive ? (
-            <View style={styles.uploadCard}>
-              <Text style={styles.uploadName} numberOfLines={1}>
-                {uploadActive.fileName}
-              </Text>
-              <View style={styles.uploadBarTrack}>
-                <View
-                  style={[
-                    styles.uploadBarFill,
-                    {
-                      width: `${uploadActive.byteSize > 0 ? Math.max(4, (uploadActive.uploadedBytes / uploadActive.byteSize) * 100) : 6}%`,
-                    },
-                  ]}
-                />
-              </View>
-              <Text style={styles.uploadMeta}>
-                {formatBytes(uploadActive.uploadedBytes)} / {formatBytes(uploadActive.byteSize)}
+        <Section title="Account">
+          <Row label={profileName ?? "Loading…"} sub="Logged in via Telegram" />
+          <Pressable
+            style={({ pressed }) => [styles.logoutBtn, pressed && styles.pressed]}
+            android_ripple={{ color: theme.colors.errorContainer }}
+            onPress={() => {
+              void TdLib.logout().finally(() => void boot());
+            }}
+          >
+            <Text style={styles.logoutText}>Log out of Telegram</Text>
+          </Pressable>
+        </Section>
+
+        <Section title="Migration">
+          <Pressable
+            style={({ pressed }) => [styles.row, pressed && styles.pressed]}
+            android_ripple={{ color: theme.colors.outlineVariant }}
+            onPress={() => navigation.navigate("Migrate")}
+          >
+            <View style={styles.toggleText}>
+              <Text style={styles.rowLabel}>Migrate from another phone</Text>
+              <Text style={styles.rowSub}>
+                Rebuild this phone's library from your Telegram backup — index, originals and
+                shared albums.
               </Text>
             </View>
-          ) : (
-            <Row
-              label="No active upload"
-              sub={uploadPaused ? "Uploads are paused" : uploadHoldReason ?? "Queue is idle"}
-              muted
-            />
-          )}
-          <View style={styles.queueStats}>
-            <StatCard value={String(uploadPending)} caption="Queued" />
-            <StatCard value={String(uploadDone)} caption="Uploaded" />
-            <StatCard value={String(uploadFailed)} caption="Failed" />
-            <StatCard value={formatBytes(todayBytes)} caption="Backed up today" />
-          </View>
-          <Pressable
-            style={({ pressed }) => [styles.pauseBtn, pressed && styles.pressed]}
-            android_ripple={{ color: theme.colors.outlineVariant }}
-            onPress={() => void (uploadPaused ? resumeUploads() : pauseUploads())}
-          >
-            <Text style={styles.pauseText}>{uploadPaused ? "Resume uploads" : "Pause uploads"}</Text>
+            <Text style={styles.chevron}>›</Text>
           </Pressable>
         </Section>
 
@@ -501,8 +509,10 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 function Row({ label, sub, muted }: { label: string; sub?: string; muted?: boolean }) {
   return (
     <View style={styles.row}>
-      <Text style={[styles.rowLabel, muted && styles.muted]}>{label}</Text>
-      {sub ? <Text style={[styles.rowSub, muted && styles.muted]}>{sub}</Text> : null}
+      <View style={styles.toggleText}>
+        <Text style={[styles.rowLabel, muted && styles.muted]}>{label}</Text>
+        {sub ? <Text style={[styles.rowSub, muted && styles.muted]}>{sub}</Text> : null}
+      </View>
     </View>
   );
 }
