@@ -10,6 +10,7 @@ import {
   Text,
   View,
 } from "react-native";
+import { Ionicons } from "@expo/vector-icons";
 import * as Sharing from "expo-sharing";
 import { Image } from "expo-image";
 import { useVideoPlayer, VideoView } from "expo-video";
@@ -140,16 +141,18 @@ export function ViewerScreen({ route, navigation }: any) {
       />
 
       <View style={[styles.actionsBar, { paddingBottom: insets.bottom + 12 }]}>
-        <ActionChip label="Share" onPress={() => void shareCurrent()} />
+        <ActionChip label="Share" icon="share-social-outline" onPress={() => void shareCurrent()} />
         {current && !current.local_uri && hasRemoteCopy(current) ? (
           <ActionChip
             label={savingId === current.id ? "Saving…" : "Save to device"}
+            icon="download-outline"
             disabled={savingId !== null}
             onPress={() => void saveCurrent()}
           />
         ) : null}
         <ActionChip
           label="Back up"
+          icon="cloud-upload-outline"
           disabled={!current || (current.state !== "local" && current.state !== "failed")}
           onPress={() => {
             if (!current) return;
@@ -158,6 +161,7 @@ export function ViewerScreen({ route, navigation }: any) {
         />
         <ActionChip
           label="Archive"
+          icon="archive-outline"
           disabled={!current}
           onPress={() => {
             if (!current) return;
@@ -166,13 +170,20 @@ export function ViewerScreen({ route, navigation }: any) {
         />
         <ActionChip
           label="Hide"
+          icon="eye-off-outline"
           disabled={!current}
           onPress={() => {
             if (!current) return;
             void setMediaVisibility(current.id, "hidden");
           }}
         />
-        <ActionChip label="Delete" danger disabled={!current} onPress={() => void trashCurrent()} />
+        <ActionChip
+          label="Delete"
+          icon="trash-outline"
+          danger
+          disabled={!current}
+          onPress={() => void trashCurrent()}
+        />
       </View>
 
       <Modal visible={infoOpen} transparent animationType="slide" onRequestClose={() => setInfoOpen(false)}>
@@ -200,7 +211,19 @@ export function ViewerScreen({ route, navigation }: any) {
   );
 }
 
-function ActionChip({ label, onPress, danger, disabled }: { label: string; onPress: () => void; danger?: boolean; disabled?: boolean }) {
+function ActionChip({
+  label,
+  icon,
+  onPress,
+  danger,
+  disabled,
+}: {
+  label: string;
+  icon: keyof typeof Ionicons.glyphMap;
+  onPress: () => void;
+  danger?: boolean;
+  disabled?: boolean;
+}) {
   return (
     <Pressable
       onPress={onPress}
@@ -208,6 +231,7 @@ function ActionChip({ label, onPress, danger, disabled }: { label: string; onPre
       android_ripple={{ color: theme.colors.outlineVariant }}
       style={({ pressed }) => [styles.chip, pressed && styles.chipPressed, disabled && styles.chipDisabled]}
     >
+      <Ionicons name={icon} size={21} style={[styles.chipIcon, danger && styles.chipDanger]} />
       <Text style={[styles.chipText, danger && styles.chipDanger]}>{label}</Text>
     </Pressable>
   );
@@ -244,6 +268,8 @@ const styles = StyleSheet.create({
   empty: { color: "#FFFFFF99", textAlign: "center", marginTop: 80 },
   actionsBar: {
     flexDirection: "row",
+    flexWrap: "wrap",
+    rowGap: 6,
     justifyContent: "space-evenly",
     paddingHorizontal: theme.spacing.sm,
     backgroundColor: "#0E0E11EE",
@@ -256,14 +282,18 @@ const styles = StyleSheet.create({
     right: 0,
   },
   chip: {
-    paddingHorizontal: 16,
-    paddingVertical: 9,
-    borderRadius: theme.radius.full,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 3,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    borderRadius: theme.radius.md,
     backgroundColor: "#FFFFFF12",
   },
   chipPressed: { opacity: 0.7 },
   chipDisabled: { opacity: 0.35 },
-  chipText: { color: "#FFFFFFE6", fontSize: 13, fontWeight: "600" },
+  chipIcon: { color: theme.colors.primary },
+  chipText: { color: theme.colors.onSurfaceVariant, fontSize: 10.5, fontWeight: "600", letterSpacing: 0.3 },
   chipDanger: { color: theme.colors.error },
   sheetBackdrop: { flex: 1, backgroundColor: "#00000088", justifyContent: "flex-end" },
   sheet: {

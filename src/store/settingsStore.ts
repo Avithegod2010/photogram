@@ -23,6 +23,9 @@ interface SettingsState {
   // F1: the "Restore your backup" banner on GalleryScreen shows once per fresh
   // install until the owner taps it or dismisses it.
   migrationBannerShown: boolean;
+  // Batch 3: when true, gallery photo tiles in Days mode also show the
+  // per-tile capture-date badge (default off for a cleaner grid).
+  showDateOnPhotos: boolean;
   setExifPreserve: (v: boolean) => void;
   setHiddenLockEnabled: (v: boolean) => void;
   setWifiOnlyUpload: (v: boolean) => void;
@@ -34,6 +37,7 @@ interface SettingsState {
   setAutoBackupEnabled: (v: boolean) => void;
   setAutoBackupFolders: (v: string[]) => void;
   setMigrationBannerShown: (v: boolean) => void;
+  setShowDateOnPhotos: (v: boolean) => void;
 }
 
 export const useSettingsStore = create<SettingsState>()(
@@ -50,6 +54,7 @@ export const useSettingsStore = create<SettingsState>()(
       autoBackupEnabled: false,
       autoBackupFolders: [],
       migrationBannerShown: false,
+      showDateOnPhotos: false,
       setExifPreserve: (v) => set({ exifPreserve: v }),
       setHiddenLockEnabled: (v) => set({ hiddenLockEnabled: v }),
       setWifiOnlyUpload: (v) => set({ wifiOnlyUpload: v }),
@@ -61,6 +66,7 @@ export const useSettingsStore = create<SettingsState>()(
       setAutoBackupEnabled: (v) => set({ autoBackupEnabled: v }),
       setAutoBackupFolders: (v) => set({ autoBackupFolders: v }),
       setMigrationBannerShown: (v) => set({ migrationBannerShown: v }),
+      setShowDateOnPhotos: (v) => set({ showDateOnPhotos: v }),
     }),
     {
       name: "photogram-settings",

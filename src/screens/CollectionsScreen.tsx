@@ -1,5 +1,5 @@
 import React from "react";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { StatusBar } from "expo-status-bar";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
@@ -33,43 +33,47 @@ export function CollectionsScreen({ navigation }: { navigation: CollectionsNav }
     <View style={[styles.root, { paddingTop: insets.top }]}>
       <StatusBar style="light" />
       <Text style={styles.title}>Collections</Text>
-      <View style={styles.card}>
-        {SECTIONS.map((s) => {
-          const content = (
-            <>
-              <View style={[styles.dot, s.key === "hidden" && styles.dotAccent]} />
-              <View style={styles.rowText}>
-                <Text style={styles.rowLabel}>{s.label}</Text>
-                <Text style={styles.rowSub}>{s.sub}</Text>
-              </View>
-              {s.enabled ? <Text style={styles.chevron}>›</Text> : null}
-            </>
-          );
-          if (s.enabled) {
-            return (
-              <Pressable
-                key={s.key}
-                onPress={() => navigation.navigate(s.route as never)}
-                android_ripple={{ color: theme.colors.outlineVariant }}
-                style={styles.row}
-              >
-                {content}
-              </Pressable>
+      <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent}>
+        <View style={styles.card}>
+          {SECTIONS.map((s) => {
+            const content = (
+              <>
+                <View style={[styles.dot, s.key === "hidden" && styles.dotAccent]} />
+                <View style={styles.rowText}>
+                  <Text style={styles.rowLabel}>{s.label}</Text>
+                  <Text style={styles.rowSub}>{s.sub}</Text>
+                </View>
+                {s.enabled ? <Text style={styles.chevron}>›</Text> : null}
+              </>
             );
-          }
-          return (
-            <View key={s.key} style={[styles.row, styles.disabled]}>
-              {content}
-            </View>
-          );
-        })}
-      </View>
+            if (s.enabled) {
+              return (
+                <Pressable
+                  key={s.key}
+                  onPress={() => navigation.navigate(s.route as never)}
+                  android_ripple={{ color: theme.colors.outlineVariant }}
+                  style={styles.row}
+                >
+                  {content}
+                </Pressable>
+              );
+            }
+            return (
+              <View key={s.key} style={[styles.row, styles.disabled]}>
+                {content}
+              </View>
+            );
+          })}
+        </View>
+      </ScrollView>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: theme.colors.background, padding: theme.spacing.md },
+  scroll: { flex: 1 },
+  scrollContent: { paddingBottom: 32 },
   title: { color: theme.colors.onSurface, fontSize: 28, fontWeight: "700", marginBottom: theme.spacing.md },
   card: {
     backgroundColor: theme.colors.surfaceContainer,

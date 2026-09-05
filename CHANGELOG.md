@@ -4,7 +4,35 @@ Each entry below documents what a commit adds and what comes next. Newest first.
 
 ---
 
-## v0.11 — One-tap phone migration + preview-first uploads (NOT YET COMMITTED — owner gate)
+## v0.11.1 — UI polish: animated tabs, settings reorder, scrollable Collections, date toggle, Viewer icons (NOT YET COMMITTED)
+
+**Added in this commit** (owner-requested polish, 3 batches, all subagent-coded + code-reviewed PASS)
+- **Fluid tab switching + animated tab icons** (`RootTabs.tsx`): incoming tab fades in and slides up
+  12 px (200 ms) on every focus. Tab icons animate per personality on focus: Gallery cloud pops
+  (spring 1→1.18→1), Collections search wiggles (−12°→12°→0), Settings gear does a full 360° spin
+  (replays every landing). First custom Reanimated worklets in the app — smoke-tested live, no
+  crashes, zero JS errors.
+- **Fixed Settings "Shared albums" text overflow**: the shared `Row` component now groups label+sub
+  in a flex:1 container (matches ToggleRow), so long sub-texts wrap in-bounds everywhere.
+- **Settings reordered**: UPLOADS dashboard first, then Backup preferences, Auto-backup, Storage,
+  Device storage, Search, Shared albums, Privacy — ACCOUNT + MIGRATION last (set-and-forget).
+- **Collections tab scrollable**: all 8 rows reachable on any screen size; title stays fixed.
+- **"Show date in every photo" toggle** (Settings → Backup preferences, default OFF): when off,
+  the capture-date badge is hidden on every photo tile (Days-mode 4-column grid) — cleaner grid.
+  Day-group headers are unaffected. Verified live: ON → badges appear, OFF → clean grid.
+- **Viewer action buttons redesigned**: Share / Save to device / Back up / Archive / Hide / Delete
+  are now icon mini-buttons (Ionicons above a tiny label) with the same ripple/danger/disabled
+  behavior; the bar wraps gracefully on narrow screens.
+
+**Verify on device when free (owner)**
+- Feel the tab animations (Settings gear spin) and scroll Collections to the bottom.
+- Viewer: open any photo and check the new icon buttons.
+- Settings: Uploads at top, Account/Migration at bottom, "Show date in every photo" default OFF.
+
+**Next**
+- Final visual pass on the animations once wireless debugging returns from the sibling chatbot.
+
+---
 
 **Added in this commit** (two features; owner can ask to split into separate versions)
 - **One-tap phone migration (plan F1):** after a fresh QR login on a new phone, Photogram detects
