@@ -286,7 +286,7 @@ confirmation, queue dedupe, and the date/grid fixes. All verified live on the Sa
   a per-request handler in the native module. Touching `lib/tdlib.ts` = PROTECTED FILE → ask owner first.
 - **Smoke test PASSED (2026-08-29 ~19:06):** login restored via clean process restart (no re-login needed);
   Viewer "Back up" chip on media id 78 (202 KB WhatsApp video) → upload_queue done → media state synced →
-  remote_chat_id=<redacted> (own id = Saved Messages), remote_message_id=<redacted> → Settings shows
+  remote_chat_id=<redacted: owner's own chat id> (own id = Saved Messages), remote_message_id=<redacted> → Settings shows
   "198 KB In cloud". Telegram-side confirmation by owner: **the video arrived and plays.**
   KNOWN REFINEMENT for later: the worker marks an item "done" as soon as the Telegram message EXISTS
   (fire-and-forget sendMessage + getChatHistory scan) — it does not await the file's remote upload
