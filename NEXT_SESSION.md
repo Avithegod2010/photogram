@@ -16,12 +16,14 @@ Working tree clean, tsc clean. Owner picked MIT. History was fully REWRITTEN bef
 ### FIRST ACTIONS for the next session
 1. **ONE combined gradle rebuild** unlocks v0.16 (expo-notifications native) + v0.17
    (editMessageCaption wrapper): `E:\Dev\run-photogram-build.ps1` — never mid-upload, check logcat
-   first. v0.12/v0.12.1/v0.13/v0.14/v0.15 verify via Metro alone (8083, `--host lan`).
-2. **Device verify** per the checklists in each CHANGELOG entry (v0.12 → v0.17).
-3. **v0.18–v0.20 (owner approval pending):** photo editor + versioned archive (schema v10
-   edited_from + queue reply_to_message_id; renumbered from v9 — journaling took v9), send-to-album
-   (uploader guard hunk REQUIRED), place-name search (schema v11 place_name; GeoNames cities1000 →
-   bundled SQLite via SQLiteProvider assetSource). Plans in docs/PLAN-V0.13-EIGHT.md §2.
+   first. Everything else (v0.12–v0.15, v0.18, v0.21) verifies via Metro alone (8083, `--host lan`).
+2. **Device verify** per the checklists in each CHANGELOG entry (v0.12 → v0.21). v0.18–v0.21 are
+   ALL COMMITTED (owner ordered the remaining features coded): v0.18 Wrapped, v0.19 photo editor +
+   versioned archive (schema v10 edited_from + upload_queue.reply_to_message_id; uploader reply-to
+   hunk + preview-skip), v0.20 send-to-album (uploader remote-link guard + chat-aware dedupe
+   grouping), v0.21 place search (schema v11 place_name; offline 24k-city dataset
+   assets/geo/cities.json; scanner index+backfill; searchable).
+3. **Security auditor chatbot results** (owner-relayed) → triage and fix.
 
 ### Housekeeping notes
 - Backup stash `da826ce` can be dropped now that everything is pushed (`git stash drop`).
