@@ -17,14 +17,14 @@ Each entry below documents what a commit adds and what comes next. Newest first.
 
 ---
 
-## License — MIT (COMMITTED `38e8a79`)
+## License — MIT (COMMITTED `3207e41`)
 
 - Added the owner's MIT `LICENSE` (the file that shipped with the Expo template carried Expo's own
   copyright — replaced before first publish) and updated the README license section.
 
 ---
 
-## v0.12 — Junk Sweeper: on-device cleanup suggestions (COMMITTED `1e4a7cf`)
+## v0.12 — Junk Sweeper: on-device cleanup suggestions (COMMITTED `f372998`)
 
 **Added in this commit** (built by the parallel chatbot-2 agent; committed on the owner's behalf
 after that agent became unavailable — code-reviewed and accepted as-is by chatbot 1)
@@ -157,7 +157,7 @@ renumbered v8→v9 — v8 is Favorites — and label v0.17)
 
 ---
 
-## v0.11.2 — Upload safety: real FLOOD_WAIT handling, escalation ladder, Danger zone (COMMITTED `116b116`)
+## v0.11.2 — Upload safety: real FLOOD_WAIT handling, escalation ladder, Danger zone (COMMITTED `c96db15`)
 
 **Added in this commit** (owner-directed account-safety hardening; static verification only — the
 owner forbids device testing, so no rate limit was ever triggered for real)
@@ -192,7 +192,7 @@ owner forbids device testing, so no rate limit was ever triggered for real)
 
 ---
 
-## v0.11.1 — UI polish: animated tabs, settings reorder, scrollable Collections, date toggle, Viewer icons (COMMITTED `3df821a`)
+## v0.11.1 — UI polish: animated tabs, settings reorder, scrollable Collections, date toggle, Viewer icons (COMMITTED `4c0ba9a`)
 
 **Added in this commit** (owner-requested polish, 3 batches, all subagent-coded + code-reviewed PASS)
 - **Fluid tab switching + animated tab icons** (`RootTabs.tsx`): incoming tab fades in and slides up
@@ -279,7 +279,7 @@ owner forbids device testing, so no rate limit was ever triggered for real)
 
 ---
 
-## v0.10 — Shared-album topic sub-albums + group-picker fix (COMMITTED `7103e08`)
+## v0.10 — Shared-album topic sub-albums + group-picker fix (COMMITTED `be8f73d`)
 
 **Added in this commit**
 - **Topic sub-albums (S9 Phase 2)**: a Telegram group with Topics (forum) enabled becomes one album
@@ -327,7 +327,7 @@ owner forbids device testing, so no rate limit was ever triggered for real)
 
 ---
 
-## v0.9 — OCR text search (opt-in), auto-backup folders, Safety check (COMMITTED `53f857c`)
+## v0.9 — OCR text search (opt-in), auto-backup folders, Safety check (COMMITTED `4c6b8e8`)
 
 **Added in this commit**
 - **OCR text search — owner opt-in (idea 5)**: Settings → Search → "Read text in photos (OCR)".
