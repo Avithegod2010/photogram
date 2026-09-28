@@ -5,34 +5,29 @@ Last updated: late 2026-09-06 (§0). Read §0, then §1–§17. CHANGELOG.md has
 
 ---
 
-## 0. CURRENT STATE — 2026-09-06 END · ALL SEVEN VERSIONS COMMITTED (`1e4a7cf` v0.12 + `f4849ad` v0.12.1–v0.17) · CLEAN TREE · NEXT: GH AUTH → REPO CREATE → PUSH → GRADLE REBUILD → DEVICE VERIFY
+## 0. CURRENT STATE — 2026-09-06 END · ALL SEVEN VERSIONS COMMITTED & PUBLISHED · PRIVATE GITHUB REPO LIVE (MIT)
 
-**Chatbot 1 executed the owner's first-4 queue PLUS F4+F3 (redirected here after chatbot 2 became
-unavailable; chatbot 2's uncommitted Junk Sweeper was reviewed and committed on the owner's behalf
-as v0.12 — it also repairs a latent broken `getQueueStatus` import from the v0.11.2 handoff).
-Everything through v0.17 is COMMITTED with CHANGELOG entries. Working tree clean, tsc clean.**
+**PUBLISHED: https://github.com/Avithegod2010/photogram (private, MIT license). 28 commits pushed
+(master = origin/master at `38e8a79`). All seven versions committed: `1e4a7cf` v0.12 Junk Sweeper
+(chatbot 2's work, committed on the owner's behalf — also repairs a latent broken `getQueueStatus`
+import from the v0.11.2 handoff) + `f4849ad` v0.12.1–v0.17 + `f1e2eec`/`38e8a79` docs/license.
+Working tree clean, tsc clean. Owner picked MIT + private.**
 
 ### FIRST ACTIONS for the next session
-1. **GitHub publish (owner-driven):** no remote exists; `gh` NOT authed (owner runs `gh auth login`).
-   Leak audit done (secrets file never in history; only key names in code; .gitignore covers
-   secrets/android/node_modules/.zcode/.mimosa). README.md written. Owner picks visibility
-   (default plan: PRIVATE) + license (README says all-rights-reserved until chosen). Then:
-   `gh repo create photogram --private --source . --push` (or owner creates on github.com and
-   gives the URL; `git remote add origin <url> && git push -u origin master`).
-2. **ONE combined gradle rebuild** unlocks v0.16 (expo-notifications native) + v0.17
+1. **ONE combined gradle rebuild** unlocks v0.16 (expo-notifications native) + v0.17
    (editMessageCaption wrapper): `E:\Dev\run-photogram-build.ps1` — never mid-upload, check logcat
    first. v0.12/v0.12.1/v0.13/v0.14/v0.15 verify via Metro alone (8083, `--host lan`).
-3. **Device verify** per the checklists in each CHANGELOG entry (v0.12 → v0.17), then nothing to
-   flip — CHANGELOG headers already say COMMITTED.
-4. **v0.18–v0.20 (owner approval pending):** photo editor + versioned archive (schema v10
+2. **Device verify** per the checklists in each CHANGELOG entry (v0.12 → v0.17).
+3. **v0.18–v0.20 (owner approval pending):** photo editor + versioned archive (schema v10
    edited_from + queue reply_to_message_id; renumbered from v9 — journaling took v9), send-to-album
    (uploader guard hunk REQUIRED), place-name search (schema v11 place_name; GeoNames cities1000 →
    bundled SQLite via SQLiteProvider assetSource). Plans in docs/PLAN-V0.13-EIGHT.md §2.
 
 ### Housekeeping notes
-- Backup stash `da826ce` (pre-commit final tree) can be dropped once pushed: `git stash drop`.
-- `.committmp/` scratch dir was removed; `.git/idx-v012` temp index may be deleted.
-- Mimosa scanner wants a full re-run (its commit-time scan was partial) — owner decides.
+- Backup stash `da826ce` can be dropped now that everything is pushed (`git stash drop`).
+- Mimosa scanner wants a full re-run (its commit/push-time scan was partial) — owner decides.
+- Repo flips public via GitHub Settings → Danger Zone → Change visibility (owner's call; MIT + a
+  clean secrets audit already cover it).
 
 ---
 
