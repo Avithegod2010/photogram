@@ -13,6 +13,7 @@ import { StoryScreen } from "../screens/StoryScreen";
 import { SafetyCheckScreen } from "../screens/SafetyCheckScreen";
 import { MigrateScreen } from "../screens/MigrateScreen";
 import { FavoritesScreen } from "../screens/FavoritesScreen";
+import { WrappedScreen } from "../screens/WrappedScreen";
 import { JunkSweeperScreen } from "../screens/JunkSweeperScreen";
 
 export type RootStackParamList = {
@@ -29,6 +30,7 @@ export type RootStackParamList = {
   SafetyCheck: undefined;
   Migrate: undefined;
   Favorites: undefined;
+  Wrapped: undefined;
   JunkSweeper: undefined;
 };
 
@@ -58,6 +60,7 @@ export function RootNavigator() {
       <Stack.Screen name="SafetyCheck" component={SafetyCheckScreen} />
       <Stack.Screen name="Migrate" component={MigrateScreen} />
       <Stack.Screen name="Favorites" component={FavoritesScreen} />
+      <Stack.Screen name="Wrapped" component={WrappedScreen} />
       <Stack.Screen name="JunkSweeper" component={JunkSweeperScreen} />
     </Stack.Navigator>
   );

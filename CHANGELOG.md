@@ -4,6 +4,24 @@ Each entry below documents what a commit adds and what comes next. Newest first.
 
 ---
 
+## v0.18 — Year-in-review "Wrapped" (COMMITTED in this commit)
+
+**Added in this commit** (per docs/PLAN-V0.13-EIGHT.md; label shifted from the plan's v0.17 —
+v0.17 went to photo journaling)
+- **Collections → "2026 Wrapped"**: a stack of stat cards over the owner's own library — total
+  captured (photos/videos), GB safely in Telegram, busiest month, top 3 days (with thumbnail
+  strips), distinct days captured, and favorites count (ties into v0.13 hearts).
+- Year chips switch between any year that has data; cards animate in with a staggered
+  FadeInDown. Empty years render an honest zero-state.
+- New read-only aggregation module `src/lib/wrapped.ts` — `stats.ts` and the Settings dashboard
+  are untouched. No schema, no rebuild, no new dependencies. tsc clean; not yet device-verified.
+
+**Verify on device when free**
+- Collections → 2026 Wrapped: numbers spot-check against reality (busiest month, top day);
+  year switching; empty year → graceful zeros.
+
+---
+
 ## Security hardening — going public (COMMITTED in this commit)
 
 - **`android:allowBackup` = false** (app.config.ts + the generated AndroidManifest): the local
