@@ -113,6 +113,26 @@ CREATE TABLE IF NOT EXISTS forum_topics (
 );
 `;
 
+// F2 Junk Sweeper (docs/PLAN-FEATURES-v0.11-plus.md): on-device heuristics
+// (blur / pocket / near-duplicate / stale screenshot) produce findings that the
+// owner reviews before any deletion. "Keep" is recorded in the same table
+// (status='kept') so the sweeper never re-suggests a dismissed photo.
+const SCHEMA_V7 = `
+CREATE TABLE IF NOT EXISTS junk_findings (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  media_id INTEGER NOT NULL,
+  category TEXT NOT NULL CHECK (category IN ('blurry','pocket','near_duplicate','stale_screenshot')),
+  score REAL,
+  detail TEXT,
+  group_key TEXT,
+  created_at INTEGER NOT NULL,
+  status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','kept','deleted'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_junk_findings_status ON junk_findings (status, category);
+CREATE INDEX IF NOT EXISTS idx_junk_findings_media ON junk_findings (media_id);
+`;
+
 export interface Migration {
   version: number;
   up: string;
@@ -125,6 +145,7 @@ export const MIGRATIONS: Migration[] = [
   { version: 4, up: SCHEMA_V4 },
   { version: 5, up: SCHEMA_V5 },
   { version: 6, up: SCHEMA_V6 },
+  { version: 7, up: SCHEMA_V7 },
 ];
 
 export function migrationsAfter(version: number): Migration[] {

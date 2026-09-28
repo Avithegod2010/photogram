@@ -4,7 +4,41 @@ Each entry below documents what a commit adds and what comes next. Newest first.
 
 ---
 
-## v0.11.2 — Upload safety: real FLOOD_WAIT handling, escalation ladder, Danger zone (NOT YET COMMITTED)
+## v0.12 — Junk Sweeper: on-device cleanup suggestions (COMMITTED in this commit)
+
+**Added in this commit** (built by the parallel chatbot-2 agent; committed on the owner's behalf
+after that agent became unavailable — code-reviewed and accepted as-is by chatbot 1)
+- **Opt-in sweep engine** (`src/lib/junk.ts` + `src/lib/imageAnalysis.ts`): Settings → Junk
+  sweeper toggle. Analyzes the existing 320px thumbnails entirely on-device for four junk
+  patterns — blurry (variance-of-Laplacian), pocket shots (dark + noisy frames), same-day
+  near-duplicates (pHash + union-find clustering, largest kept as leader), and stale screenshots
+  (90+ days) — writing findings to the new `junk_findings` table (schema v7, additive). Chunked
+  + resumable (500-item chunks, cursor survives app kills); a daily check auto-sweeps at most
+  weekly (`src/lib/junkAutoSweep.ts`).
+- **Nothing is ever auto-deleted.** Collections → Junk sweeper review screen
+  (`src/screens/JunkSweeperScreen.tsx`) lists findings by category with thumbnails; the owner
+  decides per item or in batches, and "Keep" is permanent (a kept or deleted verdict is never
+  overwritten by a later sweep).
+- **Three deletion scopes with hard safety gates:** local files (system confirm dialog + verified
+  delete, the proven Free-Up-Space pattern), Telegram messages (deleteMessages + remote id cleared
+  so restore never points at a gone message), or both. Every scope requires the item to be fully
+  synced with a remote copy; local scopes additionally require the file to exist.
+- **Shared-album (family) media is never swept** — claimed family property is excluded from sweep
+  candidates, matching the heartbeat and Free-Up-Space rules.
+- **Also fixes a latent broken import:** `uploader.ts` (committed in v0.11.2) called
+  `getQueueStatus()` but the function was never committed to `queries.ts` — this commit adds it.
+
+**Verify on device when free**
+- Settings → Junk sweeper → enable → run a sweep on the real library → review findings; keep one,
+  delete one locally, and confirm family-album photos never appear.
+
+**Next**
+- Gradle rebuild (combined: expo-notifications + editMessageCaption), device verification of
+  v0.12.1–v0.17, GitHub publish.
+
+---
+
+## v0.11.2 — Upload safety: real FLOOD_WAIT handling, escalation ladder, Danger zone (COMMITTED `116b116`)
 
 **Added in this commit** (owner-directed account-safety hardening; static verification only — the
 owner forbids device testing, so no rate limit was ever triggered for real)
@@ -39,7 +73,7 @@ owner forbids device testing, so no rate limit was ever triggered for real)
 
 ---
 
-## v0.11.1 — UI polish: animated tabs, settings reorder, scrollable Collections, date toggle, Viewer icons (NOT YET COMMITTED)
+## v0.11.1 — UI polish: animated tabs, settings reorder, scrollable Collections, date toggle, Viewer icons (COMMITTED `3df821a`)
 
 **Added in this commit** (owner-requested polish, 3 batches, all subagent-coded + code-reviewed PASS)
 - **Fluid tab switching + animated tab icons** (`RootTabs.tsx`): incoming tab fades in and slides up
