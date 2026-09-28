@@ -12,6 +12,7 @@ import { SharedAlbumsScreen } from "../screens/SharedAlbumsScreen";
 import { StoryScreen } from "../screens/StoryScreen";
 import { SafetyCheckScreen } from "../screens/SafetyCheckScreen";
 import { MigrateScreen } from "../screens/MigrateScreen";
+import { JunkSweeperScreen } from "../screens/JunkSweeperScreen";
 
 export type RootStackParamList = {
   Tabs: undefined;
@@ -26,6 +27,7 @@ export type RootStackParamList = {
   SharedAlbums: undefined;
   SafetyCheck: undefined;
   Migrate: undefined;
+  JunkSweeper: undefined;
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -53,6 +55,7 @@ export function RootNavigator() {
       <Stack.Screen name="SharedAlbums" component={SharedAlbumsScreen} />
       <Stack.Screen name="SafetyCheck" component={SafetyCheckScreen} />
       <Stack.Screen name="Migrate" component={MigrateScreen} />
+      <Stack.Screen name="JunkSweeper" component={JunkSweeperScreen} />
     </Stack.Navigator>
   );
 }

@@ -9,6 +9,7 @@ import { RootNavigator } from "./src/navigation";
 import { purgeExpiredTrash } from "./src/lib/trash";
 import { repairTakenAtUnits } from "./src/db/queries";
 import { startAutoBackupLoop } from "./src/lib/autoBackup";
+import { startJunkAutoSweepLoop } from "./src/lib/junkAutoSweep";
 import { theme } from "./src/theme";
 
 export default function App() {
@@ -19,6 +20,7 @@ export default function App() {
       void purgeExpiredTrash().catch(() => {});
       void repairTakenAtUnits().catch(() => {});
       startAutoBackupLoop();
+      startJunkAutoSweepLoop();
     }
   }, [phase]);
 
