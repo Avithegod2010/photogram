@@ -5,13 +5,13 @@ Last updated: late 2026-09-06 (§0). Read §0, then §1–§17. CHANGELOG.md has
 
 ---
 
-## 0. CURRENT STATE — 2026-09-06 END · ALL SEVEN VERSIONS COMMITTED & PUBLISHED · PRIVATE GITHUB REPO LIVE (MIT)
+## 0. CURRENT STATE — 2026-09-06 END · ALL SEVEN VERSIONS COMMITTED & PUBLISHED · PUBLIC GITHUB REPO (MIT)
 
-**PUBLISHED: https://github.com/Avithegod2010/photogram (private, MIT license). 28 commits pushed
+**PUBLISHED & PUBLIC: https://github.com/Avithegod2010/photogram (MIT license). 28 commits pushed
 (master = origin/master at `3207e41`). All seven versions committed: `f372998` v0.12 Junk Sweeper
 (chatbot 2's work, committed on the owner's behalf — also repairs a latent broken `getQueueStatus`
 import from the v0.11.2 handoff) + `387756d` v0.12.1–v0.17 + `2ea7a67`/`3207e41` docs/license.
-Working tree clean, tsc clean. Owner picked MIT + private.**
+Working tree clean, tsc clean. Owner picked MIT. History was fully REWRITTEN before going public: all commit identities → 258314859+Avithegod2010@users.noreply.github.com (repo git config set to it — future commits safe), Telegram ids/serial/LAN IPs/real name scrubbed from all commits; doc hash refs updated post-rewrite. GitHub-side caveats: pre-rewrite commit objects may linger by SHA until GitHub GCs (repo was private the whole time, so they were never crawled); dependabot PR #1 closed. allowBackup=false lands in APK at next gradle rebuild.**
 
 ### FIRST ACTIONS for the next session
 1. **ONE combined gradle rebuild** unlocks v0.16 (expo-notifications native) + v0.17
