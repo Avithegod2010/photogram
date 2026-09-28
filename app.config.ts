@@ -48,6 +48,9 @@ const config: ExpoConfig = {
   android: {
     package: "com.photogram.app",
     versionCode: 1,
+    // Privacy hardening: keep the local photo index (SQLite + thumbnails) out of
+    // Google's device backup service.
+    allowBackup: false,
     permissions: ["ACCESS_MEDIA_LOCATION"],
     config: secrets.google_maps_api_key
       ? { googleMaps: { apiKey: secrets.google_maps_api_key } }

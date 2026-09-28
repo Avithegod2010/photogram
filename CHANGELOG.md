@@ -4,11 +4,23 @@ Each entry below documents what a commit adds and what comes next. Newest first.
 
 ---
 
-## License — MIT (COMMITTED in this commit)
+## Security hardening — going public (COMMITTED in this commit)
+
+- **`android:allowBackup` = false** (app.config.ts + the generated AndroidManifest): the local
+  photo index (SQLite + thumbnails + settings) is excluded from Google's device-backup service.
+  Takes effect in the APK with the next gradle rebuild.
+- **LICENSE copyright line** now carries only the public handle (no real name).
+- **Repo went PUBLIC** after a full history rewrite: all commit author/committer identities
+  remapped to the GitHub noreply address, and every personal trace (Telegram chat/message ids,
+  device serial, LAN IPs) scrubbed from all commits' content. Commit SHAs changed — docs were
+  refreshed with the new hashes afterwards.
+
+---
+
+## License — MIT (COMMITTED `38e8a79`)
 
 - Added the owner's MIT `LICENSE` (the file that shipped with the Expo template carried Expo's own
-  copyright — replaced before first publish) and updated the README license section. The repo is
-  published as **private** for now; it can be flipped public anytime.
+  copyright — replaced before first publish) and updated the README license section.
 
 ---
 
