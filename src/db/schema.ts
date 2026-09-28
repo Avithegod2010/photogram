@@ -160,6 +160,14 @@ CREATE INDEX IF NOT EXISTS idx_media_edited_from ON media (edited_from) WHERE ed
 ALTER TABLE upload_queue ADD COLUMN reply_to_message_id TEXT;
 `;
 
+// v0.21 Place-name search (docs/PLAN-V0.13-EIGHT.md, renumbered v10→v11: v10
+// is the editor). Offline nearest-city name computed at scan time from the
+// bundled GeoNames-derived dataset; searchable alongside filenames/tags/OCR.
+const SCHEMA_V11 = `
+ALTER TABLE media ADD COLUMN place_name TEXT;
+CREATE INDEX IF NOT EXISTS idx_media_place ON media (place_name) WHERE place_name IS NOT NULL;
+`;
+
 export interface Migration {
   version: number;
   up: string;
@@ -176,6 +184,7 @@ export const MIGRATIONS: Migration[] = [
   { version: 8, up: SCHEMA_V8 },
   { version: 9, up: SCHEMA_V9 },
   { version: 10, up: SCHEMA_V10 },
+  { version: 11, up: SCHEMA_V11 },
 ];
 
 export function migrationsAfter(version: number): Migration[] {

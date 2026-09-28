@@ -3,7 +3,8 @@ import { ImageManipulator, SaveFormat } from "expo-image-manipulator";
 import * as VideoThumbnails from "expo-video-thumbnails";
 import { File, Paths } from "expo-file-system";
 import type * as TextRecognitionModule from "@react-native-ml-kit/text-recognition";
-import { findMediaIdByMediaLibraryId, getMediaByIds, insertMedia, updateMediaLibraryId, backfillTakenAt, updateOcrText, setMediaState } from "../db/queries";
+import { findMediaIdByMediaLibraryId, getMediaByIds, insertMedia, updateMediaLibraryId, backfillTakenAt, updateOcrText, setMediaState, setMediaPlace } from "../db/queries";
+import { nearestCity } from "./places";
 import { findDuplicate, quickFingerprint } from "./dedupe";
 import { useSettingsStore } from "../store/settingsStore";
 
@@ -204,6 +205,12 @@ export async function scanDeviceLibrary(
             const ocr = await readTextFromImage(localUri);
             if (ocr) await updateOcrText(existing.id, ocr);
           }
+          // v0.21 place backfill: rows carrying GPS (mirrors the OCR backfill
+          // pattern; the dataset is static so recompute is idempotent).
+          if (info.location?.latitude != null && info.location?.longitude != null) {
+            const place = nearestCity(info.location.latitude, info.location.longitude);
+            if (place) await setMediaPlace(existing.id, place);
+          }
           progress.duplicates++;
           continue;
         }
@@ -234,6 +241,11 @@ export async function scanDeviceLibrary(
           if (ocrOn && !isVideo) {
             const ocr = await readTextFromImage(localUri);
             if (ocr) await updateOcrText(inserted, ocr);
+          }
+          // v0.21: offline nearest-city place name for GPS-tagged items.
+          if (location?.latitude != null && location?.longitude != null) {
+            const place = nearestCity(location.latitude, location.longitude);
+            if (place) await setMediaPlace(inserted, place);
           }
         } else {
           progress.duplicates++;

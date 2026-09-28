@@ -4,6 +4,29 @@ Each entry below documents what a commit adds and what comes next. Newest first.
 
 ---
 
+## v0.21 — Place-name search, fully offline (COMMITTED in this commit)
+
+**Added in this commit** (per docs/PLAN-V0.13-EIGHT.md; label shifted from the plan's v0.20 —
+v0.17 went to photo journaling)
+- **Offline reverse geocoding at scan time:** every GPS-tagged item gets a city-level place name
+  ("Pune, India") computed entirely on-device — no network calls, ever. Dataset: 24,323 cities
+  (population ≥ 15,000, GeoNames-derived via the `all-the-cities` build-time package, CC-BY-4.0
+  attribution noted here), bundled as a ~0.96 MB `assets/geo/cities.json` behind a lazy-loaded
+  0.5°-grid nearest-neighbor index (`src/lib/places.ts`).
+- **Schema v11 (additive):** `media.place_name TEXT` + partial index. Scan integrates like the
+  OCR pattern: new rows get a place after insert, and rescan backfills GPS rows missing one.
+- **Search integration:** the gallery search now matches `place_name` alongside filenames, tags
+  and OCR text (ASCII case-insensitive LIKE). Viewer info sheet gains a **"Place"** row.
+- **Accepted accuracy trade-offs (owner-approved):** rural/wilderness photos resolve to the
+  nearest city within 50 km else "unknown"; towns under the population cutoff inherit their
+  nearest big city. tsc clean; not yet device-verified.
+
+**Verify on device when free**
+- Rescan → spot-check 3 photos' Place values against cities you actually photographed in; search
+  a city name → those photos appear; airplane mode → scan + search still work end-to-end.
+
+---
+
 ## v0.20 — Quick "Send to album" from the Viewer (COMMITTED in this commit)
 
 **Added in this commit** (per docs/PLAN-V0.13-EIGHT.md; label shifted from the plan's v0.19 —

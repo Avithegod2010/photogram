@@ -30,6 +30,8 @@ export interface MediaRow {
   note_synced?: number | null;
   // v0.19 editor (schema v10): set on edited copies, points at the ROOT original.
   edited_from?: number | null;
+  // v0.21 place search (schema v11): offline nearest-city name at scan time.
+  place_name?: string | null;
 }
 
 export interface NewMediaInput {
@@ -810,11 +812,11 @@ export async function searchMediaRaw(query: string, limit = 300): Promise<MediaR
   return db.getAllAsync<MediaRow>(
     `SELECT * FROM media
      WHERE visibility = 'visible'
-       AND (file_name LIKE ? OR tags LIKE ? OR ocr_text LIKE ?)
+       AND (file_name LIKE ? OR tags LIKE ? OR ocr_text LIKE ? OR place_name LIKE ?)
        AND edited_from IS NULL
      ${EXCLUDE_ALL_SHARED}
      ORDER BY taken_at DESC LIMIT ?`,
-    [like, like, like, limit]
+    [like, like, like, like, limit]
   );
 }
 
@@ -1093,4 +1095,15 @@ export async function enqueueUploadWithReply(
     [mediaId, localUri, byteSize, replyToMessageId, Date.now()]
   );
   await setMediaState(mediaId, "queued");
+}
+
+// --- v0.21 place-name search --------------------------------------------------
+
+export async function setMediaPlace(id: number, placeName: string | null): Promise<void> {
+  const db = await getDb();
+  await db.runAsync("UPDATE media SET place_name = ?, updated_at = ? WHERE id = ?", [
+    placeName,
+    Date.now(),
+    id,
+  ]);
 }

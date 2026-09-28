@@ -362,6 +362,7 @@ export function ViewerScreen({ route, navigation }: any) {
                     <MetaRow k="Versions" v={`${versions.length + 1} (original + edits) — tap to flip through`} />
                   </Pressable>
                 ) : null}
+                {current.place_name ? <MetaRow k="Place" v={current.place_name} /> : null}
               </>
             ) : null}
           </Pressable>
