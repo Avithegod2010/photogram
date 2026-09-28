@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import {
   ActivityIndicator,
   Alert,
+  BackHandler,
   Pressable,
   RefreshControl,
   StyleSheet,
@@ -12,10 +13,11 @@ import {
 import { FlashList } from "@shopify/flash-list";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import { Image } from "expo-image";
+import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
-import { pageVisibleMedia, getRandomMedia, MediaRow } from "../db/queries";
+import { pageVisibleMedia, getRandomMedia, setMediaFavorite, setMediaVisibility, getTimelineRange, MediaRow } from "../db/queries";
 import { getBackupHeartbeat, BackupHeartbeat } from "../lib/stats";
 import { formatBytes } from "../lib/stats";
 import { runSearch } from "../lib/search";
@@ -124,6 +126,10 @@ export function GalleryScreen() {
   const cursorRef = useRef<number | null>(null);
   const exhaustedRef = useRef(false);
 
+  // v0.15 Timeline scrubber: true right after a jump so a "Top" chip can offer
+  // the way back to now; any fresh loadFirstPage clears it.
+  const [jumped, setJumped] = useState(false);
+
   const loadFirstPage = useCallback(async () => {
     setLoading(true);
     try {
@@ -133,6 +139,23 @@ export function GalleryScreen() {
       setRows(first);
       cursorRef.current = first.length > 0 ? first[first.length - 1].taken_at : null;
       exhaustedRef.current = first.length < 120;
+      setJumped(false);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  // Scrubber jump: start the timeline AT a chosen month (same keyset paging,
+  // seeded with the first ms of the month AFTER the target).
+  const loadPageAt = useCallback(async (beforeTakenAt: number) => {
+    setLoading(true);
+    try {
+      const master = useSettingsStore.getState().sharedTimelineMaster;
+      const first = await pageVisibleMedia(beforeTakenAt, 120, master);
+      setRows(first);
+      cursorRef.current = first.length > 0 ? first[first.length - 1].taken_at : null;
+      exhaustedRef.current = first.length < 120;
+      setJumped(true);
     } finally {
       setLoading(false);
     }
@@ -182,6 +205,213 @@ export function GalleryScreen() {
     if (!random) return;
     navigation.navigate("Viewer", { ids: [random.id], index: 0 });
   }, [navigation]);
+
+  // v0.13 Favorites: per-tile heart (Days mode). Row data is the source of
+  // truth so tiles survive scroll recycling; favTick bumps extraData so
+  // FlashList re-renders the toggled tile.
+  const [favTick, setFavTick] = useState(0);
+  const toggleFavorite = useCallback(async (item: MediaRow) => {
+    const fav = !item.is_favorite;
+    try {
+      await setMediaFavorite(item.id, fav);
+    } catch {
+      return;
+    }
+    setRows((prev) => prev.map((r) => (r.id === item.id ? { ...r, is_favorite: fav ? 1 : 0 } : r)));
+    setFavTick((t) => t + 1);
+  }, []);
+
+  // v0.14 Multi-select: long-press a tile to enter selection mode; taps toggle
+  // ticks; the bottom bar bulk-applies Back up / Archive / Hide / Delete.
+  const [selectionMode, setSelectionMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  const [selTick, setSelTick] = useState(0);
+
+  const enterSelection = useCallback((id: number) => {
+    setSelectionMode(true);
+    setSelectedIds(new Set([id]));
+    setSelTick((t) => t + 1);
+  }, []);
+
+  const toggleSelected = useCallback((id: number) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+    setSelTick((t) => t + 1);
+  }, []);
+
+  const exitSelection = useCallback(() => {
+    setSelectionMode(false);
+    setSelectedIds(new Set());
+    setSelTick((t) => t + 1);
+  }, []);
+
+  // Hardware back leaves selection mode instead of leaving the gallery.
+  useEffect(() => {
+    if (!selectionMode) return;
+    const sub = BackHandler.addEventListener("hardwareBackPress", () => {
+      exitSelection();
+      return true;
+    });
+    return () => sub.remove();
+  }, [selectionMode, exitSelection]);
+
+  const selectAllLoaded = useCallback(() => {
+    setSelectedIds(new Set((results ?? rows).map((r) => r.id)));
+    setSelTick((t) => t + 1);
+  }, [rows, results]);
+
+  const selectedRows = useMemo(
+    () => rows.filter((r) => selectedIds.has(r.id)),
+    [rows, selectedIds]
+  );
+  const backUpableCount = useMemo(
+    () => selectedRows.filter((r) => r.state === "local" || r.state === "failed").length,
+    [selectedRows]
+  );
+
+  const bulkBackUp = useCallback(() => {
+    if (backUpableCount === 0) return;
+    Alert.alert(
+      "Back up to Telegram",
+      `Queue ${backUpableCount} item${backUpableCount === 1 ? "" : "s"} for upload to Saved Messages?`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Back up",
+          onPress: () => {
+            for (const r of selectedRows) {
+              if (r.state === "local" || r.state === "failed") {
+                void enqueueForUpload(r.id).catch(() => {});
+              }
+            }
+            exitSelection();
+          },
+        },
+      ]
+    );
+  }, [backUpableCount, selectedRows, exitSelection]);
+
+  const bulkVisibility = useCallback(
+    (vis: "archived" | "hidden") => {
+      if (selectedRows.length === 0) return;
+      const where = vis === "archived" ? "Collections → Archive" : "Collections → Hidden";
+      Alert.alert(
+        vis === "archived" ? "Archive items" : "Hide items",
+        `Move ${selectedRows.length} item${selectedRows.length === 1 ? "" : "s"} out of the main timeline? Find them later in ${where}.`,
+        [
+          { text: "Cancel", style: "cancel" },
+          {
+            text: vis === "archived" ? "Archive" : "Hide",
+            onPress: () => {
+              void (async () => {
+                for (const r of selectedRows) {
+                  try {
+                    await setMediaVisibility(r.id, vis);
+                  } catch {}
+                }
+                const gone = new Set(selectedRows.map((r) => r.id));
+                setRows((prev) => prev.filter((r) => !gone.has(r.id)));
+                exitSelection();
+              })();
+            },
+          },
+        ]
+      );
+    },
+    [selectedRows, exitSelection]
+  );
+
+  const bulkDelete = useCallback(() => {
+    if (selectedRows.length === 0) return;
+    Alert.alert(
+      "Move to Trash",
+      `Move ${selectedRows.length} item${selectedRows.length === 1 ? "" : "s"} to Trash? They are deleted forever after 30 days.`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Move to Trash",
+          style: "destructive",
+          onPress: () => {
+            void (async () => {
+              for (const r of selectedRows) {
+                try {
+                  await setMediaVisibility(r.id, "trashed");
+                } catch {}
+              }
+              const gone = new Set(selectedRows.map((r) => r.id));
+              setRows((prev) => prev.filter((r) => !gone.has(r.id)));
+              exitSelection();
+            })();
+          },
+        },
+      ]
+    );
+  }, [selectedRows, exitSelection]);
+
+  // v0.15 Timeline scrubber (Days mode): drag the right-edge rail, the bubble
+  // shows the month under the finger, release jumps the grid there.
+  const [timelineRange, setTimelineRange] = useState<{ min: number; max: number } | null>(null);
+  const [scrubbing, setScrubbing] = useState(false);
+  const [scrubY, setScrubY] = useState(0); // px within the rail
+  const [railBox, setRailBox] = useState({ wrapH: 0, railH: 0 });
+  const railYRef = useRef(0);
+
+  useEffect(() => {
+    void getTimelineRange().then(setTimelineRange).catch(() => setTimelineRange(null));
+  }, [rows.length]);
+
+  const fracOf = useCallback(
+    (ts: number) => {
+      if (!timelineRange) return 0;
+      const f = (timelineRange.max - ts) / (timelineRange.max - timelineRange.min);
+      return Math.max(0, Math.min(1, f));
+    },
+    [timelineRange]
+  );
+
+  const scrubMonthTs = useCallback(
+    (y: number) => {
+      if (!timelineRange || railBox.railH === 0) return null;
+      const frac = Math.max(0, Math.min(1, y / railBox.railH));
+      return timelineRange.max - frac * (timelineRange.max - timelineRange.min);
+    },
+    [timelineRange, railBox.railH]
+  );
+
+  const commitScrub = useCallback(() => {
+    const ts = scrubMonthTs(railYRef.current);
+    if (ts === null) return;
+    // First ms of the month AFTER the target month = keyset bound that includes
+    // the whole target month. A target in the newest month is just "top".
+    const d = new Date(ts);
+    const nextMonth = new Date(d.getFullYear(), d.getMonth() + 1, 1).getTime();
+    if (!timelineRange || nextMonth > timelineRange.max) {
+      void loadFirstPage();
+    } else {
+      void loadPageAt(nextMonth);
+    }
+  }, [scrubMonthTs, timelineRange, loadFirstPage, loadPageAt]);
+
+  const railGesture = Gesture.Pan()
+    .runOnJS(true)
+    .onBegin((e) => {
+      railYRef.current = e.y;
+      setScrubY(e.y);
+      setScrubbing(true);
+    })
+    .onUpdate((e) => {
+      railYRef.current = e.y;
+      setScrubY(e.y);
+    })
+    .onEnd(() => {
+      setScrubbing(false);
+      commitScrub();
+    })
+    .onFinalize(() => setScrubbing(false));
 
   // Backup heartbeat: refresh alongside the grid data.
   const [heartbeat, setHeartbeat] = useState<BackupHeartbeat | null>(null);
@@ -307,13 +537,23 @@ export function GalleryScreen() {
           : zoomLevel === "months"
             ? Math.max(0.75, Math.min(1.5, 1 / size / 1.2))
             : undefined;
+      const isSelected = selectionMode && selectedIds.has(item.id);
       return (
         <Pressable
-          onPress={() =>
+          onPress={() => {
+            if (selectionMode) {
+              toggleSelected(item.id);
+              return;
+            }
+            // Search results page through the result set, not the full rows.
+            const source = results ?? rows;
             navigation.navigate("Viewer", {
-              ids: rows.map((r) => r.id),
-              index: rows.findIndex((r) => r.id === item.id),
-            })
+              ids: source.map((r) => r.id),
+              index: source.findIndex((r) => r.id === item.id),
+            });
+          }}
+          onLongPress={
+            zoomLevel === "days" && !selectionMode && !results ? () => enterSelection(item.id) : undefined
           }
           style={[styles.cell, { aspectRatio: aspect }]}
         >
@@ -324,6 +564,30 @@ export function GalleryScreen() {
             recyclingKey={`m-${item.id}`}
             transition={120}
           />
+          {selectionMode ? (
+            <View style={styles.tickWrap}>
+              <Ionicons
+                name={isSelected ? "checkmark-circle" : "ellipse-outline"}
+                size={17}
+                style={isSelected ? styles.tickOn : styles.tickOff}
+              />
+            </View>
+          ) : zoomLevel === "days" ? (
+            <Pressable
+              style={styles.favBtn}
+              hitSlop={6}
+              onPress={(e) => {
+                e.stopPropagation();
+                void toggleFavorite(item);
+              }}
+            >
+              <Ionicons
+                name={item.is_favorite ? "heart" : "heart-outline"}
+                size={15}
+                style={item.is_favorite ? styles.favIconOn : styles.favIconOff}
+              />
+            </Pressable>
+          ) : null}
           {cols >= 4 && showDateOnPhotos ? (
             <View style={styles.badge}>
               <Text style={styles.badgeText}>{formatDayBadge(item.taken_at)}</Text>
@@ -333,15 +597,55 @@ export function GalleryScreen() {
         </Pressable>
       );
     },
-    [navigation, rows, zoomLevel, showDateOnPhotos]
+    [navigation, rows, zoomLevel, showDateOnPhotos, toggleFavorite, selectionMode, selectedIds, toggleSelected, enterSelection, results]
   );
 
   const showEmptyState = !loading && data.length === 0;
 
+  // Rail shows only for a real multi-month timeline in Days mode.
+  const railVisible =
+    zoomLevel === "days" &&
+    !selectionMode &&
+    !searching &&
+    !showEmptyState &&
+    rows.length > 0 &&
+    timelineRange !== null &&
+    timelineRange.max - timelineRange.min > 60 * 86400 * 1000;
+
+  const railOffset = railBox.wrapH > railBox.railH ? (railBox.wrapH - railBox.railH) / 2 : 0;
+  const clampY = (y: number) => Math.max(0, Math.min(railBox.railH, y));
+  const handleTop =
+    railOffset +
+    (scrubbing
+      ? clampY(scrubY)
+      : rows.length > 0
+        ? fracOf(rows[0].taken_at) * railBox.railH
+        : 0) -
+    11;
+  const bubbleTop = Math.max(4, Math.min(Math.max(4, railBox.wrapH - 44), railOffset + clampY(scrubY) - 14));
+  const bubbleTs = scrubMonthTs(scrubY);
+  const bubbleLabel =
+    bubbleTs !== null
+      ? new Date(bubbleTs).toLocaleDateString(undefined, { month: "short", year: "numeric" })
+      : "";
+
   return (
     <View style={[styles.root, { paddingTop: insets.top }]}>
       <View style={styles.header}>
-        {searchOpen ? (
+        {selectionMode ? (
+          <View style={styles.selHeader}>
+            <Pressable onPress={exitSelection} hitSlop={8}>
+              <Ionicons name="close" size={24} color={theme.colors.onSurface} />
+            </Pressable>
+            <Text style={styles.selCount}>
+              {selectedIds.size} selected
+              {results ? ` of ${results.length} results` : ""}
+            </Text>
+            <Pressable onPress={selectAllLoaded} hitSlop={8}>
+              <Text style={styles.selAll}>Select all</Text>
+            </Pressable>
+          </View>
+        ) : searchOpen ? (
           <View style={styles.searchRow}>
             <TextInput
               autoFocus
@@ -489,48 +793,121 @@ export function GalleryScreen() {
       ) : loading ? (
         <ActivityIndicator color={theme.colors.primary} style={styles.loader} size="large" />
       ) : (
-        <GestureDetector gesture={pinch}>
-          <FlashList
-            data={data}
-            masonry
-            numColumns={COLUMNS[zoomLevel]}
-            renderItem={renderItem}
-            keyExtractor={(it) =>
-              it.__type === "year" ? `y${it.year}` : it.__type === "dayHeader" ? `d${it.ts}` : `m${it.id}`
-            }
-            getItemType={(it) => it.__type}
-            overrideItemLayout={(layout, it) => {
-              if (it.__type === "dayHeader") {
-                layout.span = COLUMNS[zoomLevel];
+        <View style={styles.listWrap}>
+          <GestureDetector gesture={pinch}>
+            <FlashList
+              style={{ flex: 1 }}
+              data={data}
+              masonry
+              numColumns={COLUMNS[zoomLevel]}
+              renderItem={renderItem}
+              keyExtractor={(it) =>
+                it.__type === "year" ? `y${it.year}` : it.__type === "dayHeader" ? `d${it.ts}` : `m${it.id}`
               }
-            }}
-            onEndReached={() => void loadMore()}
-            onEndReachedThreshold={0.4}
-            showsVerticalScrollIndicator={false}
-            contentContainerStyle={styles.listContent}
-            extraData={zoomLevel}
-            ListHeaderComponent={
-              !searching && zoomLevel === "days" ? (
-                <MemoriesCarousel
-                  onOpen={(ids, title) =>
-                    navigation.navigate("Story", { ids, title })
-                  }
+              getItemType={(it) => it.__type}
+              overrideItemLayout={(layout, it) => {
+                if (it.__type === "dayHeader") {
+                  layout.span = COLUMNS[zoomLevel];
+                }
+              }}
+              onEndReached={() => void loadMore()}
+              onEndReachedThreshold={0.4}
+              showsVerticalScrollIndicator={false}
+              contentContainerStyle={styles.listContent}
+              extraData={[zoomLevel, favTick, selectionMode, selTick]}
+              ListHeaderComponent={
+                !searching && zoomLevel === "days" ? (
+                  <MemoriesCarousel
+                    onOpen={(ids, title) =>
+                      navigation.navigate("Story", { ids, title })
+                    }
+                  />
+                ) : null
+              }
+              refreshControl={
+                <RefreshControl
+                  refreshing={refreshing}
+                  tintColor={theme.colors.primary}
+                  onRefresh={() => {
+                    setRefreshing(true);
+                    void loadFirstPage().finally(() => setRefreshing(false));
+                  }}
                 />
-              ) : null
-            }
-            refreshControl={
-              <RefreshControl
-                refreshing={refreshing}
-                tintColor={theme.colors.primary}
-                onRefresh={() => {
-                  setRefreshing(true);
-                  void loadFirstPage().finally(() => setRefreshing(false));
-                }}
-              />
-            }
-          />
-        </GestureDetector>
+              }
+            />
+          </GestureDetector>
+          {railVisible ? (
+            <View
+              style={styles.railWrap}
+              pointerEvents="box-none"
+              onLayout={(e) => {
+                const h = e.nativeEvent.layout.height;
+                setRailBox((b) => (b.wrapH === h ? b : { ...b, wrapH: h }));
+              }}
+            >
+              <GestureDetector gesture={railGesture}>
+                <View
+                  style={styles.rail}
+                  onLayout={(e) => {
+                    const h = e.nativeEvent.layout.height;
+                    setRailBox((b) => (b.railH === h ? b : { ...b, railH: h }));
+                  }}
+                >
+                  <View style={styles.railTrack} />
+                  <View style={[styles.railHandle, { top: handleTop }]} />
+                </View>
+              </GestureDetector>
+              {scrubbing ? (
+                <View style={[styles.scrubBubble, { top: bubbleTop }]}>
+                  <Text style={styles.scrubBubbleText}>{bubbleLabel}</Text>
+                </View>
+              ) : null}
+            </View>
+          ) : null}
+          {jumped && !scrubbing ? (
+            <Pressable style={styles.topChip} onPress={() => void loadFirstPage()} hitSlop={6}>
+              <Text style={styles.topChipText}>⤒ Top</Text>
+            </Pressable>
+          ) : null}
+        </View>
       )}
+
+      {selectionMode ? (
+        <View style={[styles.selBar, { paddingBottom: insets.bottom + 10 }]}>
+          <Pressable
+            style={[styles.selAction, backUpableCount === 0 && styles.selActionDisabled]}
+            onPress={bulkBackUp}
+            disabled={backUpableCount === 0}
+          >
+            <Ionicons name="cloud-upload-outline" size={20} color={theme.colors.primary} />
+            <Text style={styles.selActionLabel}>Back up</Text>
+          </Pressable>
+          <Pressable
+            style={[styles.selAction, selectedRows.length === 0 && styles.selActionDisabled]}
+            onPress={() => bulkVisibility("archived")}
+            disabled={selectedRows.length === 0}
+          >
+            <Ionicons name="archive-outline" size={20} color={theme.colors.onSurface} />
+            <Text style={styles.selActionLabel}>Archive</Text>
+          </Pressable>
+          <Pressable
+            style={[styles.selAction, selectedRows.length === 0 && styles.selActionDisabled]}
+            onPress={() => bulkVisibility("hidden")}
+            disabled={selectedRows.length === 0}
+          >
+            <Ionicons name="eye-off-outline" size={20} color={theme.colors.onSurface} />
+            <Text style={styles.selActionLabel}>Hide</Text>
+          </Pressable>
+          <Pressable
+            style={[styles.selAction, selectedRows.length === 0 && styles.selActionDisabled]}
+            onPress={bulkDelete}
+            disabled={selectedRows.length === 0}
+          >
+            <Ionicons name="trash-outline" size={20} color={theme.colors.error} />
+            <Text style={[styles.selActionLabel, { color: theme.colors.error }]}>Delete</Text>
+          </Pressable>
+        </View>
+      ) : null}
     </View>
   );
 }
@@ -615,6 +992,73 @@ const styles = StyleSheet.create({
   },
   badgeText: { color: "#FFFFFF", fontSize: 9.5, fontWeight: "600" },
   stateDot: { position: "absolute", right: 5, top: 5, width: 8, height: 8, borderRadius: 4 },
+  favBtn: { position: "absolute", left: 4, top: 4, padding: 3 },
+  favIconOff: { color: "#FFFFFF", opacity: 0.55 },
+  favIconOn: { color: "#EA4335", opacity: 1 },
+  selHeader: { flex: 1, flexDirection: "row", alignItems: "center", gap: theme.spacing.md },
+  selCount: { color: theme.colors.onSurface, fontSize: 16, fontWeight: "600", flex: 1 },
+  selAll: { color: theme.colors.primary, fontWeight: "700", fontSize: 13.5 },
+  selBar: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    bottom: 0,
+    flexDirection: "row",
+    justifyContent: "space-around",
+    paddingTop: 10,
+    backgroundColor: theme.colors.surfaceContainer,
+    borderTopWidth: 1,
+    borderTopColor: theme.colors.outlineVariant,
+  },
+  selAction: { alignItems: "center", gap: 3, paddingHorizontal: 12 },
+  selActionDisabled: { opacity: 0.4 },
+  selActionLabel: { color: theme.colors.onSurface, fontSize: 11, fontWeight: "600" },
+  tickWrap: { position: "absolute", left: 4, top: 4 },
+  tickOff: { color: "#FFFFFF" },
+  tickOn: { color: theme.colors.primary },
+  listWrap: { flex: 1 },
+  railWrap: {
+    position: "absolute",
+    right: 0,
+    top: 0,
+    bottom: 0,
+    width: 34,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  rail: { width: 26, height: "78%", alignItems: "center" },
+  railTrack: { width: 4, flex: 1, borderRadius: 2, backgroundColor: theme.colors.surfaceContainer },
+  railHandle: {
+    position: "absolute",
+    left: 2,
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: theme.colors.primaryContainer,
+    borderWidth: 1,
+    borderColor: theme.colors.outlineVariant,
+  },
+  scrubBubble: {
+    position: "absolute",
+    right: 38,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 10,
+    backgroundColor: "#000000CC",
+  },
+  scrubBubbleText: { color: "#FFFFFF", fontSize: 13, fontWeight: "700" },
+  topChip: {
+    position: "absolute",
+    top: 8,
+    right: 44,
+    backgroundColor: theme.colors.surfaceContainer,
+    borderWidth: 1,
+    borderColor: theme.colors.outlineVariant,
+    borderRadius: theme.radius.full,
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+  },
+  topChipText: { color: theme.colors.primary, fontSize: 12, fontWeight: "700" },
   dot_local: { backgroundColor: "#9AA0A6" },
   dot_queued: { backgroundColor: "#FBBC05" },
   dot_uploading: { backgroundColor: "#FBBC05" },

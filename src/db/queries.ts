@@ -24,6 +24,10 @@ export interface MediaRow {
   visibility: MediaVisibility;
   trashed_at: number | null;
   media_library_id: string | null;
+  is_favorite: number;
+  // F3 journaling (schema v9): optional so pre-migration consumers compile.
+  note_text?: string | null;
+  note_synced?: number | null;
 }
 
 export interface NewMediaInput {
@@ -588,6 +592,18 @@ export async function updateQueueStatus(
   );
 }
 
+// Reads one queue row's status (null when the row is gone). Used by the upload
+// safety ladder's parking logic so a late updateMessageSendFailed can never
+// re-queue a row that already finished ("done").
+export async function getQueueStatus(queueId: number): Promise<QueueRow["status"] | null> {
+  const db = await getDb();
+  const row = await db.getFirstAsync<{ status: QueueRow["status"] }>(
+    "SELECT status FROM upload_queue WHERE id = ?",
+    [queueId]
+  );
+  return row?.status ?? null;
+}
+
 export async function bumpQueueAttempt(queueId: number): Promise<number> {
   const db = await getDb();
   const row = await db.getFirstAsync<{ attempts: number }>(
@@ -797,4 +813,240 @@ export async function searchByDateRange(fromMs: number, toMs: number): Promise<M
      ORDER BY taken_at DESC`,
     [fromMs, toMs]
   );
+}
+
+// --- F2 Junk Sweeper ---------------------------------------------------------
+
+export type JunkCategory = "blurry" | "pocket" | "near_duplicate" | "stale_screenshot";
+export type JunkFindingStatus = "pending" | "kept" | "deleted";
+
+export interface NewJunkFindingInput {
+  media_id: number;
+  category: JunkCategory;
+  score: number | null;
+  detail: string | null;
+  group_key: string | null;
+}
+
+export interface JunkFindingWithMedia {
+  id: number;
+  media_id: number;
+  category: JunkCategory;
+  score: number | null;
+  detail: string | null;
+  group_key: string | null;
+  created_at: number;
+  // Joined media columns (the review screen renders these directly).
+  local_uri: string | null;
+  thumb_uri: string;
+  file_name: string | null;
+  mime_type: string;
+  byte_size: number;
+  taken_at: number;
+  state: MediaState;
+  remote_chat_id: string | null;
+  remote_message_id: string | null;
+  media_library_id: string | null;
+}
+
+export async function getMeta(key: string): Promise<string | null> {
+  const db = await getDb();
+  const row = await db.getFirstAsync<{ value: string }>(
+    "SELECT value FROM meta WHERE key = ?",
+    [key]
+  );
+  return row?.value ?? null;
+}
+
+export async function setMeta(key: string, value: string): Promise<void> {
+  const db = await getDb();
+  await db.runAsync("INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)", [key, value]);
+}
+
+// Idempotent write: a fresh suggestion replaces an old PENDING one for the same
+// media+category, but a KEPT or DELETED verdict is final and is never
+// overwritten — that is what makes "keep" permanent across sweeps.
+export async function upsertFindings(rows: NewJunkFindingInput[]): Promise<number> {
+  if (rows.length === 0) return 0;
+  const db = await getDb();
+  const now = Date.now();
+  let written = 0;
+  await db.withTransactionAsync(async () => {
+    for (const row of rows) {
+      const settled = await db.getFirstAsync<{ id: number }>(
+        "SELECT id FROM junk_findings WHERE media_id = ? AND category = ? AND status IN ('kept','deleted') LIMIT 1",
+        [row.media_id, row.category]
+      );
+      if (settled) continue;
+      await db.runAsync(
+        "DELETE FROM junk_findings WHERE media_id = ? AND category = ? AND status = 'pending'",
+        [row.media_id, row.category]
+      );
+      await db.runAsync(
+        "INSERT INTO junk_findings (media_id, category, score, detail, group_key, created_at, status) VALUES (?, ?, ?, ?, ?, ?, 'pending')",
+        [row.media_id, row.category, row.score, row.detail, row.group_key, now]
+      );
+      written++;
+    }
+  });
+  return written;
+}
+
+export async function listFindingsByStatus(status: JunkFindingStatus): Promise<JunkFindingWithMedia[]> {
+  const db = await getDb();
+  return db.getAllAsync<JunkFindingWithMedia>(
+    `SELECT jf.id, jf.media_id, jf.category, jf.score, jf.detail, jf.group_key, jf.created_at,
+            m.local_uri, m.thumb_uri, m.file_name, m.mime_type, m.byte_size, m.taken_at,
+            m.state, m.remote_chat_id, m.remote_message_id, m.media_library_id
+     FROM junk_findings jf
+     JOIN media m ON m.id = jf.media_id
+     WHERE jf.status = ?
+     ORDER BY jf.category, m.taken_at DESC`,
+    [status]
+  );
+}
+
+export async function setFindingStatus(id: number, status: JunkFindingStatus): Promise<void> {
+  const db = await getDb();
+  await db.runAsync("UPDATE junk_findings SET status = ? WHERE id = ?", [status, id]);
+}
+
+// One media row can carry several pending findings (e.g. blurry AND part of a
+// near-dup group). When the item itself is deleted/kept, move them all.
+export async function setPendingFindingsForMedia(
+  mediaId: number,
+  status: JunkFindingStatus
+): Promise<void> {
+  const db = await getDb();
+  await db.runAsync("UPDATE junk_findings SET status = ? WHERE media_id = ? AND status = 'pending'", [
+    status,
+    mediaId,
+  ]);
+}
+
+export async function hasKeptFinding(mediaId: number): Promise<boolean> {
+  const db = await getDb();
+  const row = await db.getFirstAsync<{ id: number }>(
+    "SELECT id FROM junk_findings WHERE media_id = ? AND status = 'kept' LIMIT 1",
+    [mediaId]
+  );
+  return row !== undefined;
+}
+
+// Sweep candidates for one resumable chunk: the owner's own photos+videos
+// (shared-album media is claimed family property and is never swept), with a
+// thumbnail to analyze and without a settled (kept/deleted) verdict yet.
+// Keyset paging on id (id > afterId, ordered by id) doubles as the resume
+// cursor stored in meta ('junk_last_media_id').
+export interface SweepCandidateRow {
+  id: number;
+  thumb_uri: string;
+  mime_type: string;
+  tags: string;
+  byte_size: number;
+  taken_at: number;
+}
+
+export async function pageSweepCandidates(afterId: number, limit: number): Promise<SweepCandidateRow[]> {
+  const db = await getDb();
+  return db.getAllAsync<SweepCandidateRow>(
+    `SELECT id, thumb_uri, mime_type, tags, byte_size, taken_at FROM media
+     WHERE visibility != 'trashed'
+       AND thumb_uri != ''
+       AND id > ?
+       ${EXCLUDE_ALL_SHARED}
+       AND NOT EXISTS (
+         SELECT 1 FROM junk_findings jf
+         WHERE jf.media_id = media.id AND jf.status IN ('kept','deleted')
+       )
+     ORDER BY id
+     LIMIT ?`,
+    [afterId, limit]
+  );
+}
+
+// --- Favorites (v0.13) -------------------------------------------------------
+
+// Per-device heart state (schema v8); never synced to Telegram.
+export async function setMediaFavorite(id: number, fav: boolean): Promise<void> {
+  const db = await getDb();
+  await db.runAsync("UPDATE media SET is_favorite = ?, updated_at = ? WHERE id = ?", [
+    fav ? 1 : 0,
+    Date.now(),
+    id,
+  ]);
+}
+
+// Favorites show the owner's own media only, matching the Memories rule.
+export async function listFavorites(limit = 600): Promise<MediaRow[]> {
+  const db = await getDb();
+  return db.getAllAsync<MediaRow>(
+    `SELECT * FROM media WHERE is_favorite = 1 AND visibility = 'visible' ${EXCLUDE_ALL_SHARED} ORDER BY taken_at DESC LIMIT ?`,
+    [limit]
+  );
+}
+
+// --- Timeline scrubber (v0.15) ------------------------------------------------
+
+// Newest and oldest timestamps of the owner's visible timeline — the rail maps
+// this range linearly from top (newest) to bottom (oldest).
+export async function getTimelineRange(): Promise<{ min: number; max: number } | null> {
+  const db = await getDb();
+  const row = await db.getFirstAsync<{ min: number | null; max: number | null }>(
+    `SELECT MIN(taken_at) AS min, MAX(taken_at) AS max FROM media WHERE visibility = 'visible' ${EXCLUDE_ALL_SHARED}`
+  );
+  if (!row || row.min === null || row.max === null || row.max <= row.min) return null;
+  return { min: row.min, max: row.max };
+}
+
+// --- F3 photo journaling (docs/PLAN-F3-JOURNALING.md) --------------------------
+
+// Local-first note write. text = null means "note removed" — the pending
+// note_synced=0 row then drives a caption restore to file_name (A1).
+export async function setMediaNote(id: number, text: string | null): Promise<void> {
+  const db = await getDb();
+  await db.runAsync("UPDATE media SET note_text = ?, note_synced = 0, updated_at = ? WHERE id = ?", [
+    text,
+    Date.now(),
+    id,
+  ]);
+}
+
+export async function setNoteSynced(id: number): Promise<void> {
+  const db = await getDb();
+  await db.runAsync("UPDATE media SET note_synced = 1 WHERE id = ?", [id]);
+}
+
+export interface PendingNoteRow {
+  id: number;
+  remote_chat_id: string;
+  remote_message_id: string;
+  note_text: string | null;
+  file_name: string | null;
+  mime_type: string | null;
+}
+
+// Rows whose caption Telegram has not confirmed yet: synced, with remote ids,
+// own library only (shared-album claims are never caption-edited by us).
+export async function getPendingNoteSync(limit = 50): Promise<PendingNoteRow[]> {
+  const db = await getDb();
+  return db.getAllAsync<PendingNoteRow>(
+    `SELECT id, remote_chat_id, remote_message_id, note_text, file_name, mime_type
+     FROM media
+     WHERE note_synced = 0 AND state = 'synced'
+       AND remote_chat_id IS NOT NULL AND remote_message_id IS NOT NULL
+       AND visibility != 'trashed'
+       ${EXCLUDE_ALL_SHARED}
+     LIMIT ?`,
+    [limit]
+  );
+}
+
+export async function isSharedAlbumMedia(id: number): Promise<boolean> {
+  const db = await getDb();
+  const row = await db.getFirstAsync<{ one: number }>(
+    "SELECT 1 AS one FROM album_media WHERE media_id = ? LIMIT 1",
+    [id]
+  );
+  return !!row;
 }

@@ -4,7 +4,7 @@ Each entry below documents what a commit adds and what comes next. Newest first.
 
 ---
 
-## v0.12 — Junk Sweeper: on-device cleanup suggestions (COMMITTED in this commit)
+## v0.12 — Junk Sweeper: on-device cleanup suggestions (COMMITTED `1e4a7cf`)
 
 **Added in this commit** (built by the parallel chatbot-2 agent; committed on the owner's behalf
 after that agent became unavailable — code-reviewed and accepted as-is by chatbot 1)
@@ -35,6 +35,105 @@ after that agent became unavailable — code-reviewed and accepted as-is by chat
 **Next**
 - Gradle rebuild (combined: expo-notifications + editMessageCaption), device verification of
   v0.12.1–v0.17, GitHub publish.
+
+---
+
+## v0.17 — Photo journaling: notes as Telegram captions (COMMITTED in this commit)
+
+**Added in this commit** (F3 per docs/PLAN-F3-JOURNALING.md; owner-approved adaptations: schema
+renumbered v8→v9 — v8 is Favorites — and label v0.17)
+- **A note IS the Telegram caption (D1):** adding a note on any photo/video replaces that
+  message's fileName caption in Saved Messages (visible in every Telegram client, survives
+  forever); removing the note restores the fileName caption. Local-first: the note is saved to
+  SQLite instantly and marked `note_synced = 0` until Telegram confirms — typed text is never lost,
+  even offline.
+- **New typed native wrapper `editMessageCaption`** via one idempotent 4-part insert in
+  `scripts/patch-tdlib.js` (verified TdApi constructor; raw `td_json_client_send` is
+  fire-and-forget so request/response MUST use typed wrappers). **Requires one gradle rebuild**
+  (combined with v0.16's expo-notifications rebuild).
+- **Schema v9 (additive):** `media.note_text TEXT`, `media.note_synced INTEGER DEFAULT 0`.
+- **Sync-after design (option A):** ZERO changes to `src/lib/uploader.ts` — send-time captions
+  stay fileName so `findSentMessage` matching is byte-identical and the FLOOD_WAIT ladder is
+  untouched. Pending notes retry on app boot and when the Viewer opens; the Viewer save path
+  pushes immediately when the row is already synced. Offline notes land on the next trigger.
+- **Safety guards:** read-back before any edit (openChat → getMessage) — a caption the owner
+  hand-typed in Telegram is never overwritten without an explicit "Replace the caption?" confirm
+  (the app's own pushed note counts as ours, so removal is seamless); preview captions are never
+  touched; unknown errors keep the note local and retry; "not modified" counts as success.
+- **Viewer UI:** "Note" ActionChip, Note block in the info sheet (shows "· pending" until
+  confirmed), 1000-char editor modal (Save / Remove / Cancel). Shared-album (family) photos are
+  blocked with an alert — the app never edits captions on family members' messages.
+- **Queries:** `setMediaNote` / `setNoteSynced` / `getPendingNoteSync` (own library only, excludes
+  shared-album claims + trashed) / `isSharedAlbumMedia`.
+- tsc clean; not yet device-verified (needs the combined gradle rebuild).
+
+## v0.16 — Notifications, strictly opt-in (COMMITTED in this commit)
+
+**Added in this commit**
+- **Settings → Notifications:** master toggle (asks the Android 13+ permission on enable —
+  channels are created first, the SDK 57 gotcha — and reverts itself on denial) + two sub-toggles,
+  both default ON once the master is on: "Backup finished" and "On this day". Off = silence,
+  full stop.
+- **"Backup finished"** fires when the upload queue drains with new completions (watches the
+  upload store — zero uploader changes; MMKV last-notified counter prevents duplicates).
+- **"On this day"** at most once per day, on the first in-app check after 09:00 local: counts
+  prior-years same-day photos in the owner's library and posts one memory notification.
+- **Honest limits:** delivery happens while the app is running (the worker and the check loop are
+  in-process) — no promised OS-scheduled alarms while the app is killed.
+- **expo-notifications ~57.0.21 installed; ONE gradle rebuild required** (shared with v0.17's
+  wrapper rebuild). The code soft-requires the native module (same pattern as expo-battery), so
+  the current APK keeps running safely — toggling on it politely reports the module isn't
+  available yet.
+
+## v0.15 — Timeline scrubber (COMMITTED in this commit)
+
+**Added in this commit**
+- **Drag-to-jump rail** on the gallery's right edge (Days mode): a bubble under your finger shows
+  the month ("Mar 2025"); release jumps the grid to that month via the existing keyset paging
+  (first-ms-of-next-month bound — deterministic, no pixel-offset math on variable masonry tiles).
+- A **"⤒ Top"** chip appears after a jump to get back to now; the handle mirrors the current
+  head-of-grid month when idle.
+- New `getTimelineRange()` query (MIN/MAX of the visible timeline). The rail hides while
+  searching, while selecting, on empty libraries, and when the timeline spans under 2 months.
+- Pure JS + existing reanimated/gesture stack; no schema, no rebuild, no new deps.
+
+## v0.14 — Gallery multi-select (COMMITTED in this commit)
+
+**Added in this commit**
+- **Long-press a tile → selection mode:** tick circles on tiles (tap to toggle), header bar with
+  "N selected / Select all / ✕", hardware back exits.
+- **Bottom action bar:** Back up (queues local/failed rows through the normal dedupe'd queue),
+  Archive, Hide, and Delete — Delete goes through the 30-day Trash with a confirm, exactly like
+  single delete. Actions disable at zero selection.
+- Ticks replace the favorite hearts while selecting; recycled tiles keep state (row data is the
+  source of truth).
+- Bonus fix found while here: tapping a photo while search results are shown now pages through the
+  RESULT set in the Viewer (it previously opened the wrong photo from the full rows list).
+
+## v0.13 — Favorites (COMMITTED in this commit)
+
+**Added in this commit**
+- **Heart any photo or video:** a small always-visible heart button on every Days-mode gallery
+  tile (top-left; tapping it does NOT open the photo) and a Favorite chip in the Viewer. Schema
+  v8 (additive): `media.is_favorite` + partial index.
+- **Collections → Favorites:** a 3-column masonry grid of everything you've hearted, opening the
+  Viewer on the favorites set. Favorites are per-device state in the local index (never synced to
+  Telegram) and survive rescans.
+- Query helpers `setMediaFavorite` / `listFavorites` (own media only, matching the Memories rule).
+
+## v0.12.1 — Shareable backup heartbeat card (COMMITTED in this commit)
+
+**Added in this commit** (F4 Settings-only slice per docs/PLAN-F4-HEARTBEAT-CARD.md)
+- **Settings → Storage → "Share backup status":** one tap composes a numbers-only status line
+  from the exact data behind the gallery heartbeat — e.g. "Photogram: 14.2 GB safe — 2,431 of
+  2,431 backed up. Last upload 2h ago. 0 pending." — and opens the Android share sheet.
+- Four states (all-synced recent / stale-48h shows the date / partial / never-synced omits the
+  last-upload sentence); the pending figure falls back to total − synced so a drained queue can
+  never fake "0 pending".
+- **Privacy hard rule:** aggregate numbers only — no file names, paths, album or contact names.
+  The row hides itself on a fresh install (nothing to report); share-sheet cancel is a no-op.
+- Pure JS: `src/lib/heartbeatCard.ts` + one row in SettingsScreen; no schema, no rebuild, RN
+  `Share.share` (not expo-sharing — plain text, not a file share).
 
 ---
 

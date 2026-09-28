@@ -34,6 +34,11 @@ interface SettingsState {
   uploadGapSeconds: number;
   // Daily upload budget in GB, 0 = no cap. The gate lives in uploadSafety.ts.
   dailyBudgetGb: number;
+  // v0.16 Notifications (opt-in). Master gate + two sub-types; nothing fires
+  // while the master is off.
+  notificationsEnabled: boolean;
+  notifyBackupFinished: boolean;
+  notifyOnThisDay: boolean;
   setExifPreserve: (v: boolean) => void;
   setHiddenLockEnabled: (v: boolean) => void;
   setWifiOnlyUpload: (v: boolean) => void;
@@ -49,6 +54,9 @@ interface SettingsState {
   setJunkSweeperEnabled: (v: boolean) => void;
   setUploadGapSeconds: (v: number) => void;
   setDailyBudgetGb: (v: number) => void;
+  setNotificationsEnabled: (v: boolean) => void;
+  setNotifyBackupFinished: (v: boolean) => void;
+  setNotifyOnThisDay: (v: boolean) => void;
 }
 
 export const useSettingsStore = create<SettingsState>()(
@@ -69,6 +77,9 @@ export const useSettingsStore = create<SettingsState>()(
       showDateOnPhotos: false,
       uploadGapSeconds: 0,
       dailyBudgetGb: 25,
+      notificationsEnabled: false,
+      notifyBackupFinished: true,
+      notifyOnThisDay: true,
       setExifPreserve: (v) => set({ exifPreserve: v }),
       setHiddenLockEnabled: (v) => set({ hiddenLockEnabled: v }),
       setWifiOnlyUpload: (v) => set({ wifiOnlyUpload: v }),
@@ -84,6 +95,9 @@ export const useSettingsStore = create<SettingsState>()(
       setJunkSweeperEnabled: (v) => set({ junkSweeperEnabled: v }),
       setUploadGapSeconds: (v) => set({ uploadGapSeconds: v }),
       setDailyBudgetGb: (v) => set({ dailyBudgetGb: v }),
+      setNotificationsEnabled: (v) => set({ notificationsEnabled: v }),
+      setNotifyBackupFinished: (v) => set({ notifyBackupFinished: v }),
+      setNotifyOnThisDay: (v) => set({ notifyOnThisDay: v }),
     }),
     {
       name: "photogram-settings",

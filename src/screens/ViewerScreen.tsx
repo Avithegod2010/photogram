@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Alert,
   Dimensions,
@@ -8,6 +8,7 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   View,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
@@ -16,8 +17,9 @@ import { Image } from "expo-image";
 import { useVideoPlayer, VideoView } from "expo-video";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
-import { getMediaByIds, setMediaVisibility, MediaRow } from "../db/queries";
+import { getMediaByIds, setMediaVisibility, setMediaFavorite, isSharedAlbumMedia, MediaRow } from "../db/queries";
 import { enqueueForUpload } from "../lib/uploader";
+import { saveViewerNote, syncPendingNotes } from "../lib/notes";
 import { hasRemoteCopy, restoreMediaToDevice } from "../lib/restorer";
 import { formatBytes } from "../lib/stats";
 import { theme } from "../theme";
@@ -106,6 +108,77 @@ export function ViewerScreen({ route, navigation }: any) {
     } catch {}
   }, [current]);
 
+  const favoriteCurrent = useCallback(async () => {
+    if (!current) return;
+    const fav = !current.is_favorite;
+    await setMediaFavorite(current.id, fav);
+    setRows((prev) => prev.map((r) => (r.id === current.id ? { ...r, is_favorite: fav ? 1 : 0 } : r)));
+  }, [current]);
+
+  // --- F3 photo journaling: note editor state + save/remove (docs/PLAN-F3-JOURNALING.md) ---
+  const [noteEditorOpen, setNoteEditorOpen] = useState(false);
+  const [noteDraft, setNoteDraft] = useState("");
+  const noteSyncRanRef = useRef(false);
+
+  const openNoteEditor = useCallback(() => {
+    if (!current) return;
+    setNoteDraft(current.note_text ?? "");
+    setNoteEditorOpen(true);
+  }, [current]);
+
+  const refreshRow = useCallback(async (id: number) => {
+    const refreshed = await getMediaByIds([id]);
+    if (refreshed[0]) {
+      setRows((prev) => prev.map((r) => (r.id === id ? refreshed[0] : r)));
+    }
+  }, []);
+
+  // Local-first save; the Telegram caption push happens here when the row is
+  // already synced, or later via the boot/open triggers (offline-safe).
+  const saveNote = useCallback(
+    async (text: string | null, force: boolean) => {
+      if (!current) return;
+      if (await isSharedAlbumMedia(current.id)) {
+        Alert.alert("Notes apply to your own backed-up photos", "Family album media is not editable here.");
+        setNoteEditorOpen(false);
+        return;
+      }
+      const result = await saveViewerNote(current, text, force);
+      if (result.status === "foreign") {
+        Alert.alert(
+          "Replace the caption?",
+          `Telegram currently shows the caption "${result.caption}". Replace it with your note?`,
+          [
+            { text: "Cancel", style: "cancel" },
+            { text: "Replace", onPress: () => void saveNote(text, true) },
+          ]
+        );
+        return;
+      }
+      if (result.status === "failed") {
+        Alert.alert(
+          "Note saved on this phone",
+          `Telegram didn't accept it yet (${result.reason ?? "error"}). It will retry automatically.`
+        );
+      }
+      setNoteEditorOpen(false);
+      await refreshRow(current.id);
+    },
+    [current, refreshRow]
+  );
+
+  // D5.3: opening the Viewer retries pending caption syncs once, then refreshes.
+  useEffect(() => {
+    if (noteSyncRanRef.current || rows.length === 0) return;
+    if (!rows.some((r) => r.state === "synced" && r.note_synced === 0)) return;
+    noteSyncRanRef.current = true;
+    void (async () => {
+      await syncPendingNotes().catch(() => undefined);
+      const refreshed = await getMediaByIds(rows.map((r) => r.id));
+      if (refreshed.length > 0) setRows(refreshed);
+    })();
+  }, [rows]);
+
   return (
     <View style={styles.root}>
       <View style={[styles.headerBar, { paddingTop: insets.top + 6 }]}>
@@ -142,6 +215,13 @@ export function ViewerScreen({ route, navigation }: any) {
 
       <View style={[styles.actionsBar, { paddingBottom: insets.bottom + 12 }]}>
         <ActionChip label="Share" icon="share-social-outline" onPress={() => void shareCurrent()} />
+        <ActionChip
+          label={current?.is_favorite ? "Favorited" : "Favorite"}
+          icon={current?.is_favorite ? "heart" : "heart-outline"}
+          danger={!!current?.is_favorite}
+          disabled={!current}
+          onPress={() => void favoriteCurrent()}
+        />
         {current && !current.local_uri && hasRemoteCopy(current) ? (
           <ActionChip
             label={savingId === current.id ? "Saving…" : "Save to device"}
@@ -159,6 +239,7 @@ export function ViewerScreen({ route, navigation }: any) {
             void enqueueForUpload(current.id).catch(() => {});
           }}
         />
+        <ActionChip label="Note" icon="pencil-outline" disabled={!current} onPress={openNoteEditor} />
         <ActionChip
           label="Archive"
           icon="archive-outline"
@@ -202,11 +283,29 @@ export function ViewerScreen({ route, navigation }: any) {
                   <MetaRow k="Duration" v={`${(current.duration_ms / 1000).toFixed(1)}s`} />
                 ) : null}
                 <MetaRow k="Backup" v={current.state === "synced" ? `Synced to Telegram${current.uploaded_at ? " · " + new Date(current.uploaded_at).toLocaleDateString() : ""}` : `Local only (${current.state})`} />
+                <Pressable onPress={openNoteEditor}>
+                  <MetaRow
+                    k="Note"
+                    v={
+                      current.note_text
+                        ? current.note_text +
+                          (current.state === "synced" && current.note_synced === 0 ? " · pending" : "")
+                        : "None — tap to add"
+                    }
+                  />
+                </Pressable>
               </>
             ) : null}
           </Pressable>
         </Pressable>
       </Modal>
+
+      <NoteEditorModal
+        visible={noteEditorOpen}
+        initialText={current?.note_text ?? ""}
+        onClose={() => setNoteEditorOpen(false)}
+        onSave={(text) => void saveNote(text, false)}
+      />
     </View>
   );
 }
@@ -315,4 +414,92 @@ const styles = StyleSheet.create({
   metaRow: { flexDirection: "row", justifyContent: "space-between", paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: theme.colors.outlineVariant },
   metaKey: { color: theme.colors.onSurfaceVariant, fontSize: 13.5 },
   metaValue: { color: theme.colors.onSurface, fontSize: 13.5, fontWeight: "500", maxWidth: "60%", textAlign: "right" },
+});
+
+// --- F3 photo journaling: note editor (own styles; the block above is shared) ---
+
+function NoteEditorModal({
+  visible,
+  initialText,
+  onSave,
+  onClose,
+}: {
+  visible: boolean;
+  initialText: string;
+  onSave: (text: string | null) => void;
+  onClose: () => void;
+}) {
+  const [draft, setDraft] = useState(initialText);
+  useEffect(() => {
+    if (visible) setDraft(initialText);
+  }, [visible, initialText]);
+
+  return (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+      <Pressable style={noteStyles.backdrop} onPress={onClose}>
+        <Pressable style={noteStyles.card} onPress={(e) => e.stopPropagation()}>
+          <Text style={noteStyles.title}>Photo note</Text>
+          <Text style={noteStyles.hint}>Saved as this photo's caption in Telegram.</Text>
+          <TextInput
+            style={noteStyles.input}
+            value={draft}
+            onChangeText={setDraft}
+            multiline
+            maxLength={1000}
+            autoFocus
+            textAlignVertical="top"
+            placeholder="Emma's first steps…"
+            placeholderTextColor={theme.colors.onSurfaceVariant + "88"}
+          />
+          <Text style={noteStyles.counter}>{draft.length}/1000</Text>
+          <View style={noteStyles.buttons}>
+            {initialText ? (
+              <Pressable style={noteStyles.btn} onPress={() => onSave(null)}>
+                <Text style={[noteStyles.btnText, { color: theme.colors.error }]}>Remove</Text>
+              </Pressable>
+            ) : null}
+            <Pressable style={noteStyles.btn} onPress={onClose}>
+              <Text style={noteStyles.btnText}>Cancel</Text>
+            </Pressable>
+            <Pressable
+              style={[noteStyles.btn, noteStyles.btnPrimary]}
+              onPress={() => {
+                const trimmed = draft.trim();
+                onSave(trimmed.length > 0 ? trimmed : null);
+              }}
+            >
+              <Text style={[noteStyles.btnText, noteStyles.btnPrimaryText]}>Save</Text>
+            </Pressable>
+          </View>
+        </Pressable>
+      </Pressable>
+    </Modal>
+  );
+}
+
+const noteStyles = StyleSheet.create({
+  backdrop: { flex: 1, backgroundColor: "#000000AA", justifyContent: "center", padding: theme.spacing.xl },
+  card: {
+    backgroundColor: theme.colors.surfaceContainer,
+    borderRadius: theme.radius.xl,
+    padding: theme.spacing.lg,
+  },
+  title: { color: theme.colors.onSurface, fontSize: 18, fontWeight: "700" },
+  hint: { color: theme.colors.onSurfaceVariant, fontSize: 12.5, marginTop: 2 },
+  input: {
+    marginTop: theme.spacing.md,
+    minHeight: 110,
+    backgroundColor: theme.colors.surfaceHighest,
+    borderRadius: theme.radius.lg,
+    color: theme.colors.onSurface,
+    fontSize: 14,
+    padding: theme.spacing.md,
+    textAlignVertical: "top",
+  },
+  counter: { color: theme.colors.onSurfaceVariant, fontSize: 11.5, textAlign: "right", marginTop: 4 },
+  buttons: { flexDirection: "row", justifyContent: "flex-end", gap: theme.spacing.md, marginTop: theme.spacing.sm },
+  btn: { paddingHorizontal: 14, paddingVertical: 9, borderRadius: theme.radius.full },
+  btnPrimary: { backgroundColor: theme.colors.primary },
+  btnText: { color: theme.colors.onSurface, fontSize: 13.5, fontWeight: "600" },
+  btnPrimaryText: { color: theme.colors.onPrimary },
 });

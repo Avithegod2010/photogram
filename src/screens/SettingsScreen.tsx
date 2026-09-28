@@ -5,6 +5,7 @@ import {
   Pressable,
   RefreshControl,
   ScrollView,
+  Share,
   StyleSheet,
   Switch,
   Text,
@@ -17,6 +18,7 @@ import { useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { fetchProfile } from "../lib/tdlib";
 import { formatBytes, getMonthlyBuckets, getStorageTotals, MonthBucket, StorageTotals } from "../lib/stats";
+import { composeBackupCard } from "../lib/heartbeatCard";
 import { canUseBiometrics } from "../lib/biometrics";
 import { countFreeableBytes } from "../lib/trash";
 import { freeUpDeviceSpace } from "../lib/space";
@@ -26,6 +28,7 @@ import { pauseUploads, refreshCounts, resumeUploads, simulateRateLimitForTesting
 import { useUploadStore } from "../store/uploadStore";
 import { safetyState, type SafetyStatus } from "../lib/uploadSafety";
 import { useSettingsStore, UploadQuality } from "../store/settingsStore";
+import { enableNotifications } from "../lib/notify";
 import { useAuthStore } from "../auth/authStore";
 import { theme } from "../theme";
 
@@ -74,6 +77,38 @@ export function SettingsScreen() {
   const setUploadGapSeconds = useSettingsStore((s) => s.setUploadGapSeconds);
   const dailyBudgetGb = useSettingsStore((s) => s.dailyBudgetGb);
   const setDailyBudgetGb = useSettingsStore((s) => s.setDailyBudgetGb);
+  // v0.16 Notifications (opt-in).
+  const notificationsEnabled = useSettingsStore((s) => s.notificationsEnabled);
+  const setNotificationsEnabled = useSettingsStore((s) => s.setNotificationsEnabled);
+  const notifyBackupFinished = useSettingsStore((s) => s.notifyBackupFinished);
+  const setNotifyBackupFinished = useSettingsStore((s) => s.setNotifyBackupFinished);
+  const notifyOnThisDay = useSettingsStore((s) => s.notifyOnThisDay);
+  const setNotifyOnThisDay = useSettingsStore((s) => s.setNotifyOnThisDay);
+
+  // Turning the master on asks the OS for the Android 13+ notification
+  // permission (channels are created first inside enableNotifications);
+  // a denial reverts the toggle so settings never lie.
+  const toggleNotifications = useCallback(
+    (v: boolean) => {
+      if (!v) {
+        setNotificationsEnabled(false);
+        return;
+      }
+      void (async () => {
+        const granted = await enableNotifications();
+        if (granted) {
+          setNotificationsEnabled(true);
+        } else {
+          setNotificationsEnabled(false);
+          Alert.alert(
+            "Notifications blocked",
+            "Android denied notification permission. You can allow it in system settings → Apps → Photogram → Notifications."
+          );
+        }
+      })();
+    },
+    [setNotificationsEnabled]
+  );
 
   // Device albums for the auto-backup folder picker.
   const [deviceAlbums, setDeviceAlbums] = useState<Array<{ id: string; title: string }>>([]);
@@ -109,6 +144,10 @@ export function SettingsScreen() {
   const uploadHoldReason = useUploadStore((s) => s.holdReason);
   const todayBytes = useUploadStore((s) => s.todayBytes);
 
+  // F4 (v0.12.1): live preview of the shareable numbers-only backup status
+  // card. null = nothing to report yet (fresh/empty library) → row hidden.
+  const [cardPreview, setCardPreview] = useState<string | null>(null);
+
   const load = useCallback(async () => {
     setSafety(safetyState());
     try {
@@ -125,6 +164,7 @@ export function SettingsScreen() {
     } catch {
       setTotals(null);
     }
+    void composeBackupCard().then(setCardPreview);
   }, []);
 
   useEffect(() => {
@@ -329,6 +369,31 @@ export function SettingsScreen() {
           ) : null}
         </Section>
 
+        <Section title="Notifications">
+          <ToggleRow
+            label="Notify me"
+            sub="Photogram notifies you on this phone only. Turn off anytime."
+            value={notificationsEnabled}
+            onChange={toggleNotifications}
+          />
+          {notificationsEnabled ? (
+            <>
+              <ToggleRow
+                label="Backup finished"
+                sub="A notification when the upload queue drains."
+                value={notifyBackupFinished}
+                onChange={setNotifyBackupFinished}
+              />
+              <ToggleRow
+                label="On this day"
+                sub="Once a day, if photos from this day exist in past years. Fires when the app is open after 09:00."
+                value={notifyOnThisDay}
+                onChange={setNotifyOnThisDay}
+              />
+            </>
+          ) : null}
+        </Section>
+
         <Section title="Storage">
           {totals === null ? (
             <ActivityIndicator color={theme.colors.primary} style={{ padding: theme.spacing.lg }} />
@@ -371,6 +436,27 @@ export function SettingsScreen() {
               </View>
             </>
           )}
+          {cardPreview ? (
+            <Pressable
+              style={styles.row}
+              onPress={() => {
+                void (async () => {
+                  const text = await composeBackupCard();
+                  if (!text) return;
+                  try {
+                    await Share.share({ message: text });
+                  } catch {}
+                })();
+              }}
+            >
+              <View style={styles.toggleText}>
+                <Text style={styles.rowLabel}>Share backup status</Text>
+                <Text style={styles.rowSub} numberOfLines={2}>
+                  {cardPreview}
+                </Text>
+              </View>
+            </Pressable>
+          ) : null}
         </Section>
 
         <Section title="Device storage">
