@@ -518,6 +518,17 @@ async function runOne(item: QueueItem): Promise<void> {
       await updateQueueStatus(item.id, "pending");
       return;
     }
+    // v0.20 remote-link guard: a queue row may target a DIFFERENT chat (send
+    // to a shared album) than the one the media already lives in (Saved
+    // Messages). Never clobber that recorded link — restore and migration
+    // depend on it. Treat the album send as complete without re-linking.
+    if (media.remote_chat_id && media.remote_message_id && chatId !== media.remote_chat_id) {
+      await setMediaState(media.id, "synced");
+      await updateQueueStatus(item.id, "done");
+      store.addSessionBytes(item.byte_size);
+      recordBytes(item.byte_size);
+      return;
+    }
     await setMediaRemote(media.id, chatId, sent.messageId ?? "0", "uploading");
 
     const confirmed =

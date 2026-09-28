@@ -4,6 +4,32 @@ Each entry below documents what a commit adds and what comes next. Newest first.
 
 ---
 
+## v0.20 — Quick "Send to album" from the Viewer (COMMITTED in this commit)
+
+**Added in this commit** (per docs/PLAN-V0.13-EIGHT.md; label shifted from the plan's v0.19 —
+v0.17 went to photo journaling)
+- **Viewer "Send" chip** (shown for photos with a local copy): pick a linked shared album from a
+  bottom sheet and the photo is queued into that album's Telegram group — through the **normal
+  queue**, so the FLOOD_WAIT ladder, budgets and inter-message gap govern it like every upload.
+- **Two uploader safety hunks:**
+  1. *Remote-link guard (required):* when a queue row targets a different chat than the one the
+     photo already lives in, the worker completes the send WITHOUT overwriting the recorded
+     Saved-Messages link (restore + phone migration depend on it).
+  2. *Queue dedupe now groups by media + target chat* — a Saved-Messages row and a send-to-album
+     row for one photo can coexist instead of one deleting the other.
+- **Best-effort album link:** a self-expiring listener links the group message into the album
+  grid once the send confirms; if matching misses, the next "⟳ Claim new" treats the group post
+  as a clean own-duplicate (no double library row). For topic groups the message lands in
+  General; the claimer's topic backfill attributes it later. New `src/lib/sendToAlbum.ts`.
+  tsc clean; not yet device-verified.
+
+**Verify on device when free**
+- Send a synced photo to the test group → visible in Telegram; album grid shows it (or "⟳ Claim
+  new" reports it as duplicate — never a second library row); the photo's own backup state and
+  restore still work exactly as before.
+
+---
+
 ## v0.19 — Photo editor lite + versioned archive (COMMITTED in this commit)
 
 **Added in this commit** (per docs/PLAN-V0.13-EIGHT.md; label shifted from the plan's v0.18 —

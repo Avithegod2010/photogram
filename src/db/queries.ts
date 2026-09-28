@@ -628,20 +628,24 @@ export async function resetActiveToPending(): Promise<void> {
   await db.runAsync("UPDATE upload_queue SET status = 'pending' WHERE status = 'active'");
 }
 
-// Removes surplus pending rows for the same media (the Back-up pill can be
-// pressed repeatedly). Keeps the oldest pending row; never touches active/done.
+// Removes surplus pending rows for the same media AND the same target chat
+// (the Back-up pill can be pressed repeatedly). Grouping includes chat_id so a
+// Saved-Messages row and a send-to-album row for one photo coexist (v0.20).
+// Keeps the oldest pending row per group; never touches active/done.
 export async function dedupeUploadQueue(): Promise<void> {
   const db = await getDb();
   await db.runAsync(
     `DELETE FROM upload_queue
      WHERE status = 'pending'
-       AND media_id IN (
-         SELECT media_id FROM upload_queue
-         WHERE status IN ('pending','active')
-         GROUP BY media_id HAVING COUNT(*) > 1
-       )
+       AND (media_id, COALESCE(chat_id, ''))
+           IN (
+             SELECT media_id, COALESCE(chat_id, '') FROM upload_queue
+             WHERE status IN ('pending','active')
+             GROUP BY media_id, COALESCE(chat_id, '') HAVING COUNT(*) > 1
+           )
        AND id NOT IN (
-         SELECT MIN(id) FROM upload_queue WHERE status = 'pending' GROUP BY media_id
+         SELECT MIN(id) FROM upload_queue WHERE status = 'pending'
+         GROUP BY media_id, COALESCE(chat_id, '')
        )`
   );
 }

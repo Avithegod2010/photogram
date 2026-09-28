@@ -17,9 +17,10 @@ import { Image } from "expo-image";
 import { useVideoPlayer, VideoView } from "expo-video";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
-import { getMediaByIds, setMediaVisibility, setMediaFavorite, isSharedAlbumMedia, listVersionsFor, MediaRow } from "../db/queries";
+import { getMediaByIds, setMediaVisibility, setMediaFavorite, isSharedAlbumMedia, listVersionsFor, listSharedAlbums, SharedAlbumRow, MediaRow } from "../db/queries";
 import { enqueueForUpload } from "../lib/uploader";
 import { saveViewerNote, syncPendingNotes } from "../lib/notes";
+import { sendToAlbum } from "../lib/sendToAlbum";
 import { hasRemoteCopy, restoreMediaToDevice } from "../lib/restorer";
 import { formatBytes } from "../lib/stats";
 import { theme } from "../theme";
@@ -196,6 +197,30 @@ export function ViewerScreen({ route, navigation }: any) {
     })();
   }, [rows]);
 
+  // v0.20 send-to-album: picker state + album list (loaded when opened).
+  const [sendPickerOpen, setSendPickerOpen] = useState(false);
+  const [albums, setAlbums] = useState<SharedAlbumRow[]>([]);
+
+  const openSendPicker = useCallback(() => {
+    void listSharedAlbums()
+      .then(setAlbums)
+      .catch(() => setAlbums([]));
+    setSendPickerOpen(true);
+  }, []);
+
+  const doSend = useCallback(
+    (albumId: number, albumTitle: string) => {
+      if (!current) return;
+      setSendPickerOpen(false);
+      void (async () => {
+        const result = await sendToAlbum(current.id, albumId);
+        Alert.alert(result.ok ? "Sent" : "Couldn't send", result.message);
+      })();
+      void albumTitle;
+    },
+    [current]
+  );
+
   return (
     <View style={styles.root}>
       <View style={[styles.headerBar, { paddingTop: insets.top + 6 }]}>
@@ -257,6 +282,9 @@ export function ViewerScreen({ route, navigation }: any) {
           }}
         />
         <ActionChip label="Note" icon="pencil-outline" disabled={!current} onPress={openNoteEditor} />
+        {current?.local_uri ? (
+          <ActionChip label="Send" icon="paper-plane-outline" onPress={openSendPicker} />
+        ) : null}
         <ActionChip
           label="Edit"
           icon="color-wand-outline"
@@ -346,6 +374,30 @@ export function ViewerScreen({ route, navigation }: any) {
         onClose={() => setNoteEditorOpen(false)}
         onSave={(text) => void saveNote(text, false)}
       />
+
+      <Modal visible={sendPickerOpen} transparent animationType="fade" onRequestClose={() => setSendPickerOpen(false)}>
+        <Pressable style={styles.sheetBackdrop} onPress={() => setSendPickerOpen(false)}>
+          <Pressable style={[styles.sheet, { paddingBottom: 24 }]}>
+            <View style={styles.sheetGrabber} />
+            <Text style={styles.sheetTitle}>Send to album</Text>
+            {albums.length === 0 ? (
+              <Text style={styles.albumEmpty}>No shared albums linked yet — set one up in Collections → Shared albums.</Text>
+            ) : (
+              albums.map((a) => (
+                <Pressable
+                  key={a.id}
+                  style={styles.albumRow}
+                  onPress={() => doSend(a.id, a.title)}
+                  android_ripple={{ color: theme.colors.outlineVariant }}
+                >
+                  <Text style={styles.albumName} numberOfLines={1}>{a.title}</Text>
+                  <Text style={styles.albumCount}>{a.count} items</Text>
+                </Pressable>
+              ))
+            )}
+          </Pressable>
+        </Pressable>
+      </Modal>
     </View>
   );
 }
@@ -454,6 +506,17 @@ const styles = StyleSheet.create({
   metaRow: { flexDirection: "row", justifyContent: "space-between", paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: theme.colors.outlineVariant },
   metaKey: { color: theme.colors.onSurfaceVariant, fontSize: 13.5 },
   metaValue: { color: theme.colors.onSurface, fontSize: 13.5, fontWeight: "500", maxWidth: "60%", textAlign: "right" },
+  albumEmpty: { color: theme.colors.onSurfaceVariant, fontSize: 13, paddingVertical: 16 },
+  albumRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: theme.colors.outlineVariant,
+  },
+  albumName: { color: theme.colors.onSurface, fontSize: 15, fontWeight: "600", flex: 1 },
+  albumCount: { color: theme.colors.onSurfaceVariant, fontSize: 12.5 },
 });
 
 // --- F3 photo journaling: note editor (own styles; the block above is shared) ---
