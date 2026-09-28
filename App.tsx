@@ -10,6 +10,8 @@ import { purgeExpiredTrash } from "./src/lib/trash";
 import { repairTakenAtUnits } from "./src/db/queries";
 import { startAutoBackupLoop } from "./src/lib/autoBackup";
 import { startJunkAutoSweepLoop } from "./src/lib/junkAutoSweep";
+import { startNotifyLoop } from "./src/lib/notify";
+import { syncPendingNotes } from "./src/lib/notes";
 import { theme } from "./src/theme";
 
 export default function App() {
@@ -21,6 +23,8 @@ export default function App() {
       void repairTakenAtUnits().catch(() => {});
       startAutoBackupLoop();
       startJunkAutoSweepLoop();
+      startNotifyLoop();
+      void syncPendingNotes().catch(() => {});
     }
   }, [phase]);
 

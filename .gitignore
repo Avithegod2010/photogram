@@ -43,3 +43,6 @@ tdlib.secrets.json
 /ios
 /android
 .zcode/
+
+# security scanner artifacts
+.mimosa/

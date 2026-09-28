@@ -141,6 +141,65 @@ const insertPatches = [
     snippet: "    getForumTopicHistory: typeof getForumTopicHistory;\n",
     why: "register getForumTopicHistory on the default-export typings object",
   },
+  {
+    file: path.join(pkgDir, "android", "src", "main", "java", "com", "reactnativetdlib", "tdlibclient", "TdLibModule.java"),
+    marker: "public void editMessageCaption(",
+    anchor: "    @ReactMethod\n    public void getMessageThreadHistory(double chatId,",
+    snippet:
+`    @ReactMethod
+    public void editMessageCaption(double chatId, double messageId, String caption, Promise promise) {
+        try {
+            if (client == null) {
+                promise.reject("CLIENT_NOT_INITIALIZED", "TDLib client is not initialized");
+                return;
+            }
+            TdApi.EditMessageCaption request = new TdApi.EditMessageCaption(
+                (long) chatId,
+                (long) messageId,
+                null,
+                new TdApi.FormattedText(caption, new TdApi.TextEntity[0]),
+                false
+            );
+            client.send(request, object -> {
+                WritableMap result = Arguments.createMap();
+                result.putString("raw", gson.toJson(object));
+                promise.resolve(result);
+            });
+        } catch (Exception e) {
+            promise.reject("EDIT_MESSAGE_CAPTION_ERROR", e.getMessage());
+        }
+    }
+
+`,
+    why: "editMessageCaption typed wrapper (F3 photo journaling: push photo notes as Telegram captions; raw td_json_client_send is fire-and-forget)",
+  },
+  {
+    file: path.join(pkgDir, "index.js"),
+    marker: "editMessageCaption: TdLibModule.editMessageCaption,",
+    anchor: "  getMessageThreadHistory: TdLibModule.getMessageThreadHistory,\n",
+    snippet: "  editMessageCaption: TdLibModule.editMessageCaption,\n",
+    why: "register editMessageCaption in the JS export object",
+  },
+  {
+    file: path.join(pkgDir, "index.d.ts"),
+    marker: "export function editMessageCaption(",
+    anchor: "  export function getMessageThreadHistory(",
+    snippet:
+`  export function editMessageCaption(
+    chatId: number,
+    messageId: number,
+    caption: string,
+  ): Promise<TdRawResult>;
+`,
+    why: "declare editMessageCaption in the typings",
+  },
+  {
+    file: path.join(pkgDir, "index.d.ts"),
+    marker: "editMessageCaption: typeof editMessageCaption;",
+    anchor: "    getMessageThreadHistory: typeof getMessageThreadHistory;\n",
+    snippet: "    editMessageCaption: typeof editMessageCaption;\n",
+    why: "register editMessageCaption on the default-export typings object",
+  },
 ];
 
 // Replace patches: fix an upstream bug by swapping an exact wrong snippet for

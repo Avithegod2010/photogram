@@ -133,6 +133,21 @@ CREATE INDEX IF NOT EXISTS idx_junk_findings_status ON junk_findings (status, ca
 CREATE INDEX IF NOT EXISTS idx_junk_findings_media ON junk_findings (media_id);
 `;
 
+// v0.13 Favorites: a per-device heart on any photo/video. Local-only state —
+// never synced to Telegram. The partial index keeps the favorites lookup tiny.
+const SCHEMA_V8 = `
+ALTER TABLE media ADD COLUMN is_favorite INTEGER NOT NULL DEFAULT 0;
+CREATE INDEX IF NOT EXISTS idx_media_favorite ON media (is_favorite) WHERE is_favorite = 1;
+`;
+
+// F3 Photo journaling (docs/PLAN-F3-JOURNALING.md, renumbered v8→v9: v8 is
+// Favorites). note_text = the local note (NULL = note removed); note_synced = 0
+// until Telegram confirms the caption matches (push or fileName restore).
+const SCHEMA_V9 = `
+ALTER TABLE media ADD COLUMN note_text TEXT;
+ALTER TABLE media ADD COLUMN note_synced INTEGER NOT NULL DEFAULT 0;
+`;
+
 export interface Migration {
   version: number;
   up: string;
@@ -146,6 +161,8 @@ export const MIGRATIONS: Migration[] = [
   { version: 5, up: SCHEMA_V5 },
   { version: 6, up: SCHEMA_V6 },
   { version: 7, up: SCHEMA_V7 },
+  { version: 8, up: SCHEMA_V8 },
+  { version: 9, up: SCHEMA_V9 },
 ];
 
 export function migrationsAfter(version: number): Migration[] {

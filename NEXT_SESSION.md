@@ -1,11 +1,64 @@
 # PHOTOGRAM — MASTER HANDOFF (read this fully before coding)
 
 _This file is the single source of truth for any AI agent or developer picking up this project cold.
-Last updated: end of day 2026-09-01 (§0). Read §0, then §1–§17. CHANGELOG.md has per-version notes._
+Last updated: late 2026-09-06 (§0). Read §0, then §1–§17. CHANGELOG.md has per-version notes._
 
 ---
 
-## 0. CURRENT STATE — 2026-09-05 LATE · HANDOFF TO A NEW AI CHATBOT (/transfer) · ALL MY WORK COMMITTED · JUNK SWEEPER IN FLIGHT BY SIBLING
+## 0. CURRENT STATE — 2026-09-06 LATE · SIX FEATURES CODED & CHANGELOGGED · AWAITING: COMMITS (Junk Sweeper arbitration) → GRADLE REBUILD → DEVICE VERIFY → GITHUB PUBLISH
+
+**Chatbot 1 (this session) executed the owner's first-4 queue PLUS F4+F3 (the owner redirected
+Chatbot 2's mission here after the prompt went stale — SCHEMA_V8 was taken by Favorites and the
+v0.13 label was taken, so F3 uses schema v9 and label v0.17). Everything below is CODED, tsc-clean
+tree-wide, self-reviewed (subagents unavailable), but NOT device-verified and NOT committed.**
+
+### Coded & CHANGELOG-drafted (newest first — full entries in CHANGELOG.md)
+- `v0.17` Photo journaling (F3): notes ARE Telegram captions; native `editMessageCaption` wrapper
+  (patch-tdlib.js 4-part entry, applied + idempotent); schema v9 `note_text`/`note_synced`;
+  `src/lib/notes.ts` (read-back guard, foreign-caption confirm, keep-local retry, NO uploader
+  touch); Viewer Note chip + meta block + editor modal; boot/open retry triggers.
+- `v0.16` Notifications (opt-in): expo-notifications ~57.0.21 INSTALLED; Settings section;
+  `src/lib/notify.ts` SOFT-REQUIRES the native module (current APK stays safe); backup-finished
+  watcher + daily on-this-day; `App.tsx` startNotifyLoop().
+- `v0.15` Timeline scrubber: getTimelineRange() + loadPageAt() jump rail with month bubble + ⤒Top
+  chip (GalleryScreen).
+- `v0.14` Gallery multi-select: long-press → ticks → bulk Back up/Archive/Hide/Delete (Trash flow);
+  also fixed search-result tap-through to use results ids.
+- `v0.13` Favorites: schema v8 `is_favorite`; tile hearts + Viewer chip; Collections → Favorites;
+  `FavoritesScreen.tsx`.
+- `v0.12.1` Heartbeat card: `src/lib/heartbeatCard.ts` + Settings → Storage "Share backup status"
+  row (numbers-only privacy).
+
+### FIRST ACTIONS for the next session
+1. **Commits are blocked on ONE owner decision:** the Junk Sweeper (v0.12, sibling agent) edits are
+   uncommitted in the SAME files (App.tsx, package.json, package-lock.json, schema.ts v7,
+   queries.ts, navigation). My code is layered on top. Options presented: (a) commit sibling's
+   Junk Sweeper as v0.12 first (owner must authorize — sibling agent idle), then my versions
+   separately; (b) hold commits while sibling is active. NEVER stage sibling hunks into my
+   commits without owner say-so.
+2. **ONE combined gradle rebuild** covers v0.16 (expo-notifications native) + v0.17
+   (editMessageCaption wrapper): `E:\Dev\run-photogram-build.ps1` — never mid-upload, check logcat
+   first. v0.12.1/v0.13/v0.14/v0.15 verify via Metro alone (8083, --host lan).
+3. **Device verify** per the checklists in each CHANGELOG entry, then flip the CHANGELOG headers
+   to COMMITTED with hashes.
+4. **GitHub publish** (owner-driven): no remote exists yet; `gh` not authed. Repo is leak-checked
+   (secrets file NEVER in history; only key NAMES in code). README.md written. Owner must pick
+   public/private + license, run `gh auth login`, then create/push.
+
+### Untracked-but-mine (commit with their versions)
+`src/lib/heartbeatCard.ts`, `src/lib/notes.ts`, `src/lib/notify.ts`, `src/screens/FavoritesScreen.tsx`,
+`docs/PLAN-V0.13-EIGHT.md` (the 8-feature plan; owner approved the first 4 + F4/F3 from Chatbot 2's
+plans in docs/PLAN-F3-JOURNALING.md + docs/PLAN-F4-HEARTBEAT-CARD.md). `.mimosa/` is a scanner
+artifact — consider gitignoring.
+
+### STILL OWNED BY THE SIBLING (untouchable)
+`src/lib/imageAnalysis.ts`, `src/lib/junk.ts`, `src/lib/junkAutoSweep.ts`,
+`src/screens/JunkSweeperScreen.tsx` + their hunks in the shared files. The interrupted-coder tmp
+debris (`ViewerScreen.tsx.tmp.*`) was cleaned 2026-09-06.
+
+---
+
+## 0-prev. PREVIOUS STATE — 2026-09-05 LATE · HANDOFF TO A NEW AI CHATBOT (/transfer) · ALL MY WORK COMMITTED · JUNK SWEEPER IN FLIGHT BY SIBLING
 
 **The previous agent (ZCode) transferred away with every line of its work committed. Read §0 fully,
 then the recent CHANGELOG entries (v0.10 → v0.11.2) for the last week's ground covered.**
