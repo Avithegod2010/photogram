@@ -68,5 +68,4 @@ IPv6-only localhost binding issues on some setups).
 
 ## License
 
-All rights reserved by the project owner (no license granted yet — a LICENSE file will be added
-when the owner picks one).
+Released under the [MIT License](LICENSE) — free to use, modify, and build on, with attribution.
