@@ -4,6 +4,14 @@ Each entry below documents what a commit adds and what comes next. Newest first.
 
 ---
 
+## License — MIT (COMMITTED in this commit)
+
+- Added the owner's MIT `LICENSE` (the file that shipped with the Expo template carried Expo's own
+  copyright — replaced before first publish) and updated the README license section. The repo is
+  published as **private** for now; it can be flipped public anytime.
+
+---
+
 ## v0.12 — Junk Sweeper: on-device cleanup suggestions (COMMITTED `1e4a7cf`)
 
 **Added in this commit** (built by the parallel chatbot-2 agent; committed on the owner's behalf
