@@ -5,58 +5,37 @@ Last updated: late 2026-09-06 (§0). Read §0, then §1–§17. CHANGELOG.md has
 
 ---
 
-## 0. CURRENT STATE — 2026-09-06 LATE · SIX FEATURES CODED & CHANGELOGGED · AWAITING: COMMITS (Junk Sweeper arbitration) → GRADLE REBUILD → DEVICE VERIFY → GITHUB PUBLISH
+## 0. CURRENT STATE — 2026-09-06 END · ALL SEVEN VERSIONS COMMITTED (`1e4a7cf` v0.12 + `f4849ad` v0.12.1–v0.17) · CLEAN TREE · NEXT: GH AUTH → REPO CREATE → PUSH → GRADLE REBUILD → DEVICE VERIFY
 
-**Chatbot 1 (this session) executed the owner's first-4 queue PLUS F4+F3 (the owner redirected
-Chatbot 2's mission here after the prompt went stale — SCHEMA_V8 was taken by Favorites and the
-v0.13 label was taken, so F3 uses schema v9 and label v0.17). Everything below is CODED, tsc-clean
-tree-wide, self-reviewed (subagents unavailable), but NOT device-verified and NOT committed.**
-
-### Coded & CHANGELOG-drafted (newest first — full entries in CHANGELOG.md)
-- `v0.17` Photo journaling (F3): notes ARE Telegram captions; native `editMessageCaption` wrapper
-  (patch-tdlib.js 4-part entry, applied + idempotent); schema v9 `note_text`/`note_synced`;
-  `src/lib/notes.ts` (read-back guard, foreign-caption confirm, keep-local retry, NO uploader
-  touch); Viewer Note chip + meta block + editor modal; boot/open retry triggers.
-- `v0.16` Notifications (opt-in): expo-notifications ~57.0.21 INSTALLED; Settings section;
-  `src/lib/notify.ts` SOFT-REQUIRES the native module (current APK stays safe); backup-finished
-  watcher + daily on-this-day; `App.tsx` startNotifyLoop().
-- `v0.15` Timeline scrubber: getTimelineRange() + loadPageAt() jump rail with month bubble + ⤒Top
-  chip (GalleryScreen).
-- `v0.14` Gallery multi-select: long-press → ticks → bulk Back up/Archive/Hide/Delete (Trash flow);
-  also fixed search-result tap-through to use results ids.
-- `v0.13` Favorites: schema v8 `is_favorite`; tile hearts + Viewer chip; Collections → Favorites;
-  `FavoritesScreen.tsx`.
-- `v0.12.1` Heartbeat card: `src/lib/heartbeatCard.ts` + Settings → Storage "Share backup status"
-  row (numbers-only privacy).
+**Chatbot 1 executed the owner's first-4 queue PLUS F4+F3 (redirected here after chatbot 2 became
+unavailable; chatbot 2's uncommitted Junk Sweeper was reviewed and committed on the owner's behalf
+as v0.12 — it also repairs a latent broken `getQueueStatus` import from the v0.11.2 handoff).
+Everything through v0.17 is COMMITTED with CHANGELOG entries. Working tree clean, tsc clean.**
 
 ### FIRST ACTIONS for the next session
-1. **Commits are blocked on ONE owner decision:** the Junk Sweeper (v0.12, sibling agent) edits are
-   uncommitted in the SAME files (App.tsx, package.json, package-lock.json, schema.ts v7,
-   queries.ts, navigation). My code is layered on top. Options presented: (a) commit sibling's
-   Junk Sweeper as v0.12 first (owner must authorize — sibling agent idle), then my versions
-   separately; (b) hold commits while sibling is active. NEVER stage sibling hunks into my
-   commits without owner say-so.
-2. **ONE combined gradle rebuild** covers v0.16 (expo-notifications native) + v0.17
+1. **GitHub publish (owner-driven):** no remote exists; `gh` NOT authed (owner runs `gh auth login`).
+   Leak audit done (secrets file never in history; only key names in code; .gitignore covers
+   secrets/android/node_modules/.zcode/.mimosa). README.md written. Owner picks visibility
+   (default plan: PRIVATE) + license (README says all-rights-reserved until chosen). Then:
+   `gh repo create photogram --private --source . --push` (or owner creates on github.com and
+   gives the URL; `git remote add origin <url> && git push -u origin master`).
+2. **ONE combined gradle rebuild** unlocks v0.16 (expo-notifications native) + v0.17
    (editMessageCaption wrapper): `E:\Dev\run-photogram-build.ps1` — never mid-upload, check logcat
-   first. v0.12.1/v0.13/v0.14/v0.15 verify via Metro alone (8083, --host lan).
-3. **Device verify** per the checklists in each CHANGELOG entry, then flip the CHANGELOG headers
-   to COMMITTED with hashes.
-4. **GitHub publish** (owner-driven): no remote exists yet; `gh` not authed. Repo is leak-checked
-   (secrets file NEVER in history; only key NAMES in code). README.md written. Owner must pick
-   public/private + license, run `gh auth login`, then create/push.
+   first. v0.12/v0.12.1/v0.13/v0.14/v0.15 verify via Metro alone (8083, `--host lan`).
+3. **Device verify** per the checklists in each CHANGELOG entry (v0.12 → v0.17), then nothing to
+   flip — CHANGELOG headers already say COMMITTED.
+4. **v0.18–v0.20 (owner approval pending):** photo editor + versioned archive (schema v10
+   edited_from + queue reply_to_message_id; renumbered from v9 — journaling took v9), send-to-album
+   (uploader guard hunk REQUIRED), place-name search (schema v11 place_name; GeoNames cities1000 →
+   bundled SQLite via SQLiteProvider assetSource). Plans in docs/PLAN-V0.13-EIGHT.md §2.
 
-### Untracked-but-mine (commit with their versions)
-`src/lib/heartbeatCard.ts`, `src/lib/notes.ts`, `src/lib/notify.ts`, `src/screens/FavoritesScreen.tsx`,
-`docs/PLAN-V0.13-EIGHT.md` (the 8-feature plan; owner approved the first 4 + F4/F3 from Chatbot 2's
-plans in docs/PLAN-F3-JOURNALING.md + docs/PLAN-F4-HEARTBEAT-CARD.md). `.mimosa/` is a scanner
-artifact — consider gitignoring.
-
-### STILL OWNED BY THE SIBLING (untouchable)
-`src/lib/imageAnalysis.ts`, `src/lib/junk.ts`, `src/lib/junkAutoSweep.ts`,
-`src/screens/JunkSweeperScreen.tsx` + their hunks in the shared files. The interrupted-coder tmp
-debris (`ViewerScreen.tsx.tmp.*`) was cleaned 2026-09-06.
+### Housekeeping notes
+- Backup stash `da826ce` (pre-commit final tree) can be dropped once pushed: `git stash drop`.
+- `.committmp/` scratch dir was removed; `.git/idx-v012` temp index may be deleted.
+- Mimosa scanner wants a full re-run (its commit-time scan was partial) — owner decides.
 
 ---
+
 
 ## 0-prev. PREVIOUS STATE — 2026-09-05 LATE · HANDOFF TO A NEW AI CHATBOT (/transfer) · ALL MY WORK COMMITTED · JUNK SWEEPER IN FLIGHT BY SIBLING
 
