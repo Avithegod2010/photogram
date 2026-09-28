@@ -146,7 +146,7 @@ async function runOnThisDayCheck(): Promise<void> {
     const row = await db.getFirstAsync<{ c: number; y: number | null }>(
       `SELECT COUNT(*) AS c, MAX(CAST(strftime('%Y', taken_at / 1000, 'unixepoch') AS INTEGER)) AS y
        FROM media
-       WHERE visibility = 'visible'
+       WHERE visibility = 'visible' AND edited_from IS NULL
          AND CAST(strftime('%Y', taken_at / 1000, 'unixepoch') AS INTEGER) < ?
          AND CAST(strftime('%m', taken_at / 1000, 'unixepoch') AS INTEGER) = ?
          AND CAST(strftime('%d', taken_at / 1000, 'unixepoch') AS INTEGER) = ?

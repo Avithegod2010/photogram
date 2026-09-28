@@ -17,7 +17,7 @@ import { Image } from "expo-image";
 import { useVideoPlayer, VideoView } from "expo-video";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
-import { getMediaByIds, setMediaVisibility, setMediaFavorite, isSharedAlbumMedia, MediaRow } from "../db/queries";
+import { getMediaByIds, setMediaVisibility, setMediaFavorite, isSharedAlbumMedia, listVersionsFor, MediaRow } from "../db/queries";
 import { enqueueForUpload } from "../lib/uploader";
 import { saveViewerNote, syncPendingNotes } from "../lib/notes";
 import { hasRemoteCopy, restoreMediaToDevice } from "../lib/restorer";
@@ -119,6 +119,23 @@ export function ViewerScreen({ route, navigation }: any) {
   const [noteEditorOpen, setNoteEditorOpen] = useState(false);
   const [noteDraft, setNoteDraft] = useState("");
   const noteSyncRanRef = useRef(false);
+
+  // v0.19 versioned archive: edited copies of the current photo (for the info
+  // sheet's Versions row).
+  const [versions, setVersions] = useState<MediaRow[]>([]);
+  useEffect(() => {
+    if (!current) {
+      setVersions([]);
+      return;
+    }
+    void listVersionsFor(current.edited_from ?? current.id)
+      .then((rows) => {
+        // Viewing the original → list its edits; viewing an edit → list the
+        // root original's edits so the full version set is always shown.
+        setVersions(rows.filter((r) => r.id !== current.id));
+      })
+      .catch(() => setVersions([]));
+  }, [current?.id, current?.edited_from]);
 
   const openNoteEditor = useCallback(() => {
     if (!current) return;
@@ -241,6 +258,17 @@ export function ViewerScreen({ route, navigation }: any) {
         />
         <ActionChip label="Note" icon="pencil-outline" disabled={!current} onPress={openNoteEditor} />
         <ActionChip
+          label="Edit"
+          icon="color-wand-outline"
+          disabled={
+            !current ||
+            !current.mime_type.startsWith("image/") ||
+            !current.local_uri ||
+            !current.remote_message_id
+          }
+          onPress={() => current && navigation.navigate("Edit", { mediaId: current.id })}
+        />
+        <ActionChip
           label="Archive"
           icon="archive-outline"
           disabled={!current}
@@ -294,6 +322,18 @@ export function ViewerScreen({ route, navigation }: any) {
                     }
                   />
                 </Pressable>
+                {versions.length > 0 ? (
+                  <Pressable
+                    onPress={() =>
+                      navigation.navigate("Viewer", {
+                        ids: [current.id, ...versions.map((v) => v.id)],
+                        index: 0,
+                      })
+                    }
+                  >
+                    <MetaRow k="Versions" v={`${versions.length + 1} (original + edits) — tap to flip through`} />
+                  </Pressable>
+                ) : null}
               </>
             ) : null}
           </Pressable>

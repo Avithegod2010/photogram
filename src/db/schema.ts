@@ -148,6 +148,18 @@ ALTER TABLE media ADD COLUMN note_text TEXT;
 ALTER TABLE media ADD COLUMN note_synced INTEGER NOT NULL DEFAULT 0;
 `;
 
+// v0.19 Photo editor + versioned archive (docs/PLAN-V0.13-EIGHT.md, renumbered
+// v9→v10: v9 is journaling). edited_from links an edited copy to its ROOT
+// original (flat version list); the edit is its own media row so the existing
+// setMediaRemote state machine applies unchanged. reply_to_message_id on a
+// queue row makes the worker send that upload as a REPLY to an existing
+// Telegram message instead of the preview-first dance.
+const SCHEMA_V10 = `
+ALTER TABLE media ADD COLUMN edited_from INTEGER REFERENCES media(id) ON DELETE CASCADE;
+CREATE INDEX IF NOT EXISTS idx_media_edited_from ON media (edited_from) WHERE edited_from IS NOT NULL;
+ALTER TABLE upload_queue ADD COLUMN reply_to_message_id TEXT;
+`;
+
 export interface Migration {
   version: number;
   up: string;
@@ -163,6 +175,7 @@ export const MIGRATIONS: Migration[] = [
   { version: 7, up: SCHEMA_V7 },
   { version: 8, up: SCHEMA_V8 },
   { version: 9, up: SCHEMA_V9 },
+  { version: 10, up: SCHEMA_V10 },
 ];
 
 export function migrationsAfter(version: number): Migration[] {

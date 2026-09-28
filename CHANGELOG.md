@@ -4,6 +4,35 @@ Each entry below documents what a commit adds and what comes next. Newest first.
 
 ---
 
+## v0.19 — Photo editor lite + versioned archive (COMMITTED in this commit)
+
+**Added in this commit** (per docs/PLAN-V0.13-EIGHT.md; label shifted from the plan's v0.18 —
+v0.17 went to photo journaling)
+- **Editor lite, zero new native modules** (no rebuild): rotate 90° steps, draggable crop rect,
+  and brightness/contrast/saturation sliders. Geometry runs through expo-image-manipulator; the
+  color pass is pure JS over jpeg-js pixels. Live preview renders the same math on the 320px
+  thumbnail (debounced); Save renders once at ≤ 2048 px (the storage-saver cap — full-resolution
+  originals are not re-encoded, stated limitation).
+- **Versioned archive:** Save creates a SECOND media row (`edited_from` → root original, schema
+  v10 + partial index) — the original is never touched. The edit uploads through the existing
+  queue/ladder as a **REPLY to the original's Telegram message** (`upload_queue.reply_to_message_id`
+  + a small uploader hunk that seeds the reply target and skips the preview-first dance for such
+  rows; ladder/budgets/gap untouched). Same fileName caption preserved for `findSentMessage`.
+- **Edits stay out of the main surfaces:** timeline, search, date-range, random, geo, safety
+  check, storage/heartbeat/monthly stats, memories, on-this-day and Wrapped all exclude
+  `edited_from` rows. Edits are reachable via the Viewer info sheet's **"Versions" row** — tap to
+  page through original + edits.
+- **Viewer "Edit" chip** (photos with a local file + Telegram copy; disabled with hint otherwise).
+- New `src/lib/imageEdit.ts` + `src/screens/EditScreen.tsx`; `insertMedia` gained optional
+  `edited_from`. tsc clean; not yet device-verified.
+
+**Verify on device when free**
+- Edit a synced photo (rotate + crop + sliders) → Save → Telegram shows the edit as a REPLY under
+  the original; gallery shows ONE tile; Versions row flips between them; delete an edit → Trash,
+  original untouched. Edit chip disabled for cloud-only / not-synced photos.
+
+---
+
 ## v0.18 — Year-in-review "Wrapped" (COMMITTED in this commit)
 
 **Added in this commit** (per docs/PLAN-V0.13-EIGHT.md; label shifted from the plan's v0.17 —

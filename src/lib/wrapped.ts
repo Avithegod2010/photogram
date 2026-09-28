@@ -22,7 +22,7 @@ export interface WrappedStats {
   favorites: number;
 }
 
-const OWN_MEDIA = `visibility != 'trashed'
+const OWN_MEDIA = `visibility != 'trashed' AND edited_from IS NULL
   AND NOT EXISTS (SELECT 1 FROM album_media am WHERE am.media_id = media.id)`;
 
 // Years that actually have media, newest first.

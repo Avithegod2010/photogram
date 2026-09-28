@@ -28,6 +28,8 @@ export interface MediaRow {
   // F3 journaling (schema v9): optional so pre-migration consumers compile.
   note_text?: string | null;
   note_synced?: number | null;
+  // v0.19 editor (schema v10): set on edited copies, points at the ROOT original.
+  edited_from?: number | null;
 }
 
 export interface NewMediaInput {
@@ -48,6 +50,8 @@ export interface NewMediaInput {
   media_library_id?: string | null;
   latitude?: number | null;
   longitude?: number | null;
+  // v0.19 editor: set on edited copies → the ROOT original's id.
+  edited_from?: number | null;
 }
 
 export interface QueueRow {
@@ -59,6 +63,9 @@ export interface QueueRow {
   status: "pending" | "active" | "paused" | "done" | "failed";
   error: string | null;
   chat_id: string | null;
+  // v0.19 (schema v10): when set, the worker sends this upload as a REPLY to
+  // that Telegram message instead of the preview-first dance.
+  reply_to_message_id: string | null;
 }
 
 export async function insertMedia(input: NewMediaInput): Promise<number | null> {
@@ -67,8 +74,8 @@ export async function insertMedia(input: NewMediaInput): Promise<number | null> 
   const result = await db.runAsync(
     `INSERT OR IGNORE INTO media
       (local_uri, thumb_uri, file_name, mime_type, byte_size, width, height, duration_ms,
-       taken_at, fingerprint, state, visibility, tags, latitude, longitude, media_library_id, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'visible', ?, ?, ?, ?, ?, ?)`,
+       taken_at, fingerprint, state, visibility, tags, latitude, longitude, media_library_id, edited_from, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'visible', ?, ?, ?, ?, ?, ?, ?)`,
     [
       input.local_uri,
       input.thumb_uri,
@@ -85,6 +92,7 @@ export async function insertMedia(input: NewMediaInput): Promise<number | null> 
       input.latitude ?? null,
       input.longitude ?? null,
       input.media_library_id ?? null,
+      input.edited_from ?? null,
       now,
       now,
     ]
@@ -398,7 +406,7 @@ export async function getRandomMedia(): Promise<MediaRow | null> {
   const db = await getDb();
   return (
     (await db.getFirstAsync<MediaRow>(
-      `SELECT * FROM media WHERE visibility = 'visible'
+      `SELECT * FROM media WHERE visibility = 'visible' AND edited_from IS NULL
        ${EXCLUDE_ALL_SHARED}
        ORDER BY RANDOM() LIMIT 1`
     )) ?? null
@@ -451,7 +459,7 @@ export interface SafetyReport {
 
 export async function getSafetyReport(): Promise<SafetyReport> {
   const db = await getDb();
-  const filter = `visibility != 'trashed' ${EXCLUDE_ALL_SHARED}`;
+  const filter = `visibility != 'trashed' AND edited_from IS NULL ${EXCLUDE_ALL_SHARED}`;
   const counts = await db.getFirstAsync<{
     total: number;
     safe: number;
@@ -498,13 +506,13 @@ export async function pageVisibleMedia(
   const sharedFilter = includeTimelinedShared ? EXCLUDE_UNLESS_TIMELINED : EXCLUDE_ALL_SHARED;
   if (beforeTakenAt === null) {
     return db.getAllAsync<MediaRow>(
-      `SELECT * FROM media WHERE visibility = 'visible' ${sharedFilter}
+      `SELECT * FROM media WHERE visibility = 'visible' AND edited_from IS NULL ${sharedFilter}
        ORDER BY taken_at DESC, id DESC LIMIT ?`,
       [limit]
     );
   }
   return db.getAllAsync<MediaRow>(
-    `SELECT * FROM media WHERE visibility = 'visible' ${sharedFilter}
+    `SELECT * FROM media WHERE visibility = 'visible' AND edited_from IS NULL ${sharedFilter}
      AND (taken_at < ? OR (taken_at = ?)) ORDER BY taken_at DESC, id DESC LIMIT ?`,
     [beforeTakenAt, beforeTakenAt, limit]
   );
@@ -785,6 +793,7 @@ export async function listGeoTagged(limit = 800): Promise<GeoItem[]> {
   return db.getAllAsync<GeoItem>(
     `SELECT id, thumb_uri, latitude, longitude FROM media
      WHERE visibility != 'trashed' AND latitude IS NOT NULL AND longitude IS NOT NULL
+       AND edited_from IS NULL
      ${EXCLUDE_ALL_SHARED}
      LIMIT ?`,
     [limit]
@@ -798,6 +807,7 @@ export async function searchMediaRaw(query: string, limit = 300): Promise<MediaR
     `SELECT * FROM media
      WHERE visibility = 'visible'
        AND (file_name LIKE ? OR tags LIKE ? OR ocr_text LIKE ?)
+       AND edited_from IS NULL
      ${EXCLUDE_ALL_SHARED}
      ORDER BY taken_at DESC LIMIT ?`,
     [like, like, like, limit]
@@ -809,6 +819,7 @@ export async function searchByDateRange(fromMs: number, toMs: number): Promise<M
   return db.getAllAsync<MediaRow>(
     `SELECT * FROM media
      WHERE visibility = 'visible' AND taken_at >= ? AND taken_at < ?
+       AND edited_from IS NULL
      ${EXCLUDE_ALL_SHARED}
      ORDER BY taken_at DESC`,
     [fromMs, toMs]
@@ -1049,4 +1060,33 @@ export async function isSharedAlbumMedia(id: number): Promise<boolean> {
     [id]
   );
   return !!row;
+}
+
+// --- v0.19 photo editor + versioned archive -----------------------------------
+
+// Flat version list: every edited copy of a ROOT original (edit-of-edit rows
+// always point at the root, per docs/PLAN-V0.13-EIGHT.md).
+export async function listVersionsFor(originalId: number): Promise<MediaRow[]> {
+  const db = await getDb();
+  return db.getAllAsync<MediaRow>(
+    "SELECT * FROM media WHERE edited_from = ? ORDER BY taken_at ASC, id ASC",
+    [originalId]
+  );
+}
+
+// Queue an upload whose Telegram message becomes a REPLY to an existing
+// message (the original's) instead of the preview-first dance. Everything
+// else — ladder, budgets, gap, confirmation — is the normal worker path.
+export async function enqueueUploadWithReply(
+  mediaId: number,
+  localUri: string,
+  byteSize: number,
+  replyToMessageId: string
+): Promise<void> {
+  const db = await getDb();
+  await db.runAsync(
+    "INSERT INTO upload_queue (media_id, local_uri, byte_size, reply_to_message_id, status, enqueued_at) VALUES (?, ?, ?, ?, 'pending', ?)",
+    [mediaId, localUri, byteSize, replyToMessageId, Date.now()]
+  );
+  await setMediaState(mediaId, "queued");
 }

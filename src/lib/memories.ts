@@ -30,7 +30,7 @@ export async function getMemories(limit = 12): Promise<MemoryGroup[]> {
       MIN(thumb_uri) AS cover,
       GROUP_CONCAT(id) AS ids
     FROM media
-    WHERE visibility = 'visible'
+    WHERE visibility = 'visible' AND edited_from IS NULL
       AND CAST(strftime('%Y', taken_at / 1000, 'unixepoch') AS INTEGER) < ?
       AND NOT EXISTS (SELECT 1 FROM album_media am WHERE am.media_id = media.id)
     GROUP BY y, m, d

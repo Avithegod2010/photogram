@@ -317,6 +317,8 @@ interface QueueItem {
   byte_size: number;
   attempts: number;
   chat_id: string | null;
+  // v0.19: reply target for edited copies (replies to the original's message).
+  reply_to_message_id: string | null;
 }
 
 async function runOne(item: QueueItem): Promise<void> {
@@ -395,8 +397,13 @@ async function runOne(item: QueueItem): Promise<void> {
     // Telegram), then send the original as a REPLY to it so the heavy file
     // threads beneath its preview. Shared-album queue rows stay single-message
     // (the claimer walks group history and must not see double posts).
-    let replyToMessageId: number | null = null;
-    if (useSettingsStore.getState().previewReplyUploads && !item.chat_id) {
+    // v0.19: a queue row can carry its OWN reply target (edited copies reply
+    // to the original's message) — it takes precedence over the preview dance.
+    let replyToMessageId: number | null =
+      item.reply_to_message_id && Number(item.reply_to_message_id) > 0
+        ? Number(item.reply_to_message_id)
+        : null;
+    if (useSettingsStore.getState().previewReplyUploads && !item.chat_id && replyToMessageId === null) {
       const previewSource = media.thumb_uri || localUri;
       try {
         const previewPath = previewSource.replace(/^file:\/\//, "");

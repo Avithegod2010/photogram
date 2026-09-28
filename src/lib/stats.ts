@@ -41,7 +41,8 @@ export async function getStorageTotals(): Promise<StorageTotals> {
       COALESCE(SUM(CASE WHEN visibility = 'trashed' THEN 1 ELSE 0 END), 0) AS trashed,
       COALESCE(SUM(CASE WHEN visibility = 'hidden' THEN 1 ELSE 0 END), 0) AS hidden
     FROM media
-    WHERE NOT EXISTS (SELECT 1 FROM album_media am WHERE am.media_id = media.id)
+    WHERE edited_from IS NULL
+      AND NOT EXISTS (SELECT 1 FROM album_media am WHERE am.media_id = media.id)
   `);
   const queueRow = await db.getFirstAsync<{ pending: number; failed: number }>(`
     SELECT
@@ -74,7 +75,7 @@ export async function getMonthlyBuckets(monthsBack = 6): Promise<MonthBucket[]> 
       COUNT(*) AS count,
       COALESCE(SUM(byte_size), 0) AS bytes
     FROM media
-    WHERE taken_at >= ? AND visibility != 'trashed'
+    WHERE taken_at >= ? AND visibility != 'trashed' AND edited_from IS NULL
       AND NOT EXISTS (SELECT 1 FROM album_media am WHERE am.media_id = media.id)
     GROUP BY ym
   `,
@@ -124,7 +125,7 @@ export async function getBackupHeartbeat(): Promise<BackupHeartbeat | null> {
       COALESCE(SUM(CASE WHEN state = 'synced' THEN 1 ELSE 0 END), 0) AS synced,
       MAX(uploaded_at) AS last
     FROM media
-    WHERE visibility != 'trashed'
+    WHERE visibility != 'trashed' AND edited_from IS NULL
       AND NOT EXISTS (SELECT 1 FROM album_media am WHERE am.media_id = media.id)
   `);
   if (!row || row.total === 0) return null;
