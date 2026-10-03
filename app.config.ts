@@ -51,6 +51,9 @@ const config: ExpoConfig = {
     // Privacy hardening: keep the local photo index (SQLite + thumbnails) out of
     // Google's device backup service.
     allowBackup: false,
+    // Audit: a photo app needs no audio access, and the overlay permission is a
+    // dev-client-only convenience — strip both from every build (incl. release).
+    blockedPermissions: ["android.permission.READ_MEDIA_AUDIO", "android.permission.SYSTEM_ALERT_WINDOW"],
     permissions: ["ACCESS_MEDIA_LOCATION"],
     config: secrets.google_maps_api_key
       ? { googleMaps: { apiKey: secrets.google_maps_api_key } }

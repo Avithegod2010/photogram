@@ -67,11 +67,21 @@ interface RemoteMediaInfo {
 }
 
 // Exported for the F1 migration engine (src/lib/rehydrate.ts) — same
+// Audit fix: fileName comes from REMOTE TDLib metadata — any member of a
+// shared-album group controls it. Reduce to a safe basename (strip every path
+// separator, reject dot segments) so a crafted name like `x/../../evil` can
+// never traverse out of the shared directory when the download is written.
+function sanitizeRemoteFileName(raw: string): string {
+  const base = raw.split(/[\\/]/).pop() ?? "";
+  const trimmed = base.trim();
+  if (!trimmed || trimmed === "." || trimmed === "..") return "shared-file";
+  return trimmed.slice(0, 200);
+}
+
 // extraction, do not change behavior.
 export function extractMedia(message: TdAny): RemoteMediaInfo | null {
   const content: TdAny = message?.content ?? {};
   const type: string = content["@type"] ?? "";
-
   if (type === "messageDocument" || content.document) {
     const doc = content.document;
     const file = doc?.document;
@@ -80,7 +90,7 @@ export function extractMedia(message: TdAny): RemoteMediaInfo | null {
     return {
       remoteId,
       byteSize: Number(firstDefined(file.expectedSize, file.expected_size, file.size, 0)) || 0,
-      fileName: String(firstDefined(doc.fileName, doc.file_name, "shared-file")) || null,
+      fileName: sanitizeRemoteFileName(String(firstDefined(doc.fileName, doc.file_name, "shared-file")) || "shared-file"),
       isVideo: String(firstDefined(doc.mimeType, doc.mime_type, "")).startsWith("video/"),
       width: null,
       height: null,
@@ -95,7 +105,7 @@ export function extractMedia(message: TdAny): RemoteMediaInfo | null {
     return {
       remoteId,
       byteSize: Number(firstDefined(file.expectedSize, file.expected_size, file.size, 0)) || 0,
-      fileName: String(firstDefined(anim.fileName, anim.file_name, "shared-video")) || null,
+      fileName: sanitizeRemoteFileName(String(firstDefined(anim.fileName, anim.file_name, "shared-video")) || "shared-video"),
       isVideo: true,
       width: Number(firstDefined(anim.width, 0)) || null,
       height: Number(firstDefined(anim.height, 0)) || null,
@@ -110,7 +120,7 @@ export function extractMedia(message: TdAny): RemoteMediaInfo | null {
     return {
       remoteId,
       byteSize: Number(firstDefined(file.expectedSize, file.expected_size, file.size, 0)) || 0,
-      fileName: String(firstDefined(video.fileName, video.file_name, "shared-video")) || null,
+      fileName: sanitizeRemoteFileName(String(firstDefined(video.fileName, video.file_name, "shared-video")) || "shared-video"),
       isVideo: true,
       width: Number(firstDefined(video.width, 0)) || null,
       height: Number(firstDefined(video.height, 0)) || null,

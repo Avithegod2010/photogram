@@ -48,21 +48,21 @@ export async function isForumChat(chatId: string): Promise<boolean> {
     const chat = await parseRawResult(await TdLib.getChat(Number(chatId)));
     const type = chat?.type as TdAny | undefined;
     if (type?.["@type"] !== "chatTypeSupergroup") {
-      console.log(`[forum] isForumChat(${chatId}): chat type=${type?.["@type"] ?? "null"}`);
+      if (__DEV__) console.log(`[forum] isForumChat(${chatId}): chat type=${type?.["@type"] ?? "null"}`);
       return false;
     }
     const supergroupId = Number(firstDefined(type.supergroupId, type.supergroup_id));
     if (!Number.isFinite(supergroupId) || supergroupId <= 0) {
-      console.log(`[forum] isForumChat(${chatId}): bad supergroupId=${supergroupId}`);
+      if (__DEV__) console.log(`[forum] isForumChat(${chatId}): bad supergroupId=${supergroupId}`);
       return false;
     }
 
     const sg = await parseRawResult(await TdLib.getSupergroup(supergroupId));
     const isForum = firstDefined(sg?.isForum, sg?.is_forum) === true;
-    console.log(`[forum] isForumChat(${chatId}): supergroupId=${supergroupId} sg=${sg ? "ok" : "null"} isForum=${isForum}`);
+    if (__DEV__) console.log(`[forum] isForumChat(${chatId}): supergroupId=${supergroupId} sg=${sg ? "ok" : "null"} isForum=${isForum}`);
     return isForum;
   } catch (err) {
-    console.log(`[forum] isForumChat(${chatId}) threw:`, err instanceof Error ? err.message : err);
+    if (__DEV__) console.log(`[forum] isForumChat(${chatId}) threw:`, err instanceof Error ? err.message : err);
     return false;
   }
 }
@@ -92,12 +92,12 @@ export async function listForumTopics(chatId: string): Promise<ForumTopicRef[] |
       const result = await TdLib.getForumTopics(Number(chatId), 100);
       parsed = await parseRawResult(result);
       if (!parsed || !Array.isArray(parsed.topics)) {
-        console.log(`[forum] listForumTopics(${chatId}): no topics array — raw=${String(result?.raw?.slice(0, 300))}`);
+        if (__DEV__) console.log(`[forum] listForumTopics(${chatId}): no topics array — raw=${String(result?.raw?.slice(0, 300))}`);
         return null;
       }
       if (parsed.topics.length > 0 || emptyRuns >= EMPTY_RETRIES) break;
       emptyRuns++;
-      console.log(`[forum] TOPICLIST ${chatId} empty (lazy sync), retry ${emptyRuns}/${EMPTY_RETRIES}`);
+      if (__DEV__) console.log(`[forum] TOPICLIST ${chatId} empty (lazy sync), retry ${emptyRuns}/${EMPTY_RETRIES}`);
       await new Promise((resolve) => setTimeout(resolve, EMPTY_RETRY_DELAY_MS));
     }
     const raw: TdAny[] = parsed.topics;
@@ -128,10 +128,10 @@ export async function listForumTopics(chatId: string): Promise<ForumTopicRef[] |
     }
     // Concise diagnostics: the parsed topic list (raw dump was removed after
     // the gson field-name debugging that found forumTopicId/name).
-    console.log(`[forum] TOPICLIST ${chatId} count=${topics.length} [${topics.map((t) => `${t.title}#${t.threadId}`).join(", ")}]`);
+    if (__DEV__) console.log(`[forum] TOPICLIST ${chatId} count=${topics.length} [${topics.map((t) => `${t.title}#${t.threadId}`).join(", ")}]`);
     return topics;
   } catch (err) {
-    console.log("[forum] listForumTopics failed:", err instanceof Error ? err.message : err);
+    if (__DEV__) console.log("[forum] listForumTopics failed:", err instanceof Error ? err.message : err);
     return null;
   }
 }
@@ -166,7 +166,7 @@ export async function fetchThreadMessages(
     if (messages.length === 0 && raw.length > 0) return null;
     return messages;
   } catch (err) {
-    console.log("[forum] fetchThreadMessages failed:", err instanceof Error ? err.message : err);
+    if (__DEV__) console.log("[forum] fetchThreadMessages failed:", err instanceof Error ? err.message : err);
     return null;
   }
 }

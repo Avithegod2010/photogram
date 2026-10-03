@@ -11,7 +11,7 @@ Last updated: late 2026-09-06 (§0). Read §0, then §1–§17. CHANGELOG.md has
 (master = origin/master at `3207e41`). All seven versions committed: `f372998` v0.12 Junk Sweeper
 (chatbot 2's work, committed on the owner's behalf — also repairs a latent broken `getQueueStatus`
 import from the v0.11.2 handoff) + `387756d` v0.12.1–v0.17 + `2ea7a67`/`3207e41` docs/license.
-Working tree clean, tsc clean. Owner picked MIT. History was fully REWRITTEN before going public: all commit identities → 258314859+Avithegod2010@users.noreply.github.com (repo git config set to it — future commits safe), Telegram ids/serial/LAN IPs/real name scrubbed from all commits; doc hash refs updated post-rewrite. GitHub-side caveats: pre-rewrite commit objects may linger by SHA until GitHub GCs (repo was private the whole time, so they were never crawled); dependabot PR #1 closed. allowBackup=false lands in APK at next gradle rebuild.**
+Working tree clean, tsc clean. Owner picked MIT. History was fully REWRITTEN before going public: all commit identities → 258314859+Avithegod2010@users.noreply.github.com (repo git config set to it — future commits safe), and the personal traces (Saved-Messages chat/message ids, device serial, LAN IPs, real name) were scrubbed from all commits; doc hash refs updated post-rewrite. Scrub gap (external audit): the test-group supergroup id survived the rewrite and old commits retain the Saved-Messages ids — neither is a credential (a group id is known to every member); redacted at the tip and treated as accepted residue, not worth another force-push. GitHub-side caveats: pre-rewrite commit objects may linger by SHA until GitHub GCs (repo was private the whole time, so they were never crawled); dependabot PR #1 closed. allowBackup=false lands in APK at next gradle rebuild.**
 
 ### FIRST ACTIONS for the next session
 1. **ONE combined gradle rebuild** unlocks v0.16 (expo-notifications native) + v0.17
@@ -55,7 +55,7 @@ then the recent CHANGELOG entries (v0.10 → v0.11.2) for the last week's ground
   (preview photo first, original as REPLY; toggle in Settings). `a4f20c0` **v0.10.2 — topic
   pipeline fixes** (int overflow, gson forumTopicId/name fields, getForumTopicHistory wrapper).
 - Topic sub-albums FULLY VERIFIED on device ("Photos testing" group = renamed "Photos",
-  chat -1004411892879): attribution, chip counts, filtering, claim-twice idempotent, regression.
+  chat <redacted: test-group id>): attribution, chip counts, filtering, claim-twice idempotent, regression.
 
 ### UNCOMMITTED in the tree — THE SIBLING CHATBOT'S Junk Sweeper (v0.12), THEIR COMMIT TO MAKE
 Modified: App.tsx, package.json, package-lock.json, src/db/queries.ts (junk_findings CRUD),

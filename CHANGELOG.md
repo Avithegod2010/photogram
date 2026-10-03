@@ -4,6 +4,35 @@ Each entry below documents what a commit adds and what comes next. Newest first.
 
 ---
 
+## Security hardening round 2 — external audit triage (COMMITTED in this commit)
+
+**Actions from the independent auditor's report** (mediums fixed; lows triaged below)
+- **Path-traversal fix (`src/lib/claimer.ts`):** shared-album file names come from remote TDLib
+  metadata — any group member controls them. `extractMedia` now reduces every fileName to a safe
+  basename (all `/` and `\` separators stripped, `.`/`..`/empty rejected), so a crafted name like
+  `x/../../evil` can never write outside the shared directory. Normal names (spaces, unicode)
+  are preserved so restore-time matching is unaffected.
+- **Permission trim:** `READ_MEDIA_AUDIO` (a photo app has no audio feature) and
+  `SYSTEM_ALERT_WINDOW` (a dev-client convenience) are stripped from the main Android manifest
+  and blocked at the config level (`app.config.ts blockedPermissions`) so future prebuilds keep
+  them out. Dev builds keep the overlay via the debug manifest.
+- **Release-log hygiene:** all `[forum]` / `[notes]` diagnostics (chat ids, topic titles) are now
+  dev-builds-only (`__DEV__`).
+- **Scrub bookkeeping:** the test-group supergroup id that survived the history rewrite is
+  redacted at the tip, and NEXT_SESSION no longer overstates the rewrite ("scrubbed from all
+  commits" corrected to name the accepted residue — a group id is not a credential; every member
+  of the group already knows it).
+- Deliberately NOT done, per the audit's own triage: npm's `expo@46` downgrade "fix" (would break
+  the app — the 14 moderate advisories trace to two benign CVEs in build-tooling chains); MMKV
+  encryption, biometric fail-closed fallback, HiddenScreen copy, and JSON.parse guards are queued
+  as low-priority follow-ups.
+
+**Next**
+- Gradle rebuild (activates v0.16 notifications + v0.17 notes native + allowBackup/permission
+  changes) → device verification of v0.12–v0.21.
+
+---
+
 ## v0.21 — Place-name search, fully offline (COMMITTED in this commit)
 
 **Added in this commit** (per docs/PLAN-V0.13-EIGHT.md; label shifted from the plan's v0.20 —

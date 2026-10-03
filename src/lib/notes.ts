@@ -102,7 +102,7 @@ async function applyNoteToRemote(row: PendingNoteRow, force: boolean): Promise<N
       }
       // MESSAGE_EDIT_FORBIDDEN / MESSAGE_ID_INVALID (stale pending id) / etc:
       // keep the note local and retry on the next trigger — data is never lost.
-      console.log(`[notes] edit deferred id=${row.id}: ${message}`);
+      if (__DEV__) console.log(`[notes] edit deferred id=${row.id}: ${message}`);
       return { status: "failed", reason: message };
     }
     if (!parsed) {
@@ -111,7 +111,7 @@ async function applyNoteToRemote(row: PendingNoteRow, force: boolean): Promise<N
     await setNoteSynced(row.id);
     return { status: "synced" };
   } catch (err) {
-    console.log(`[notes] edit threw id=${row.id}:`, err instanceof Error ? err.message : err);
+    if (__DEV__) console.log(`[notes] edit threw id=${row.id}:`, err instanceof Error ? err.message : err);
     return { status: "failed", reason: err instanceof Error ? err.message : "edit threw" };
   }
 }
