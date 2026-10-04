@@ -4,7 +4,79 @@ Each entry below documents what a commit adds and what comes next. Newest first.
 
 ---
 
-## v0.27 / v0.28 / v0.29 — Smart albums + album locks + storage deep-dive (CODED — uncommitted, commit pending owner go-ahead)
+## Docs — People & Pets model sweep + ideas backlog (docs only)
+
+- `docs/PLAN-PEOPLE-PETS.md` §2b: **owner decision — user-selectable, download-on-demand
+  models** (nothing bundled; fast-tflite loads a model file at runtime so no rebuild per
+  model). Second model sweep confirmed no better shippable option: EdgeFace / GhostFaceNets /
+  AdaFace all carry non-commercial MS1MV2 weight restrictions; permissive candidates are
+  FaceNet-128 (~23 MB, default), **FaceNet-512 (24.4 MB, verified ready-made in the same
+  repo)**, MobileFaceNet (~11 MB, needs a one-time PC conversion), SFace (ONNX runtime, deferred).
+- `docs/IDEAS-BACKLOG.md`: curated next-feature menu grouped by backup-trust / organization /
+  family / delight / intelligence / platform, each marked JS-only vs native.
+
+---
+
+## v0.30 / v0.31 / v0.32 / v0.33 — Backup integrity + diagnostics + journal + highlights (CODED — uncommitted, commit pending owner go-ahead)
+
+Four owner-picked features, all pure JS. One additive migration (v16 `media.sharpness`). Same
+review protocol as the previous batches: **71/71 integration checks + 48/48 static checks +
+tsc clean** — and the probe caught TWO real bugs in the new code before they ever reached a
+device (both fixed, listed at the end).
+
+### v0.30 — Backup integrity report (Safety check upgrade)
+- **New `src/lib/integrity.ts`:** for every `synced` row that still carries both halves of the
+  remote link, ask TDLib whether the Telegram message still exists and still carries a file
+  (`openChat` once per chat + `getMessage`, the proven notes.ts pattern). Answer: **N verified /
+  M broken** — the actual "is my backup really intact?" question, not just "did the app say synced".
+- **Telegram-safety by design:** read-only calls, 150 ms gap, ~10 rows/20 saves batching, and
+  RESUMABLE — each pass walks at most 400 rows, the cursor lives in `meta` and survives app
+  kills, and the accumulating report is persisted in `meta` too. A transient TDLib failure
+  (network/auth) **pauses** the run without advancing the cursor and is never counted as a
+  broken backup. `remote_message_id = '0'` rows (the junk sweep's "owner deleted the Telegram
+  copy on purpose") are deliberately out of scope. `messagePhoto`/`messageDocument`/
+  `messageAnimation` all count as valid backup content (TDLib classifies small MP4s as
+  animations — the restorer lesson).
+- **Safety check screen:** a "Backup integrity" card — last report, Run/Stop button, live
+  progress, and up to 5 broken rows (thumb + reason, tap → Viewer).
+
+### v0.31 — In-app diagnostics (Settings → Diagnostics → "Self-check")
+- Schema version, database size (`page_count × page_size`), per-state media counts, upload-queue
+  pending/active/failed, feature counters (saved searches, hashed photos, notes, junk findings),
+  TDLib auth state, app version — and the **last scan's errors**, which the scanner now persists
+  to MMKV at the end of every scan (they were previously invisible unless adb was attached).
+
+### v0.32 — Journal (Collections → "Journal")
+- Every photo note (v0.17) as a diary: **"Today across the years"** on top (this calendar day in
+  any year), then all notes grouped by year, newest first. Thumb + note + date, tap → Viewer.
+  Notes are local-first and travel as Telegram captions — nothing new to sync.
+
+### v0.33 — Highlights (Collections → "Highlights")
+- **Schema v16:** `media.sharpness REAL` — the Junk Sweeper's blur metric (variance of the
+  Laplacian) flipped around: the *sharpest* shots per month. Computed at scan time from the
+  SAME thumbnail decode as the pHash (scanner refactored: one `analyzeThumb` → both metrics),
+  and the shared one-time backfill (`backfillAnalysis`, formerly `hashMissingPhotos`) now fills
+  both metrics for the existing library in one pass. Sentinels: phash `''` / sharpness `-1`.
+- **Highlights screen:** per-month cards ("October 2026") with the 6 sharpest photos, sharpest
+  first; the blur threshold keeps soft shots out; tap → Viewer. Same indexing progress pattern
+  as Find duplicates.
+
+**Review (2026-10-05) — probe caught two real bugs in the new code:**
+1. `integrity.ts` never incremented `report.checked` (verified/broken counted, the total stayed
+   0) — the UI would have shown nonsense counts. Fixed + probed.
+2. `listMissingAnalysis` was missing the shared-album exclusion fragment — shared-album photos
+   would have been needlessly analyzed in the backfill. Fixed + probed.
+Also hardened: `listSavedSearches` got an `id DESC` tiebreak (same-millisecond saves could order
+non-deterministically). Probe harness now also exercises the integrity engine end-to-end through
+a controllable TDLib stub (verified / 404 / no-response / transient-throw / resume).
+
+**Verify on device (Metro alone):** Safety check → Run check (watch it walk the library; try
+airplane mode → pauses, never false-broken). Settings → Diagnostics. Collections → Journal /
+Highlights. No settings changed.
+
+---
+
+## v0.27 / v0.28 / v0.29 — Smart albums + album locks + storage deep-dive (COMMITTED in db6e9d0)
 
 Three more owner-picked features, all pure JS (no native modules, no rebuild needed to verify).
 One additive migration (v15 `saved_searches` — album locks deliberately need NO schema). Same

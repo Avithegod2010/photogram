@@ -72,6 +72,46 @@ changes needed for a CPU-only first version.
   "People" enablement. Bundling is simpler and works offline from day one.
 - **Rule (owner-agreed pattern):** the owner approves the exact file + URL before it is added.
 
+### 2b. UPDATE 2026-10-05 — owner decision: USER-SELECTABLE, DOWNLOAD-ON-DEMAND models
+
+The owner approved the face-embedding direction and set the design: **the app ships NO model —
+the user picks one from a comparison list and downloads it in-app** (fast-tflite supports
+loading a model from a file URL at runtime, so no rebuild per model). Every candidate below is
+far under the 500 MB ceiling; the real differentiators are license, tflite-readiness, size and
+accuracy. Embeddings from DIFFERENT models are never comparable — switching models means one
+re-embed pass over the library (minutes, on-device), so the schema must record which model made
+each embedding.
+
+| # | Model | Download size | Input | Embedding | Benchmark (LFW) | License | Runtime | Ready-made file? |
+|---|-------|---------------|-------|-----------|-----------------|---------|---------|------------------|
+| 1 | **FaceNet-128** (keras-facenet lineage, .tflite shipped by shubham0204's repo) | ~23 MB | 160×160 | 128-d | ~99.2% | Apache-2.0 repo (weights lineage MIT → spot-check at download) | **tflite ✓ (fast-tflite)** | **YES — recommended default** |
+| 2 | **MobileFaceNet** (sirius-ai/MobileFaceNet_TF, Apache-2.0) | ~11 MB (5.7M params) | 112×112 | 192-d (verify at conversion) | 99.4+% | Apache-2.0 | tflite — needs a one-time TF1→tflite conversion on the PC first | conversion needed |
+| 3 | **FaceNet-512** — VERIFIED ready-made in the same repo as #1 (`facenet_512.tflite`, 24.4 MB) | 24.4 MB | 160×160 | 512-d | ~99.2%, 512-d discriminates better | Apache-2.0 repo (weights lineage MIT → spot-check at download) | **tflite ✓ (fast-tflite)** | **YES** |
+| 4 | **OpenFace nn4.small2.v1** | ~8 MB (3.74M params) | 96×96 | 128-d | ~99.28% (older generation, aligned benchmarks) | Apache-2.0 | Torch `.t7` → tflite conversion | conversion needed |
+| 5 | **SFace** (OpenCV Zoo) | ~37 MB | 112×112 | 128-d | strong on aligned benchmarks | Apache-2.0 | **ONNX — needs ONNX Runtime React Native instead of fast-tflite** | ONNX ready |
+| 6 | **InsightFace ArcFace w600k_r50** (buffalo_l pack) | ~174 MB | 112×112 | 512-d | best-in-class (~99.8-class) | ⚠️ **weights NON-COMMERCIAL** (code MIT, weights are not) | ONNX runtime | ONNX ready |
+| 7 | InsightFace MobileFaceNet (mbf) and friends | ~5–40 MB | 112×112 | 512-d | very good | ⚠️ **weights NON-COMMERCIAL** | community tflite conversions exist | community conversions |
+
+**Sweep conclusion (2026-10-05, second pass):** the accuracy-per-MB champions — **EdgeFace**
+(~1.77M params, LFW 99.73%), **GhostFaceNets** (~0.4–1.8M params, IEEE Access 2023) and
+**AdaFace** — are all trained on MS1MV2 and inherit the same **non-commercial weight
+restriction** regardless of their MIT code licenses. No permissive model beats the table above
+for this app; #6/#7-class models stay out of the picker until the license question is settled
+with the owner.
+
+**Picker recommendations (v1):** offer **#1 (default)** and **#2** once converted — both
+Apache-2.0, both tflite, covering the small-vs-accurate choice. #5 (SFace) is the best
+commercial-safe accuracy upgrade but drags in a second ML runtime — defer. #6/#7 stay out of
+the picker: Photogram is free today, but Play distribution makes "non-commercial" ambiguous,
+and the owner should not ship license-ambiguous weights. All URLs must be https with the host
+validated before download (app rule).
+
+**Accuracy expectation (owner's concern, valid):** LFW numbers are lab benchmarks with aligned
+crops; real family albums (small faces, profiles, kids aging, similar relatives) land well
+below them. The design answer is already in the pipeline: a similarity threshold the owner can
+tune, a "this is not X" removal action, and rename-only v1 — wrong guesses are always visible
+and reversible, never silent.
+
 ---
 
 ## 3. Pipeline design (mirrors existing Photogram patterns)
