@@ -4,6 +4,19 @@ Each entry below documents what a commit adds and what comes next. Newest first.
 
 ---
 
+## PRIVACY.md — privacy policy for the Play listing (COMMITTED in this commit)
+
+- Full privacy policy written for the app: the developer collects **nothing** (no accounts, no
+  analytics, no ads, no developer servers); media goes only to the user's own Telegram account;
+  on-device features (OCR, place names, junk analysis, biometric unlock) documented; every
+  permission justified; deletion paths explained.
+- Hosted at the repo root (`PRIVACY.md`) — renders at the GitHub Pages URL once Pages is enabled
+  (Settings → Pages → deploy from branch `main`). The Play "Privacy policy" field needs that
+  URL. **Owner action before submission:** insert a real contact email in §11.
+- No code changes.
+
+---
+
 ## Independent audit remediation — deep-pass fixes (COMMITTED in this commit)
 
 **Six fixes applied by the independent auditor in its round-2 deep pass (verified by chatbot 1
