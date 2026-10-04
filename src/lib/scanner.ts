@@ -4,11 +4,11 @@ import * as VideoThumbnails from "expo-video-thumbnails";
 import { File, Paths } from "expo-file-system";
 import type * as TextRecognitionModule from "@react-native-ml-kit/text-recognition";
 import type * as ImageLabelingModule from "@react-native-ml-kit/image-labeling";
-import { findMediaIdByMediaLibraryId, getMediaByIds, insertMedia, updateMediaLibraryId, backfillTakenAt, updateOcrText, updateMediaLabels, updateMediaPhash, setMediaState, setMediaPlace } from "../db/queries";
+import { findMediaIdByMediaLibraryId, getMediaByIds, insertMedia, updateMediaLibraryId, backfillTakenAt, updateOcrText, updateMediaLabels, updateMediaPhash, updateMediaSharpness, setMediaState, setMediaPlace } from "../db/queries";
 import { nearestCity } from "./places";
 import { findDuplicate, quickFingerprint } from "./dedupe";
-import { decodeThumbToGray, pHash64 } from "./imageAnalysis";
-import { useSettingsStore } from "../store/settingsStore";
+import { decodeThumbToGray, pHash64, varianceOfLaplacian } from "./imageAnalysis";
+import { mmkv, useSettingsStore } from "../store/settingsStore";
 
 export interface ScanProgress {
   scanned: number;
@@ -24,6 +24,36 @@ export interface ScanProgress {
 }
 
 const PAGE_SIZE = 100;
+
+// v0.31 diagnostics: the last scan's outcome, persisted so the in-app
+// Diagnostics screen can show it without adb (lastError included — scan
+// failures must never hide).
+const SCAN_SUMMARY_KEY = "last_scan_summary";
+
+function persistScanSummary(progress: ScanProgress): void {
+  try {
+    mmkv.set(
+      SCAN_SUMMARY_KEY,
+      JSON.stringify({
+        scanned: progress.scanned,
+        added: progress.added,
+        duplicates: progress.duplicates,
+        failed: progress.failed,
+        lastError: progress.lastError ?? null,
+        partialAccess: progress.partialAccess ?? false,
+        finishedAt: Date.now(),
+      })
+    );
+  } catch {}
+}
+
+export function getLastScanSummary(): string | null {
+  try {
+    return mmkv.getString(SCAN_SUMMARY_KEY) ?? null;
+  } catch {
+    return null;
+  }
+}
 
 function mimeFromAsset(asset: MediaLibrary.Asset): string {
   if (asset.mediaType === MediaLibrary.MediaType.video) return "video/mp4";
@@ -163,15 +193,20 @@ async function labelImage(uri: string): Promise<string | null> {
   }
 }
 
-// v0.24 "Find similar": 64-bit pHash of the thumbnail, stored as 16-char hex.
-// Always-on (no opt-in — hashing a 320px thumb is a few ms), photos only.
-// Null = thumbnail missing/undecodable; the row stays NULL and the duplicate
-// finder's backfill (or a later rescan) retries it.
-async function hashThumb(uri: string): Promise<string | null> {
+// v0.24+v0.33: ONE thumbnail decode feeds two features — the pHash hex for
+// "Find similar" and the sharpness (variance of Laplacian) for Highlights.
+// Always-on (no opt-in — analyzing a 320px thumb is a few ms), photos only.
+// Missing fields = thumbnail missing/undecodable; the row stays NULL and the
+// backfill (or a later rescan) retries it.
+async function analyzeThumb(uri: string): Promise<{ phash?: string; sharpness?: number }> {
   try {
-    return pHash64(await decodeThumbToGray(uri)).toString(16).padStart(16, "0");
+    const img = await decodeThumbToGray(uri);
+    return {
+      phash: pHash64(img).toString(16).padStart(16, "0"),
+      sharpness: varianceOfLaplacian(img),
+    };
   } catch {
-    return null;
+    return {};
   }
 }
 
@@ -220,6 +255,7 @@ export async function scanDeviceLibrary(
       if (cancelRef?.cancelled) {
         progress.done = true;
         onProgress?.({ ...progress });
+        persistScanSummary(progress);
         return progress;
       }
       progress.scanned++;
@@ -258,6 +294,7 @@ export async function scanDeviceLibrary(
                 thumb_uri: row.thumb_uri,
                 ml_labels: row.ml_labels ?? null,
                 phash: row.phash ?? null,
+                sharpness: row.sharpness ?? null,
               };
             }
           }
@@ -280,10 +317,19 @@ export async function scanDeviceLibrary(
             const labels = await labelImage(existing.thumb_uri);
             if (labels) await updateMediaLabels(existing.id, labels);
           }
-          // v0.24 phash backfill for never-hashed rows (photos only).
-          if (!isVideo && (existing.phash ?? null) === null) {
-            const phash = await hashThumb(existing.thumb_uri);
-            if (phash) await updateMediaPhash(existing.id, phash);
+          // v0.24+v0.33 analysis backfill for rows missing either metric
+          // (photos only; one decode covers both).
+          if (
+            !isVideo &&
+            ((existing.phash ?? null) === null || (existing.sharpness ?? null) === null)
+          ) {
+            const analysis = await analyzeThumb(existing.thumb_uri);
+            if (analysis.phash && (existing.phash ?? null) === null) {
+              await updateMediaPhash(existing.id, analysis.phash);
+            }
+            if (analysis.sharpness !== undefined && (existing.sharpness ?? null) === null) {
+              await updateMediaSharpness(existing.id, analysis.sharpness);
+            }
           }
           // v0.21 place backfill: rows carrying GPS (mirrors the OCR backfill
           // pattern; the dataset is static so recompute is idempotent).
@@ -328,11 +374,14 @@ export async function scanDeviceLibrary(
             const labels = await labelImage(thumbUri);
             if (labels) await updateMediaLabels(inserted, labels);
           }
-          // v0.24: persist the perceptual hash for "Find similar" (photos
-          // only, always-on).
+          // v0.24+v0.33: persist the perceptual hash and sharpness for
+          // "Find similar" / "Highlights" (photos only, always-on).
           if (!isVideo) {
-            const phash = await hashThumb(thumbUri);
-            if (phash) await updateMediaPhash(inserted, phash);
+            const analysis = await analyzeThumb(thumbUri);
+            if (analysis.phash) await updateMediaPhash(inserted, analysis.phash);
+            if (analysis.sharpness !== undefined) {
+              await updateMediaSharpness(inserted, analysis.sharpness);
+            }
           }
           // v0.21: offline nearest-city place name for GPS-tagged items.
           if (location?.latitude != null && location?.longitude != null) {
@@ -355,5 +404,6 @@ export async function scanDeviceLibrary(
 
   progress.done = true;
   onProgress?.({ ...progress });
+  persistScanSummary(progress);
   return progress;
 }

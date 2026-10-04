@@ -39,6 +39,9 @@ export interface MediaRow {
   phash?: string | null;
   // v0.25 manual tags (schema v14): the owner's own comma-separated tags.
   user_tags?: string | null;
+  // v0.33 highlights (schema v16): variance of the Laplacian over the thumb;
+  // -1 = tried but the thumbnail was undecodable.
+  sharpness?: number | null;
 }
 
 export interface NewMediaInput {
@@ -159,6 +162,17 @@ export async function updateMediaUserTags(id: number, tags: string | null): Prom
   const db = await getDb();
   await db.runAsync("UPDATE media SET user_tags = ?, updated_at = ? WHERE id = ?", [
     tags,
+    Date.now(),
+    id,
+  ]);
+}
+
+// v0.33 highlights: per-photo sharpness (variance of the Laplacian over the
+// thumb). -1 = known-undecodable sentinel.
+export async function updateMediaSharpness(id: number, sharpness: number): Promise<void> {
+  const db = await getDb();
+  await db.runAsync("UPDATE media SET sharpness = ?, updated_at = ? WHERE id = ?", [
+    sharpness,
     Date.now(),
     id,
   ]);
@@ -928,29 +942,32 @@ export async function listPhashRows(excludeId: number): Promise<PhashRow[]> {
   );
 }
 
-export interface MissingPhashRow {
+export interface MissingAnalysisRow {
   id: number;
   thumb_uri: string;
+  phash: string | null;
+  sharpness: number | null;
 }
 
-export async function countMissingPhash(): Promise<number> {
+export async function countMissingAnalysis(): Promise<number> {
   const db = await getDb();
   const row = await db.getFirstAsync<{ n: number }>(
     `SELECT COUNT(*) AS n FROM media
-     WHERE phash IS NULL AND mime_type LIKE 'image/%'
+     WHERE (phash IS NULL OR sharpness IS NULL) AND mime_type LIKE 'image/%'
        AND visibility != 'trashed' AND edited_from IS NULL
      ${EXCLUDE_ALL_SHARED}`
   );
   return row?.n ?? 0;
 }
 
-export async function listMissingPhash(afterId: number, limit: number): Promise<MissingPhashRow[]> {
+export async function listMissingAnalysis(afterId: number, limit: number): Promise<MissingAnalysisRow[]> {
   const db = await getDb();
-  return db.getAllAsync<MissingPhashRow>(
-    `SELECT id, thumb_uri FROM media
-     WHERE phash IS NULL AND mime_type LIKE 'image/%'
+  return db.getAllAsync<MissingAnalysisRow>(
+    `SELECT id, thumb_uri, phash, sharpness FROM media
+     WHERE (phash IS NULL OR sharpness IS NULL) AND mime_type LIKE 'image/%'
        AND visibility != 'trashed' AND edited_from IS NULL
        AND id > ?
+     ${EXCLUDE_ALL_SHARED}
      ORDER BY id
      LIMIT ?`,
     [afterId, limit]
@@ -990,8 +1007,9 @@ export async function saveSearch(query: string): Promise<void> {
 
 export async function listSavedSearches(): Promise<SavedSearchRow[]> {
   const db = await getDb();
+  // id DESC breaks same-millisecond created_at ties (later save wins).
   return db.getAllAsync<SavedSearchRow>(
-    "SELECT id, name, query, created_at FROM saved_searches ORDER BY created_at DESC"
+    "SELECT id, name, query, created_at FROM saved_searches ORDER BY created_at DESC, id DESC"
   );
 }
 
@@ -1008,6 +1026,138 @@ export async function getSavedSearch(id: number): Promise<SavedSearchRow | null>
 export async function deleteSavedSearch(id: number): Promise<void> {
   const db = await getDb();
   await db.runAsync("DELETE FROM saved_searches WHERE id = ?", [id]);
+}
+
+// --- v0.30 backup integrity ----------------------------------------------------
+// Rows whose Telegram backup can be verified: synced AND still carrying both
+// halves of the remote link. remote_message_id = '0' is the junk-sweep's
+// "owner deleted the Telegram copy on purpose" marker — not a broken backup,
+// so those rows are deliberately out of scope.
+
+export interface IntegrityBatchRow {
+  id: number;
+  thumb_uri: string;
+  file_name: string | null;
+  remote_chat_id: string;
+  remote_message_id: string;
+}
+
+export async function listIntegrityBatch(afterId: number, limit: number): Promise<IntegrityBatchRow[]> {
+  const db = await getDb();
+  return db.getAllAsync<IntegrityBatchRow>(
+    `SELECT id, thumb_uri, file_name, remote_chat_id, remote_message_id FROM media
+     WHERE state = 'synced'
+       AND remote_chat_id IS NOT NULL AND remote_chat_id != ''
+       AND remote_message_id IS NOT NULL AND remote_message_id != '0'
+       AND id > ?
+     ORDER BY id
+     LIMIT ?`,
+    [afterId, limit]
+  );
+}
+
+// --- v0.31 in-app diagnostics ---------------------------------------------------
+
+export interface DbDiagnostics {
+  schemaVersion: number;
+  dbBytes: number;
+  mediaTotal: number;
+  mediaVisible: number;
+  mediaSynced: number;
+  mediaLocal: number;
+  mediaFailed: number;
+  mediaArchived: number;
+  mediaHidden: number;
+  mediaTrashed: number;
+  queuePending: number;
+  queueActive: number;
+  queueFailed: number;
+  savedSearches: number;
+  junkPending: number;
+  notedCount: number;
+  hashedCount: number;
+}
+
+export async function getDbDiagnostics(): Promise<DbDiagnostics> {
+  const db = await getDb();
+  const versionRow = await db.getFirstAsync<{ value: string }>(
+    "SELECT value FROM meta WHERE key = 'schema_version'"
+  );
+  // DB size on disk = page_count × page_size (WAL file excluded — close enough
+  // for a self-check screen; the -wal shrinks on checkpoint anyway).
+  const pc = await db.getFirstAsync<{ page_count: number }>("PRAGMA page_count");
+  const ps = await db.getFirstAsync<{ page_size: number }>("PRAGMA page_size");
+  const media = await db.getFirstAsync<{
+    total: number;
+    visible: number;
+    synced: number;
+    local: number;
+    failed: number;
+    archived: number;
+    hidden: number;
+    trashed: number;
+  }>(`
+    SELECT
+      COUNT(*) AS total,
+      COALESCE(SUM(CASE WHEN visibility = 'visible' THEN 1 ELSE 0 END), 0) AS visible,
+      COALESCE(SUM(CASE WHEN state = 'synced' THEN 1 ELSE 0 END), 0) AS synced,
+      COALESCE(SUM(CASE WHEN state = 'local' THEN 1 ELSE 0 END), 0) AS local,
+      COALESCE(SUM(CASE WHEN state = 'failed' THEN 1 ELSE 0 END), 0) AS failed,
+      COALESCE(SUM(CASE WHEN visibility = 'archived' THEN 1 ELSE 0 END), 0) AS archived,
+      COALESCE(SUM(CASE WHEN visibility = 'hidden' THEN 1 ELSE 0 END), 0) AS hidden,
+      COALESCE(SUM(CASE WHEN visibility = 'trashed' THEN 1 ELSE 0 END), 0) AS trashed
+    FROM media
+  `);
+  const queue = await db.getFirstAsync<{ pending: number; active: number; failed: number }>(`
+    SELECT
+      COALESCE(SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END), 0) AS pending,
+      COALESCE(SUM(CASE WHEN status = 'active' THEN 1 ELSE 0 END), 0) AS active,
+      COALESCE(SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END), 0) AS failed
+    FROM upload_queue
+  `);
+  const extras = await db.getFirstAsync<{ saved: number; junk: number; noted: number; hashed: number }>(`
+    SELECT
+      (SELECT COUNT(*) FROM saved_searches) AS saved,
+      (SELECT COUNT(*) FROM junk_findings WHERE status = 'pending') AS junk,
+      (SELECT COUNT(*) FROM media WHERE note_text IS NOT NULL AND note_text != '') AS noted,
+      (SELECT COUNT(*) FROM media WHERE phash IS NOT NULL AND phash != '') AS hashed
+  `);
+  return {
+    schemaVersion: Number(versionRow?.value ?? 0),
+    dbBytes: (pc?.page_count ?? 0) * (ps?.page_size ?? 0),
+    mediaTotal: media?.total ?? 0,
+    mediaVisible: media?.visible ?? 0,
+    mediaSynced: media?.synced ?? 0,
+    mediaLocal: media?.local ?? 0,
+    mediaFailed: media?.failed ?? 0,
+    mediaArchived: media?.archived ?? 0,
+    mediaHidden: media?.hidden ?? 0,
+    mediaTrashed: media?.trashed ?? 0,
+    queuePending: queue?.pending ?? 0,
+    queueActive: queue?.active ?? 0,
+    queueFailed: queue?.failed ?? 0,
+      savedSearches: extras?.saved ?? 0,
+      junkPending: extras?.junk ?? 0,
+      notedCount: extras?.noted ?? 0,
+      hashedCount: extras?.hashed ?? 0,
+  };
+}
+
+// --- v0.32 journal --------------------------------------------------------------
+// Every photo that carries a note, newest first. Notes only ever exist on the
+// owner's own media (the notes lib refuses shared-album rows), so no shared
+// exclusion is needed.
+
+export async function listNotedMedia(limit = 500): Promise<MediaRow[]> {
+  const db = await getDb();
+  return db.getAllAsync<MediaRow>(
+    `SELECT * FROM media
+     WHERE note_text IS NOT NULL AND note_text != ''
+       AND visibility != 'trashed' AND edited_from IS NULL
+     ORDER BY taken_at DESC, id DESC
+     LIMIT ?`,
+    [limit]
+  );
 }
 
 // --- F2 Junk Sweeper ---------------------------------------------------------

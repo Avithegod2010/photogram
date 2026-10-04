@@ -20,6 +20,9 @@ import { SimilarScreen } from "../screens/SimilarScreen";
 import { SlideshowScreen } from "../screens/SlideshowScreen";
 import { SavedSearchScreen } from "../screens/SavedSearchScreen";
 import { StorageScreen } from "../screens/StorageScreen";
+import { DiagnosticsScreen } from "../screens/DiagnosticsScreen";
+import { JournalScreen } from "../screens/JournalScreen";
+import { HighlightsScreen } from "../screens/HighlightsScreen";
 
 export type RootStackParamList = {
   Tabs: undefined;
@@ -42,6 +45,9 @@ export type RootStackParamList = {
   Slideshow: { ids: number[]; index: number };
   SavedSearch: { id: number };
   Storage: undefined;
+  Diagnostics: undefined;
+  Journal: undefined;
+  Highlights: undefined;
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -76,6 +82,9 @@ export function RootNavigator() {
       <Stack.Screen name="Similar" component={SimilarScreen} />
       <Stack.Screen name="SavedSearch" component={SavedSearchScreen} />
       <Stack.Screen name="Storage" component={StorageScreen} />
+      <Stack.Screen name="Diagnostics" component={DiagnosticsScreen} />
+      <Stack.Screen name="Journal" component={JournalScreen} />
+      <Stack.Screen name="Highlights" component={HighlightsScreen} />
       <Stack.Screen
         name="Slideshow"
         component={SlideshowScreen}

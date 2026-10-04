@@ -32,7 +32,7 @@ import { enableNotifications } from "../lib/notify";
 import { useAuthStore } from "../auth/authStore";
 import { theme } from "../theme";
 
-type SettingsNav = NativeStackNavigationProp<{ Migrate: undefined; JunkSweeper: undefined; Storage: undefined }>;
+type SettingsNav = NativeStackNavigationProp<{ Migrate: undefined; JunkSweeper: undefined; Storage: undefined; Diagnostics: undefined }>;
 
 export function SettingsScreen() {
   const insets = useSafeAreaInsets();
@@ -579,6 +579,21 @@ export function SettingsScreen() {
             value={smartTagsEnabled}
             onChange={setSmartTagsEnabled}
           />
+        </Section>
+
+        <Section title="Diagnostics">
+          <Pressable
+            style={styles.row}
+            onPress={() => navigation.navigate("Diagnostics")}
+            android_ripple={{ color: theme.colors.outlineVariant }}
+          >
+            <View style={styles.toggleText}>
+              <Text style={styles.rowLabel}>Self-check</Text>
+              <Text style={styles.rowSub}>
+                Schema version, database size, queue state, TDLib login state and last scan errors — no computer needed.
+              </Text>
+            </View>
+          </Pressable>
         </Section>
 
         <Section title="Shared albums">

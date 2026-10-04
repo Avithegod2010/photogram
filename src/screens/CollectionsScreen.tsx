@@ -16,6 +16,8 @@ type CollectionsNav = NativeStackNavigationProp<{
   SafetyCheck: undefined;
   Favorites: undefined;
   Wrapped: undefined;
+  Journal: undefined;
+  Highlights: undefined;
   Similar: { mode?: "similar" | "groups"; mediaId?: number };
   SavedSearch: { id: number };
 }>;
@@ -25,6 +27,8 @@ const SECTIONS = [
   { key: "shared", label: "Shared albums", sub: "Family photos from a private Telegram group", enabled: true, route: "SharedAlbums" },
   { key: "favorites", label: "Favorites", sub: "Every photo you marked with a ♥", enabled: true, route: "Favorites" },
   { key: "wrapped", label: "2026 Wrapped", sub: "Your year in photos — totals, top days, favorites", enabled: true, route: "Wrapped" },
+  { key: "journal", label: "Journal", sub: "Every note you wrote, as a diary across the years", enabled: true, route: "Journal" },
+  { key: "highlights", label: "Highlights", sub: "The sharpest shots of each month, auto-curated", enabled: true, route: "Highlights" },
   { key: "duplicates", label: "Find duplicates", sub: "Near-identical photos — bursts, forwards and re-saves", enabled: true, route: "Similar" },
   { key: "people", label: "People & Pets", sub: "Face grouping arrives in Phase 2 (on-device ML)", enabled: false, route: null },
   { key: "archive", label: "Archive", sub: "Decluttered media — hidden from the main timeline", enabled: true, route: "Archive" },

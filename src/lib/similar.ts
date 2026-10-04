@@ -1,11 +1,12 @@
 import {
   getMediaByIds,
-  listMissingPhash,
+  listMissingAnalysis,
   listPhashRows,
   updateMediaPhash,
+  updateMediaSharpness,
   MediaRow,
 } from "../db/queries";
-import { decodeThumbToGray, hamming64, pHash64 } from "./imageAnalysis";
+import { decodeThumbToGray, hamming64, pHash64, varianceOfLaplacian } from "./imageAnalysis";
 import { DUP_HAMMING_MAX } from "./junk";
 
 // v0.24 "Find similar" / visual duplicate finder. The scanner persists a
@@ -121,31 +122,38 @@ export async function findDuplicateGroups(): Promise<DuplicateGroup[]> {
   return groups;
 }
 
-// Backfills phash for every not-yet-hashed photo in resumable chunks (the
-// scanner only covers rows it re-encounters; this covers the existing
-// library). A thumbnail that fails to decode is marked with the '' sentinel
-// so it is never retried forever. Returns the number of photos hashed.
-export async function hashMissingPhotos(
-  onProgress?: (hashed: number) => void,
+// Backfills the per-photo analysis in resumable chunks (the scanner only
+// covers rows it re-encounters; this covers the existing library). ONE
+// thumbnail decode feeds both features: pHash (for find-similar) and
+// sharpness (for Highlights). A thumbnail that fails to decode gets the
+// '' phash / -1 sharpness sentinels so it is never retried forever.
+// Returns the number of photos processed.
+export async function backfillAnalysis(
+  onProgress?: (processed: number) => void,
   cancelRef?: { cancelled: boolean }
 ): Promise<number> {
   let cursor = 0;
-  let hashed = 0;
+  let processed = 0;
   for (;;) {
-    if (cancelRef?.cancelled) return hashed;
-    const batch = await listMissingPhash(cursor, HASH_CHUNK);
-    if (batch.length === 0) return hashed;
+    if (cancelRef?.cancelled) return processed;
+    const batch = await listMissingAnalysis(cursor, HASH_CHUNK);
+    if (batch.length === 0) return processed;
     for (const row of batch) {
       cursor = row.id;
-      let hex: string | null = null;
+      let phash: string | null = null;
+      let sharpness: number | null = null;
       try {
-        hex = pHash64(await decodeThumbToGray(row.thumb_uri)).toString(16).padStart(16, "0");
+        const img = await decodeThumbToGray(row.thumb_uri);
+        if (row.phash == null) phash = pHash64(img).toString(16).padStart(16, "0");
+        if (row.sharpness == null) sharpness = varianceOfLaplacian(img);
       } catch {
-        hex = null;
+        phash = row.phash == null ? "" : null;
+        sharpness = row.sharpness == null ? -1 : null;
       }
-      await updateMediaPhash(row.id, hex ?? "");
-      if (hex) hashed++;
+      if (phash !== null) await updateMediaPhash(row.id, phash);
+      if (sharpness !== null) await updateMediaSharpness(row.id, sharpness);
+      processed++;
     }
-    onProgress?.(hashed);
+    onProgress?.(processed);
   }
 }

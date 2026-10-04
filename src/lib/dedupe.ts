@@ -37,6 +37,9 @@ export async function findDuplicate(
   // v0.24: same pattern for the perceptual-hash backfill (NULL = never
   // hashed, '' = thumbnail undecodable).
   phash: string | null;
+  // v0.33: sharpness for the Highlights backfill (NULL = never measured,
+  // -1 = thumbnail undecodable).
+  sharpness: number | null;
 } | null> {
   const db = await getDb();
   return (
@@ -48,8 +51,9 @@ export async function findDuplicate(
       thumb_uri: string;
       ml_labels: string | null;
       phash: string | null;
+      sharpness: number | null;
     }>(
-      "SELECT id, state, taken_at, ocr_text, thumb_uri, ml_labels, phash FROM media WHERE fingerprint = ? LIMIT 1",
+      "SELECT id, state, taken_at, ocr_text, thumb_uri, ml_labels, phash, sharpness FROM media WHERE fingerprint = ? LIMIT 1",
       [fingerprint]
     ) ?? null
   );

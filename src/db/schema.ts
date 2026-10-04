@@ -204,6 +204,15 @@ CREATE TABLE IF NOT EXISTS saved_searches (
 );
 `;
 
+// v0.33 "Highlights": per-photo sharpness — variance of the Laplacian over
+// the 320px thumbnail (the Junk Sweeper's blur metric, flipped around to
+// surface the sharpest shots). Computed from the same thumbnail decode as the
+// pHash; -1 is the "tried, thumbnail undecodable" sentinel (variance can
+// never be negative), so backfills never retry forever.
+const SCHEMA_V16 = `
+ALTER TABLE media ADD COLUMN sharpness REAL;
+`;
+
 export interface Migration {
   version: number;
   up: string;
@@ -225,6 +234,7 @@ export const MIGRATIONS: Migration[] = [
   { version: 13, up: SCHEMA_V13 },
   { version: 14, up: SCHEMA_V14 },
   { version: 15, up: SCHEMA_V15 },
+  { version: 16, up: SCHEMA_V16 },
 ];
 
 export function migrationsAfter(version: number): Migration[] {

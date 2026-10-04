@@ -4,8 +4,8 @@ import { StatusBar } from "expo-status-bar";
 import { Image } from "expo-image";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
-import { countMissingPhash, MediaRow } from "../db/queries";
-import { DuplicateGroup, findDuplicateGroups, findSimilarTo, hashMissingPhotos } from "../lib/similar";
+import { countMissingAnalysis, MediaRow } from "../db/queries";
+import { DuplicateGroup, backfillAnalysis, findDuplicateGroups, findSimilarTo } from "../lib/similar";
 import { formatBytes } from "../lib/stats";
 import { theme } from "../theme";
 
@@ -34,9 +34,9 @@ export function SimilarScreen({
     cancelRef.current = { cancelled: false };
     void (async () => {
       try {
-        if ((await countMissingPhash()) > 0) {
+        if ((await countMissingAnalysis()) > 0) {
           setIndexing(0);
-          await hashMissingPhotos((hashed) => setIndexing(hashed), cancelRef.current);
+          await backfillAnalysis((processed) => setIndexing(processed), cancelRef.current);
         }
       } catch {}
       setIndexing(null);
@@ -54,7 +54,7 @@ export function SimilarScreen({
 
   const sub =
     indexing !== null
-      ? `Indexing your photos… ${indexing} hashed so far`
+      ? `Indexing your photos… ${indexing} done so far`
       : mode === "similar"
       ? "Photos that look like the one you opened"
       : groups !== null
@@ -77,7 +77,7 @@ export function SimilarScreen({
       {indexing !== null ? (
         <View style={styles.center}>
           <Text style={styles.centerText}>Indexing photos for visual search…</Text>
-          <Text style={styles.centerSub}>{indexing} hashed — this runs only once.</Text>
+          <Text style={styles.centerSub}>{indexing} done — this runs only once.</Text>
         </View>
       ) : mode === "similar" ? (
         similar === null ? (
