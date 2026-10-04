@@ -15,6 +15,7 @@ export interface StorageTotals {
 
 export interface MonthBucket {
   label: string;
+  ym: string; // "YYYY-MM" — lets screens disambiguate months across years
   count: number;
   bytes: number;
 }
@@ -89,11 +90,84 @@ export async function getMonthlyBuckets(monthsBack = 6): Promise<MonthBucket[]> 
     const row = byKey.get(key);
     buckets.push({
       label: d.toLocaleString(undefined, { month: "short" }),
+      ym: key,
       count: row?.count ?? 0,
       bytes: row?.bytes ?? 0,
     });
   }
   return buckets;
+}
+
+// --- v0.29 Storage deep-dive ---------------------------------------------------
+// Same "my library" universe as the dashboard: nothing in the Trash, no edited
+// copies, no shared-album claims.
+
+export interface LargeItem {
+  id: number;
+  thumb_uri: string;
+  file_name: string | null;
+  mime_type: string | null;
+  byte_size: number;
+}
+
+export async function getLargestItems(limit = 12): Promise<LargeItem[]> {
+  const db = await getDb();
+  return db.getAllAsync<LargeItem>(
+    `SELECT id, thumb_uri, file_name, mime_type, byte_size FROM media
+     WHERE visibility != 'trashed' AND edited_from IS NULL
+       AND NOT EXISTS (SELECT 1 FROM album_media am WHERE am.media_id = media.id)
+     ORDER BY byte_size DESC, id DESC
+     LIMIT ?`,
+    [limit]
+  );
+}
+
+export interface CategoryUsage {
+  key: "everything" | "screenshots" | "whatsapp" | "downloads" | "videos";
+  label: string;
+  count: number;
+  bytes: number;
+}
+
+// One aggregate pass. Categories overlap by design (a WhatsApp video counts
+// as both WhatsApp media and a video) — the screen presents them as
+// independent insights, not a partition.
+export async function getCategoryUsage(): Promise<CategoryUsage[]> {
+  const db = await getDb();
+  const row = await db.getFirstAsync<{
+    all_bytes: number;
+    all_count: number;
+    screenshot_bytes: number;
+    screenshot_count: number;
+    whatsapp_bytes: number;
+    whatsapp_count: number;
+    download_bytes: number;
+    download_count: number;
+    video_bytes: number;
+    video_count: number;
+  }>(`
+    SELECT
+      COALESCE(SUM(byte_size), 0) AS all_bytes,
+      COUNT(*) AS all_count,
+      COALESCE(SUM(CASE WHEN tags LIKE '%screenshot%' THEN byte_size ELSE 0 END), 0) AS screenshot_bytes,
+      COALESCE(SUM(CASE WHEN tags LIKE '%screenshot%' THEN 1 ELSE 0 END), 0) AS screenshot_count,
+      COALESCE(SUM(CASE WHEN tags LIKE '%whatsapp%' THEN byte_size ELSE 0 END), 0) AS whatsapp_bytes,
+      COALESCE(SUM(CASE WHEN tags LIKE '%whatsapp%' THEN 1 ELSE 0 END), 0) AS whatsapp_count,
+      COALESCE(SUM(CASE WHEN tags LIKE '%download%' THEN byte_size ELSE 0 END), 0) AS download_bytes,
+      COALESCE(SUM(CASE WHEN tags LIKE '%download%' THEN 1 ELSE 0 END), 0) AS download_count,
+      COALESCE(SUM(CASE WHEN mime_type LIKE 'video/%' THEN byte_size ELSE 0 END), 0) AS video_bytes,
+      COALESCE(SUM(CASE WHEN mime_type LIKE 'video/%' THEN 1 ELSE 0 END), 0) AS video_count
+    FROM media
+    WHERE visibility != 'trashed' AND edited_from IS NULL
+      AND NOT EXISTS (SELECT 1 FROM album_media am WHERE am.media_id = media.id)
+  `);
+  return [
+    { key: "everything", label: "Everything", count: row?.all_count ?? 0, bytes: row?.all_bytes ?? 0 },
+    { key: "screenshots", label: "Screenshots", count: row?.screenshot_count ?? 0, bytes: row?.screenshot_bytes ?? 0 },
+    { key: "whatsapp", label: "WhatsApp media", count: row?.whatsapp_count ?? 0, bytes: row?.whatsapp_bytes ?? 0 },
+    { key: "downloads", label: "Downloads", count: row?.download_count ?? 0, bytes: row?.download_bytes ?? 0 },
+    { key: "videos", label: "Videos", count: row?.video_count ?? 0, bytes: row?.video_bytes ?? 0 },
+  ];
 }
 
 export function formatBytes(bytes: number): string {

@@ -2,10 +2,13 @@ import React, { useEffect, useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { StatusBar } from "expo-status-bar";
 import { Image } from "expo-image";
+import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { FlashList } from "@shopify/flash-list";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { getAutoAlbums, AutoAlbum } from "../lib/albums";
+import { authenticateLocal, canUseBiometrics } from "../lib/biometrics";
+import { useSettingsStore } from "../store/settingsStore";
 import { theme } from "../theme";
 
 export function AlbumsScreen({
@@ -15,6 +18,16 @@ export function AlbumsScreen({
 }) {
   const insets = useSafeAreaInsets();
   const [albums, setAlbums] = useState<AutoAlbum[] | null>(null);
+  // v0.28 Album locks: per-album biometric gate. Locking needs the device to
+  // have enrolled biometrics (same requirement as the Hidden lock); removing
+  // a lock asks for biometrics so a peeker can't just switch it off.
+  const lockedKeys = useSettingsStore((s) => s.lockedAlbumKeys);
+  const setAlbumLocked = useSettingsStore((s) => s.setAlbumLocked);
+  const [bioReady, setBioReady] = useState(false);
+
+  useEffect(() => {
+    void canUseBiometrics().then(({ hardware, enrolled }) => setBioReady(hardware && enrolled));
+  }, []);
 
   useEffect(() => {
     const unsub = navigation.addListener("focus", () => {
@@ -24,6 +37,17 @@ export function AlbumsScreen({
     });
     return unsub;
   }, [navigation]);
+
+  const toggleLock = (album: AutoAlbum) => {
+    if (!bioReady) return;
+    if (lockedKeys.includes(album.key)) {
+      void authenticateLocal(`Remove the lock from "${album.label}"`).then((ok) => {
+        if (ok) setAlbumLocked(album.key, false);
+      });
+    } else {
+      setAlbumLocked(album.key, true);
+    }
+  };
 
   return (
     <View style={[styles.root, { paddingTop: insets.top }]}>
@@ -56,6 +80,17 @@ export function AlbumsScreen({
                 ) : (
                   <View style={[StyleSheet.absoluteFill, styles.coverPlaceholder]} />
                 )}
+                <Pressable
+                  style={[styles.lockBadge, !bioReady && styles.lockBadgeOff]}
+                  onPress={() => toggleLock(item)}
+                  hitSlop={8}
+                >
+                  <Ionicons
+                    name={lockedKeys.includes(item.key) ? "lock-closed" : "lock-open-outline"}
+                    size={15}
+                    color={lockedKeys.includes(item.key) ? theme.colors.primary : "#FFFFFFCC"}
+                  />
+                </Pressable>
               </View>
               <Text style={styles.cardLabel} numberOfLines={1}>
                 {item.label}
@@ -98,6 +133,15 @@ const styles = StyleSheet.create({
     overflow: "hidden",
     backgroundColor: theme.colors.surfaceHighest,
   },
+  lockBadge: {
+    position: "absolute",
+    top: 8,
+    right: 8,
+    padding: 6,
+    borderRadius: 999,
+    backgroundColor: "#00000099",
+  },
+  lockBadgeOff: { opacity: 0.35 },
   coverPlaceholder: { backgroundColor: theme.colors.surfaceHighest },
   cardLabel: {
     color: theme.colors.onSurface,

@@ -32,7 +32,7 @@ import { enableNotifications } from "../lib/notify";
 import { useAuthStore } from "../auth/authStore";
 import { theme } from "../theme";
 
-type SettingsNav = NativeStackNavigationProp<{ Migrate: undefined; JunkSweeper: undefined }>;
+type SettingsNav = NativeStackNavigationProp<{ Migrate: undefined; JunkSweeper: undefined; Storage: undefined }>;
 
 export function SettingsScreen() {
   const insets = useSafeAreaInsets();
@@ -436,6 +436,18 @@ export function SettingsScreen() {
                   </View>
                 ))}
               </View>
+              <Pressable
+                style={styles.row}
+                onPress={() => navigation.navigate("Storage")}
+                android_ripple={{ color: theme.colors.outlineVariant }}
+              >
+                <View style={styles.toggleText}>
+                  <Text style={styles.rowLabel}>What's using space</Text>
+                  <Text style={styles.rowSub}>
+                    Biggest items, size per month, and category bloat — screenshots, WhatsApp, videos.
+                  </Text>
+                </View>
+              </Pressable>
             </>
           )}
           {cardPreview ? (

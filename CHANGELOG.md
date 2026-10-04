@@ -4,6 +4,128 @@ Each entry below documents what a commit adds and what comes next. Newest first.
 
 ---
 
+## v0.27 / v0.28 / v0.29 — Smart albums + album locks + storage deep-dive (CODED — uncommitted, commit pending owner go-ahead)
+
+Three more owner-picked features, all pure JS (no native modules, no rebuild needed to verify).
+One additive migration (v15 `saved_searches` — album locks deliberately need NO schema). Same
+review protocol as v0.24–v0.26: **50/50 integration checks + 48/48 static checks + tsc clean.**
+
+### v0.27 — Smart albums (saved searches)
+- **Schema v15:** `saved_searches (id, name, query, created_at)`.
+- **One-tap save:** while a gallery search is active, the search row shows a 🔖 button — the
+  query itself becomes the name ("beach", "June 2026"). Saving the same query again just bumps
+  it to the top (no duplicates).
+- **Collections → "Smart albums"** (top card): pinned searches with the newest first; tapping
+  one opens the new **SavedSearch screen**, which re-runs the query through the normal
+  `runSearch` pipeline — text, tags, OCR, place, AI tags, your tags AND date queries like
+  "June 2026" — so the collection **auto-updates** as the library changes. Delete (🗑 in the
+  header) after a confirm; photos are never touched.
+- **Scope note (honest v1):** saved searches capture what the gallery search bar already
+  understands — a text query or a date query. Combined filter rules ("favorited food photos")
+  are the natural v2; the schema stores the query string, so that extends without migrating.
+
+### v0.28 — Album locks (biometric, per album)
+- **No schema by design:** locked album keys ("camera", "screenshots", "shared-3", …) live in
+  the settings store (MMKV, local-only). Works for auto-albums AND shared albums through their
+  stable route keys.
+- **Albums screen:** every album card gets a lock badge (top-right of the cover). Locking is
+  one tap; **removing a lock asks for biometrics**, so someone holding the unlocked phone can't
+  just switch it off. Badges are dimmed and inert when the device has no enrolled biometrics
+  (same requirement as the Hidden lock).
+- **Album screen gate:** a locked album loads NOTHING and shows a 🔒 placeholder until the
+  biometric check succeeds (Hidden's delayed-load pattern — data never renders behind the
+  gate). Cancel → back out. Same deliberate fail-open as Hidden (audit round 2): with no
+  enrolled biometric the gate opens, so the owner can never be locked out of their own content.
+- `biometrics.ts` gained the shared `authenticateLocal(prompt)`; `unlockHiddenAlbum` now
+  delegates to it (one copy of the fail-open rule).
+
+### v0.29 — Storage deep-dive ("What's using space")
+- **stats.ts:** `getLargestItems(limit)` and `getCategoryUsage()` — same "my library" universe
+  as the dashboard (no Trash, no edited copies, no shared-album claims); `MonthBucket` gained a
+  `ym` key so 12-month charts disambiguate months across years.
+- **New Storage screen** (Settings → Storage → "What's using space"): the 12 biggest items
+  (thumb + size, tap → Viewer), bytes-per-month bars for 12 months, and per-category rows —
+  screenshots, WhatsApp media, downloads, videos — with an explicit overlap note (a WhatsApp
+  video counts as both) and a Junk-Sweeper nudge when screenshots pile up.
+
+**Review (2026-10-05):** probe extended to the new code — v15 migrates on a populated v14 DB
+with rows intact; saved-search CRUD + dedupe + auto-update runs proven; lock-key logic proven
+idempotent/per-key in the real settings store; largest/category/month aggregations proven
+against exact seeded byte counts including the exclusion rules. Two initial test failures were
+reviewer-seed mistakes (hash constants accidentally 8 bits apart — the engine correctly
+clustered them; success-count semantics), fixed in the probe, not the app.
+
+**Verify on device (Metro alone):** search → 🔖 → Collections → Smart albums → open → results;
+delete via 🗑. Lock an album card → leave → reopen → biometric prompt → content; unlock-badge
+removal asks biometrics. Settings → Storage → What's using space → biggest items open in Viewer.
+
+---
+
+## v0.24 / v0.25 / v0.26 — Find similar + manual tags + slideshow (CODED — uncommitted, commit pending owner go-ahead)
+
+Three owner-picked features, all pure JS (no new native modules, no rebuild needed to verify —
+Metro alone is enough once the pending combined rebuild lands). Schema gains TWO additive
+migrations (v13 phash, v14 user_tags).
+
+**2026-10-05 adversarial review (owner: "actually test and question the codebase"):** the whole
+v0.24 data layer was executed in Node against a real SQLite via a stub harness (real migrations,
+real queries.ts, real similar.ts, real pHash math on synthetic JPEGs) — 29/29 checks green —
+plus 46 static checks (icon glyph names, expo-video/StatusBar APIs, theme tokens, tag
+normalizer edge cases) and tsc. The review caught one SHIPPED bug (below) and one real edge
+(a cloud-only video would stall the slideshow's auto-advance forever — now falls back to the
+timer; a video with no local file still needs a manual skip).
+
+### CRITICAL fix (found by the review): pHash64 has been broken since v0.12
+`precomputeDct` built only the 8×8 cell basis while both transform loops in `pHash64` iterate
+all 32 frequencies — the very first call threw, silently swallowed by the junk sweep's per-item
+catch. Net effect: **the Junk Sweeper's near-duplicate category could never produce findings**
+(blur/pocket were unaffected — they don't touch the DCT), and v0.24's hashing would have been
+silently dead on device. Fixed: `precomputeDct` now builds the full 32-row basis. After this
+lands, a junk sweep will finally fill in near-duplicate findings, and v0.24 hashing works.
+
+### v0.24 — "Find similar" / visual duplicate finder
+- **Storage:** schema v13 `media.phash` (64-bit pHash of the 320px thumbnail, 16-char hex;
+  `''` = thumbnail undecodable, never retried). The scanner now hashes every PHOTO at scan time
+  (always-on — hashing a thumb is a few ms; videos skip) and backfills never-hashed rows on
+  rescan, mirroring the OCR/labels pattern.
+- **Engine (`src/lib/similar.ts`, new):** `findSimilarTo(mediaId)` ranks all hashed photos by
+  Hamming distance (≤10 — looser than the junk sweep's 8, and cross-day; hashing the anchor
+  on demand if needed); `findDuplicateGroups()` clusters same-day near-duplicates with the junk
+  sweeper's union-find (leader = largest file); `hashMissingPhotos()` = one-time chunked
+  indexing pass for the existing library (resumable, per-thumb try/catch, cancel on unmount).
+- **UI:** new **Similar screen** — Viewer's "Similar" chip (photos only) shows a 3-column grid
+  of visually close photos; Collections → **"Find duplicates"** lists same-day groups (largest
+  first, with sizes) — tap any thumb to open in the Viewer. Both modes auto-run the one-time
+  indexing first with visible progress. Read-only by design: what to DO with a duplicate stays
+  with the owner (junk sweep / trash).
+
+### v0.25 — Manual tags ("My tags")
+- Schema v14 `media.user_tags` (comma-separated as typed; local-only, never synced).
+- Viewer info sheet: new **"My tags"** row under Note — tap to open a tag editor (same dialog
+  shape as the note editor; comma-separated, each tag ≤50 chars, Remove button clears). The ML
+  row was renamed **"AI tags"** so machine and human tags are unmistakable.
+- `searchMediaRaw` gained `OR user_tags LIKE ?` — search "kashmir" or "mom" finds them like
+  every other field (6 bound params).
+
+### v0.26 — Slideshow ("Play")
+- New **Slideshow screen**: the Viewer's "Play" chip plays the exact list you're browsing
+  (a day, month, album, favorites, search results…) full-screen with auto-advance (4 s),
+  Ken Burns zoom + drift and crossfade on photos, and real video playback that advances on
+  playback end. Loops until closed. Controls (close / prev / pause / next + date + counter)
+  auto-hide after 3.5 s; with controls hidden, tap left/center/right = prev/show/next; with
+  controls up, taps reach the video's own seek controls. Android back closes. The lighter
+  Memories "Story" viewer is untouched.
+
+**Verify on device (Metro alone suffices — but only AFTER the pending combined gradle rebuild
+is installed, since that rebuild also flips schema v12→v14 in one go):**
+- Open a burst-heavy day in the Viewer → "Similar" chip → near-duplicates appear; Collections →
+  "Find duplicates" → first open indexes the library once (progress shown), then groups list;
+  tap a group member → Viewer. Search a tag you set via "My tags" → the photo comes up.
+  Viewer → "Play" on a day with videos → photos advance every 4 s, videos play out, pause works,
+  loops until closed. Toggle nothing — all three features have no settings on purpose.
+
+---
+
 ## v0.23 — Vibe search v1: on-device ML smart tags (COMMITTED in this commit)
 
 **Added in this commit:**

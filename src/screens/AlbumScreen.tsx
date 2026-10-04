@@ -7,6 +7,8 @@ import { FlashList } from "@shopify/flash-list";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { getAlbumMedia } from "../lib/albums";
 import { resolveSenderNames } from "../lib/chats";
+import { authenticateLocal } from "../lib/biometrics";
+import { useSettingsStore } from "../store/settingsStore";
 import { fetchProfile } from "../lib/tdlib";
 import {
   getSharedAlbum,
@@ -68,7 +70,24 @@ export function AlbumScreen({
   const [senderNames, setSenderNames] = useState<Map<string, string>>(new Map());
   const [ownUserId, setOwnUserId] = useState<string | null>(null);
 
+  // v0.28 Album locks: a locked album shows nothing and loads nothing until
+  // the biometric check succeeds (same fail-open semantics as Hidden — with
+  // no enrolled biometric the gate opens, so the owner can never be locked
+  // out of their own content).
+  const lockedKeys = useSettingsStore((s) => s.lockedAlbumKeys);
+  const needsUnlock = lockedKeys.includes(key);
+  const [unlocked, setUnlocked] = useState(false);
+
   useEffect(() => {
+    if (!needsUnlock || unlocked) return;
+    void authenticateLocal(`Unlock "${label}"`).then((ok) => {
+      if (ok) setUnlocked(true);
+      else navigation.goBack();
+    });
+  }, [needsUnlock, unlocked, key, label, navigation]);
+
+  useEffect(() => {
+    if (needsUnlock && !unlocked) return;
     if (sharedAlbumId === undefined) {
       void getAlbumMedia(key)
         .then(setRows)
@@ -89,7 +108,7 @@ export function AlbumScreen({
         setTopics([]);
       })
       .finally(() => setLoaded(true));
-  }, [key, sharedAlbumId, activeTopic]);
+  }, [key, sharedAlbumId, activeTopic, needsUnlock, unlocked]);
 
   // Shared albums: load the "show in my timeline" choice and the album's total
   // item count (the All chip's label must not follow the active topic filter).
@@ -214,6 +233,19 @@ export function AlbumScreen({
     [navigation, rows]
   );
 
+  if (needsUnlock && !unlocked) {
+    return (
+      <View style={[styles.root, styles.lockedRoot, { paddingTop: insets.top }]}>
+        <StatusBar style="light" />
+        <Text style={styles.lockIcon}>🔒</Text>
+        <Text style={styles.lockTitle}>{label}</Text>
+        <Text style={styles.lockBody}>
+          Unlock with your fingerprint or face to open this album.
+        </Text>
+      </View>
+    );
+  }
+
   return (
     <View style={[styles.root, { paddingTop: insets.top }]}>
       <StatusBar style="light" />
@@ -314,6 +346,11 @@ export function AlbumScreen({
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: theme.colors.background },
+  // v0.28 locked-album placeholder (Hidden's pattern).
+  lockedRoot: { alignItems: "center", justifyContent: "center", paddingHorizontal: theme.spacing.xl },
+  lockIcon: { fontSize: 40, marginBottom: theme.spacing.md },
+  lockTitle: { color: theme.colors.onSurface, fontSize: 22, fontWeight: "700", marginBottom: theme.spacing.sm },
+  lockBody: { color: theme.colors.onSurfaceVariant, fontSize: 13.5, textAlign: "center" },
   header: {
     flexDirection: "row",
     alignItems: "center",

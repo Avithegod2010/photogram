@@ -95,7 +95,9 @@ const PHASH_CELLS = 8;
 
 function precomputeDct(n: number): Float64Array[] {
   const table: Float64Array[] = [];
-  for (let u = 0; u < PHASH_CELLS; u++) {
+  // Full n-row basis: BOTH transform loops in pHash64 iterate PHASH_SIZE
+  // frequencies, so every row must exist (a cell-size table throws there).
+  for (let u = 0; u < n; u++) {
     const row = new Float64Array(n);
     for (let x = 0; x < n; x++) {
       row[x] = Math.cos(((2 * x + 1) * u * Math.PI) / (2 * n));

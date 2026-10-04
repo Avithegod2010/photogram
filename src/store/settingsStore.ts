@@ -21,6 +21,9 @@ interface SettingsState {
   // v0.23 Vibe search: opt-in on-device image labeling at scan time. Labels
   // live in media.ml_labels and only power search — nothing leaves the phone.
   smartTagsEnabled: boolean;
+  // v0.28 Album locks: album route keys ("camera", "shared-3", …) that demand
+  // a biometric check before AlbumScreen shows any content. Local-only.
+  lockedAlbumKeys: string[];
   // F2 Junk Sweeper: opt-in. When on, a weekly in-app sweep analyzes thumbnails
   // and suggests junk in the review screen; nothing is ever auto-deleted.
   junkSweeperEnabled: boolean;
@@ -51,6 +54,7 @@ interface SettingsState {
   setSharedTimelineMaster: (v: boolean) => void;
   setOcrSearchEnabled: (v: boolean) => void;
   setSmartTagsEnabled: (v: boolean) => void;
+  setAlbumLocked: (key: string, locked: boolean) => void;
   setAutoBackupEnabled: (v: boolean) => void;
   setAutoBackupFolders: (v: string[]) => void;
   setMigrationBannerShown: (v: boolean) => void;
@@ -75,6 +79,7 @@ export const useSettingsStore = create<SettingsState>()(
       sharedTimelineMaster: false,
       ocrSearchEnabled: false,
       smartTagsEnabled: false,
+      lockedAlbumKeys: [],
       junkSweeperEnabled: false,
       autoBackupEnabled: false,
       autoBackupFolders: [],
@@ -94,6 +99,14 @@ export const useSettingsStore = create<SettingsState>()(
       setSharedTimelineMaster: (v) => set({ sharedTimelineMaster: v }),
       setOcrSearchEnabled: (v) => set({ ocrSearchEnabled: v }),
       setSmartTagsEnabled: (v) => set({ smartTagsEnabled: v }),
+      setAlbumLocked: (key, locked) =>
+        set((s) => ({
+          lockedAlbumKeys: locked
+            ? s.lockedAlbumKeys.includes(key)
+              ? s.lockedAlbumKeys
+              : [...s.lockedAlbumKeys, key]
+            : s.lockedAlbumKeys.filter((k) => k !== key),
+        })),
       setAutoBackupEnabled: (v) => set({ autoBackupEnabled: v }),
       setAutoBackupFolders: (v) => set({ autoBackupFolders: v }),
       setMigrationBannerShown: (v) => set({ migrationBannerShown: v }),

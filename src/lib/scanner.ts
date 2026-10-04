@@ -4,9 +4,10 @@ import * as VideoThumbnails from "expo-video-thumbnails";
 import { File, Paths } from "expo-file-system";
 import type * as TextRecognitionModule from "@react-native-ml-kit/text-recognition";
 import type * as ImageLabelingModule from "@react-native-ml-kit/image-labeling";
-import { findMediaIdByMediaLibraryId, getMediaByIds, insertMedia, updateMediaLibraryId, backfillTakenAt, updateOcrText, updateMediaLabels, setMediaState, setMediaPlace } from "../db/queries";
+import { findMediaIdByMediaLibraryId, getMediaByIds, insertMedia, updateMediaLibraryId, backfillTakenAt, updateOcrText, updateMediaLabels, updateMediaPhash, setMediaState, setMediaPlace } from "../db/queries";
 import { nearestCity } from "./places";
 import { findDuplicate, quickFingerprint } from "./dedupe";
+import { decodeThumbToGray, pHash64 } from "./imageAnalysis";
 import { useSettingsStore } from "../store/settingsStore";
 
 export interface ScanProgress {
@@ -162,6 +163,18 @@ async function labelImage(uri: string): Promise<string | null> {
   }
 }
 
+// v0.24 "Find similar": 64-bit pHash of the thumbnail, stored as 16-char hex.
+// Always-on (no opt-in — hashing a 320px thumb is a few ms), photos only.
+// Null = thumbnail missing/undecodable; the row stays NULL and the duplicate
+// finder's backfill (or a later rescan) retries it.
+async function hashThumb(uri: string): Promise<string | null> {
+  try {
+    return pHash64(await decodeThumbToGray(uri)).toString(16).padStart(16, "0");
+  } catch {
+    return null;
+  }
+}
+
 async function hasOnlySelectedAccess(): Promise<boolean> {
   try {
     const perm = await MediaLibrary.getPermissionsAsync();
@@ -244,6 +257,7 @@ export async function scanDeviceLibrary(
                 ocr_text: null,
                 thumb_uri: row.thumb_uri,
                 ml_labels: row.ml_labels ?? null,
+                phash: row.phash ?? null,
               };
             }
           }
@@ -265,6 +279,11 @@ export async function scanDeviceLibrary(
           if (smartTagsOn && !isVideo && (existing.ml_labels ?? null) === null) {
             const labels = await labelImage(existing.thumb_uri);
             if (labels) await updateMediaLabels(existing.id, labels);
+          }
+          // v0.24 phash backfill for never-hashed rows (photos only).
+          if (!isVideo && (existing.phash ?? null) === null) {
+            const phash = await hashThumb(existing.thumb_uri);
+            if (phash) await updateMediaPhash(existing.id, phash);
           }
           // v0.21 place backfill: rows carrying GPS (mirrors the OCR backfill
           // pattern; the dataset is static so recompute is idempotent).
@@ -308,6 +327,12 @@ export async function scanDeviceLibrary(
           if (smartTagsOn && !isVideo) {
             const labels = await labelImage(thumbUri);
             if (labels) await updateMediaLabels(inserted, labels);
+          }
+          // v0.24: persist the perceptual hash for "Find similar" (photos
+          // only, always-on).
+          if (!isVideo) {
+            const phash = await hashThumb(thumbUri);
+            if (phash) await updateMediaPhash(inserted, phash);
           }
           // v0.21: offline nearest-city place name for GPS-tagged items.
           if (location?.latitude != null && location?.longitude != null) {

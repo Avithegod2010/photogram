@@ -17,7 +17,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
-import { pageVisibleMedia, getRandomMedia, setMediaFavorite, setMediaVisibility, getTimelineRange, MediaRow } from "../db/queries";
+import { pageVisibleMedia, getRandomMedia, setMediaFavorite, setMediaVisibility, getTimelineRange, saveSearch, MediaRow } from "../db/queries";
 import { getBackupHeartbeat, BackupHeartbeat } from "../lib/stats";
 import { formatBytes } from "../lib/stats";
 import { runSearch } from "../lib/search";
@@ -655,6 +655,24 @@ export function GalleryScreen() {
               placeholderTextColor={theme.colors.onSurfaceVariant + "88"}
               style={styles.searchInput}
             />
+            {searching ? (
+              <Pressable
+                hitSlop={8}
+                onPress={() => {
+                  const q = query.trim();
+                  void saveSearch(q)
+                    .then(() =>
+                      Alert.alert(
+                        "Search saved",
+                        'Find it in Collections → "Smart albums" — it updates automatically.'
+                      )
+                    )
+                    .catch(() => {});
+                }}
+              >
+                <Text style={styles.searchCancel}>🔖</Text>
+              </Pressable>
+            ) : null}
             <Pressable
               onPress={() => {
                 setSearchOpen(false);

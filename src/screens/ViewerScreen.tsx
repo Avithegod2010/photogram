@@ -17,7 +17,7 @@ import { Image } from "expo-image";
 import { useVideoPlayer, VideoView } from "expo-video";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
-import { getMediaByIds, setMediaVisibility, setMediaFavorite, isSharedAlbumMedia, listVersionsFor, listSharedAlbums, SharedAlbumRow, MediaRow } from "../db/queries";
+import { getMediaByIds, setMediaVisibility, setMediaFavorite, isSharedAlbumMedia, listVersionsFor, listSharedAlbums, updateMediaUserTags, SharedAlbumRow, MediaRow } from "../db/queries";
 import { enqueueForUpload } from "../lib/uploader";
 import { saveViewerNote, syncPendingNotes } from "../lib/notes";
 import { sendToAlbum } from "../lib/sendToAlbum";
@@ -151,6 +151,23 @@ export function ViewerScreen({ route, navigation }: any) {
     }
   }, []);
 
+  // v0.25 manual tags: the owner's own words on any photo (local-only,
+  // searchable like every other field).
+  const [tagEditorOpen, setTagEditorOpen] = useState(false);
+  const openTagEditor = useCallback(() => {
+    if (!current) return;
+    setTagEditorOpen(true);
+  }, [current]);
+  const saveTags = useCallback(
+    async (raw: string | null) => {
+      if (!current) return;
+      setTagEditorOpen(false);
+      await updateMediaUserTags(current.id, raw === null ? null : normalizeUserTags(raw));
+      await refreshRow(current.id);
+    },
+    [current, refreshRow]
+  );
+
   // Local-first save; the Telegram caption push happens here when the row is
   // already synced, or later via the boot/open triggers (offline-safe).
   const saveNote = useCallback(
@@ -258,12 +275,29 @@ export function ViewerScreen({ route, navigation }: any) {
       <View style={[styles.actionsBar, { paddingBottom: insets.bottom + 12 }]}>
         <ActionChip label="Share" icon="share-social-outline" onPress={() => void shareCurrent()} />
         <ActionChip
+          label="Play"
+          icon="play-outline"
+          disabled={!current || rows.length === 0}
+          onPress={() => {
+            if (!current) return;
+            const i = rows.findIndex((r) => r.id === current.id);
+            navigation.navigate("Slideshow", { ids: rows.map((r) => r.id), index: Math.max(0, i) });
+          }}
+        />
+        <ActionChip
           label={current?.is_favorite ? "Favorited" : "Favorite"}
           icon={current?.is_favorite ? "heart" : "heart-outline"}
           danger={!!current?.is_favorite}
           disabled={!current}
           onPress={() => void favoriteCurrent()}
         />
+        {current && current.mime_type.startsWith("image/") ? (
+          <ActionChip
+            label="Similar"
+            icon="copy-outline"
+            onPress={() => navigation.navigate("Similar", { mode: "similar", mediaId: current.id })}
+          />
+        ) : null}
         {current && !current.local_uri && hasRemoteCopy(current) ? (
           <ActionChip
             label={savingId === current.id ? "Saving…" : "Save to device"}
@@ -350,6 +384,9 @@ export function ViewerScreen({ route, navigation }: any) {
                     }
                   />
                 </Pressable>
+                <Pressable onPress={openTagEditor}>
+                  <MetaRow k="My tags" v={current.user_tags || "None — tap to add"} />
+                </Pressable>
                 {versions.length > 0 ? (
                   <Pressable
                     onPress={() =>
@@ -363,7 +400,7 @@ export function ViewerScreen({ route, navigation }: any) {
                   </Pressable>
                 ) : null}
                 {current.place_name ? <MetaRow k="Place" v={current.place_name} /> : null}
-                {current.ml_labels ? <MetaRow k="Tags" v={current.ml_labels} /> : null}
+                {current.ml_labels ? <MetaRow k="AI tags" v={current.ml_labels} /> : null}
               </>
             ) : null}
           </Pressable>
@@ -375,6 +412,13 @@ export function ViewerScreen({ route, navigation }: any) {
         initialText={current?.note_text ?? ""}
         onClose={() => setNoteEditorOpen(false)}
         onSave={(text) => void saveNote(text, false)}
+      />
+
+      <TagEditorModal
+        visible={tagEditorOpen}
+        initialText={current?.user_tags ?? ""}
+        onClose={() => setTagEditorOpen(false)}
+        onSave={(text) => void saveTags(text)}
       />
 
       <Modal visible={sendPickerOpen} transparent animationType="fade" onRequestClose={() => setSendPickerOpen(false)}>
@@ -557,6 +601,79 @@ function NoteEditorModal({
             placeholderTextColor={theme.colors.onSurfaceVariant + "88"}
           />
           <Text style={noteStyles.counter}>{draft.length}/1000</Text>
+          <View style={noteStyles.buttons}>
+            {initialText ? (
+              <Pressable style={noteStyles.btn} onPress={() => onSave(null)}>
+                <Text style={[noteStyles.btnText, { color: theme.colors.error }]}>Remove</Text>
+              </Pressable>
+            ) : null}
+            <Pressable style={noteStyles.btn} onPress={onClose}>
+              <Text style={noteStyles.btnText}>Cancel</Text>
+            </Pressable>
+            <Pressable
+              style={[noteStyles.btn, noteStyles.btnPrimary]}
+              onPress={() => {
+                const trimmed = draft.trim();
+                onSave(trimmed.length > 0 ? trimmed : null);
+              }}
+            >
+              <Text style={[noteStyles.btnText, noteStyles.btnPrimaryText]}>Save</Text>
+            </Pressable>
+          </View>
+        </Pressable>
+      </Pressable>
+    </Modal>
+  );
+}
+
+// v0.25 manual tags: comma-separated input → trimmed tags (each capped at 50
+// chars), ", "-joined for storage/display. Null = no tags (clears).
+function normalizeUserTags(raw: string): string | null {
+  const tags = raw
+    .split(",")
+    .map((t) => t.trim().slice(0, 50))
+    .filter((t) => t.length > 0);
+  return tags.length > 0 ? tags.join(", ") : null;
+}
+
+// Same dialog shape as NoteEditorModal (shares noteStyles) — but tags are
+// purely local state, unlike notes which sync to Telegram captions.
+function TagEditorModal({
+  visible,
+  initialText,
+  onSave,
+  onClose,
+}: {
+  visible: boolean;
+  initialText: string;
+  onSave: (text: string | null) => void;
+  onClose: () => void;
+}) {
+  const [draft, setDraft] = useState(initialText);
+  useEffect(() => {
+    if (visible) setDraft(initialText);
+  }, [visible, initialText]);
+
+  return (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+      <Pressable style={noteStyles.backdrop} onPress={onClose}>
+        <Pressable style={noteStyles.card} onPress={(e) => e.stopPropagation()}>
+          <Text style={noteStyles.title}>My tags</Text>
+          <Text style={noteStyles.hint}>
+            Your own words, comma-separated — searchable like everything else. Stays on this phone.
+          </Text>
+          <TextInput
+            style={noteStyles.input}
+            value={draft}
+            onChangeText={setDraft}
+            multiline
+            maxLength={400}
+            autoFocus
+            textAlignVertical="top"
+            placeholder="mom, Kashmir trip 2024, best food"
+            placeholderTextColor={theme.colors.onSurfaceVariant + "88"}
+          />
+          <Text style={noteStyles.counter}>{draft.length}/400</Text>
           <View style={noteStyles.buttons}>
             {initialText ? (
               <Pressable style={noteStyles.btn} onPress={() => onSave(null)}>

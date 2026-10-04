@@ -16,6 +16,10 @@ import { FavoritesScreen } from "../screens/FavoritesScreen";
 import { WrappedScreen } from "../screens/WrappedScreen";
 import { EditScreen } from "../screens/EditScreen";
 import { JunkSweeperScreen } from "../screens/JunkSweeperScreen";
+import { SimilarScreen } from "../screens/SimilarScreen";
+import { SlideshowScreen } from "../screens/SlideshowScreen";
+import { SavedSearchScreen } from "../screens/SavedSearchScreen";
+import { StorageScreen } from "../screens/StorageScreen";
 
 export type RootStackParamList = {
   Tabs: undefined;
@@ -34,6 +38,10 @@ export type RootStackParamList = {
   Wrapped: undefined;
   Edit: { mediaId: number };
   JunkSweeper: undefined;
+  Similar: { mode?: "similar" | "groups"; mediaId?: number };
+  Slideshow: { ids: number[]; index: number };
+  SavedSearch: { id: number };
+  Storage: undefined;
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -65,6 +73,14 @@ export function RootNavigator() {
       <Stack.Screen name="Wrapped" component={WrappedScreen} />
       <Stack.Screen name="Edit" component={EditScreen} />
       <Stack.Screen name="JunkSweeper" component={JunkSweeperScreen} />
+      <Stack.Screen name="Similar" component={SimilarScreen} />
+      <Stack.Screen name="SavedSearch" component={SavedSearchScreen} />
+      <Stack.Screen name="Storage" component={StorageScreen} />
+      <Stack.Screen
+        name="Slideshow"
+        component={SlideshowScreen}
+        options={{ animation: "fade", presentation: "fullScreenModal" }}
+      />
     </Stack.Navigator>
   );
 }

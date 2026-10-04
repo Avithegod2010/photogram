@@ -34,6 +34,11 @@ export interface MediaRow {
   place_name?: string | null;
   // v0.23 vibe search (schema v12): on-device ML labels, lowercased + space-joined.
   ml_labels?: string | null;
+  // v0.24 similar search (schema v13): 64-bit pHash of the thumb as 16-char
+  // hex; '' = tried but the thumbnail was undecodable.
+  phash?: string | null;
+  // v0.25 manual tags (schema v14): the owner's own comma-separated tags.
+  user_tags?: string | null;
 }
 
 export interface NewMediaInput {
@@ -133,6 +138,27 @@ export async function updateMediaLabels(id: number, labels: string): Promise<voi
   const db = await getDb();
   await db.runAsync("UPDATE media SET ml_labels = ?, updated_at = ? WHERE id = ?", [
     labels,
+    Date.now(),
+    id,
+  ]);
+}
+
+// v0.24 similar search: persist the photo's perceptual hash (16-char hex, or
+// '' as the known-unhashable sentinel so backfills never retry it forever).
+export async function updateMediaPhash(id: number, phash: string): Promise<void> {
+  const db = await getDb();
+  await db.runAsync("UPDATE media SET phash = ?, updated_at = ? WHERE id = ?", [
+    phash,
+    Date.now(),
+    id,
+  ]);
+}
+
+// v0.25 manual tags: the owner's own comma-separated words. Null clears.
+export async function updateMediaUserTags(id: number, tags: string | null): Promise<void> {
+  const db = await getDb();
+  await db.runAsync("UPDATE media SET user_tags = ?, updated_at = ? WHERE id = ?", [
+    tags,
     Date.now(),
     id,
   ]);
@@ -859,11 +885,11 @@ export async function searchMediaRaw(query: string, limit = 300): Promise<MediaR
   return db.getAllAsync<MediaRow>(
     `SELECT * FROM media
      WHERE visibility = 'visible'
-       AND (file_name LIKE ? OR tags LIKE ? OR ocr_text LIKE ? OR place_name LIKE ? OR ml_labels LIKE ?)
+       AND (file_name LIKE ? OR tags LIKE ? OR ocr_text LIKE ? OR place_name LIKE ? OR ml_labels LIKE ? OR user_tags LIKE ?)
        AND edited_from IS NULL
      ${EXCLUDE_ALL_SHARED}
      ORDER BY taken_at DESC LIMIT ?`,
-    [like, like, like, like, like, limit]
+    [like, like, like, like, like, like, limit]
   );
 }
 
@@ -877,6 +903,111 @@ export async function searchByDateRange(fromMs: number, toMs: number): Promise<M
      ORDER BY taken_at DESC`,
     [fromMs, toMs]
   );
+}
+
+// --- v0.24 "Find similar" / duplicates ----------------------------------------
+// Same media universe as the junk sweep (not trashed, not shared-album, no
+// edited copies); similarity itself is computed in JS over Hamming distance.
+
+export interface PhashRow {
+  id: number;
+  taken_at: number;
+  byte_size: number;
+  phash: string;
+}
+
+export async function listPhashRows(excludeId: number): Promise<PhashRow[]> {
+  const db = await getDb();
+  return db.getAllAsync<PhashRow>(
+    `SELECT id, taken_at, byte_size, phash FROM media
+     WHERE phash IS NOT NULL AND phash != ''
+       AND visibility != 'trashed' AND edited_from IS NULL
+       AND id != ?
+     ${EXCLUDE_ALL_SHARED}`,
+    [excludeId]
+  );
+}
+
+export interface MissingPhashRow {
+  id: number;
+  thumb_uri: string;
+}
+
+export async function countMissingPhash(): Promise<number> {
+  const db = await getDb();
+  const row = await db.getFirstAsync<{ n: number }>(
+    `SELECT COUNT(*) AS n FROM media
+     WHERE phash IS NULL AND mime_type LIKE 'image/%'
+       AND visibility != 'trashed' AND edited_from IS NULL
+     ${EXCLUDE_ALL_SHARED}`
+  );
+  return row?.n ?? 0;
+}
+
+export async function listMissingPhash(afterId: number, limit: number): Promise<MissingPhashRow[]> {
+  const db = await getDb();
+  return db.getAllAsync<MissingPhashRow>(
+    `SELECT id, thumb_uri FROM media
+     WHERE phash IS NULL AND mime_type LIKE 'image/%'
+       AND visibility != 'trashed' AND edited_from IS NULL
+       AND id > ?
+     ORDER BY id
+     LIMIT ?`,
+    [afterId, limit]
+  );
+}
+
+// --- v0.27 Smart albums (saved searches) --------------------------------------
+
+export interface SavedSearchRow {
+  id: number;
+  name: string;
+  query: string;
+  created_at: number;
+}
+
+// One tap from the gallery search row: the query itself becomes the name.
+// Saving the same query again just bumps it to the top — no duplicates.
+export async function saveSearch(query: string): Promise<void> {
+  const db = await getDb();
+  const existing = await db.getFirstAsync<{ id: number }>(
+    "SELECT id FROM saved_searches WHERE query = ?",
+    [query]
+  );
+  if (existing) {
+    await db.runAsync("UPDATE saved_searches SET created_at = ? WHERE id = ?", [
+      Date.now(),
+      existing.id,
+    ]);
+    return;
+  }
+  await db.runAsync("INSERT INTO saved_searches (name, query, created_at) VALUES (?, ?, ?)", [
+    query,
+    query,
+    Date.now(),
+  ]);
+}
+
+export async function listSavedSearches(): Promise<SavedSearchRow[]> {
+  const db = await getDb();
+  return db.getAllAsync<SavedSearchRow>(
+    "SELECT id, name, query, created_at FROM saved_searches ORDER BY created_at DESC"
+  );
+}
+
+export async function getSavedSearch(id: number): Promise<SavedSearchRow | null> {
+  const db = await getDb();
+  return (
+    (await db.getFirstAsync<SavedSearchRow>(
+      "SELECT id, name, query, created_at FROM saved_searches WHERE id = ?",
+      [id]
+    )) ?? null
+  );
+}
+
+export async function deleteSavedSearch(id: number): Promise<void> {
+  const db = await getDb();
+  await db.runAsync("DELETE FROM saved_searches WHERE id = ?", [id]);
 }
 
 // --- F2 Junk Sweeper ---------------------------------------------------------

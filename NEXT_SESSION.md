@@ -14,27 +14,65 @@ import from the v0.11.2 handoff) + `387756d` v0.12.1–v0.17 + `2ea7a67`/`3207e4
 Working tree clean, tsc clean. Owner picked MIT. History was fully REWRITTEN before going public: all commit identities → 258314859+Avithegod2010@users.noreply.github.com (repo git config set to it — future commits safe), and the personal traces (Saved-Messages chat/message ids, device serial, LAN IPs, real name) were scrubbed from all commits; doc hash refs updated post-rewrite. Scrub gap (external audit, re-measured round 2): the test-group supergroup id survived the rewrite (19 commits); the Saved-Messages chat/message ids were verified absent from all commits. A group id is not a credential (known to every member); redacted at the tip and treated as accepted residue, not worth another force-push. GitHub-side caveats: pre-rewrite commit objects may linger by SHA until GitHub GCs (repo was private the whole time, so they were never crawled); dependabot PR #1 closed. allowBackup=false lands in APK at next gradle rebuild.**
 
 ### FIRST ACTIONS for the next session
-1. **v0.23 DONE (2026-10-04):** vibe search v1 — ML Kit image-labeling smart tags
+1. **v0.24–v0.29 CODED, UNCOMMITTED (2026-10-04/05):** SIX features in two batches, all pure JS,
+   tsc clean, NO new native modules (verify via Metro alone). **Batch 1 (v0.24–26):** schema v13
+   `media.phash` (pHash hex, '' sentinel) + scanner hashing + NEW `src/lib/similar.ts` +
+   SimilarScreen (Viewer "Similar" chip + Collections "Find duplicates") | schema v14
+   `media.user_tags` + Viewer "My tags" editor (ML row renamed "AI tags", searchMediaRaw 6th
+   param) | NEW SlideshowScreen (Viewer "Play" chip). **Batch 2 (v0.27–29):** schema v15
+   `saved_searches` + one-tap 🔖 save in the gallery search row + Collections "Smart albums"
+   card + NEW SavedSearchScreen (auto-updating via runSearch) | album locks = MMKV
+   `lockedAlbumKeys` (NO schema; auto + shared albums via route keys; lock badge on album
+   cards, removing a lock asks biometrics; AlbumScreen gates loading + shows 🔒 placeholder;
+   `biometrics.authenticateLocal(prompt)` shared fail-open) | stats.ts `getLargestItems` +
+   `getCategoryUsage` (+ MonthBucket.ym) + NEW StorageScreen ("What's using space": biggest 12,
+   12-month byte bars, category bloat) + Settings row.
+   **Suggested commits (6):** "v0.24: find similar + visual duplicate finder (persisted pHash)" /
+   "v0.25: manual tags — My tags editor, searchable" / "v0.26: slideshow — Play any ids list" /
+   "v0.27: smart albums — saved searches that auto-update" / "v0.28: per-album biometric locks" /
+   "v0.29: storage deep-dive screen".
+   **REVIEWED 2026-10-05 (owner: "actually test and question it"):** executable Node probe runs
+   the REAL stack (migrations v1→v15 via node:sqlite stub of expo-sqlite, real queries.ts +
+   similar.ts + stats.ts + search.ts + settingsStore + pHash on synthetic JPEGs) — 50/50 green;
+   48/48 static checks (Ionicons glyphs, expo-video playToEnd typing, StatusBar hidden, theme
+   tokens, normalizeUserTags edge cases); tsc 0. **FOUND + FIXED a shipped bug: `pHash64` threw
+   on every call since v0.12** (precomputeDct built 8 DCT rows, loops iterate 32) — junk-sweep
+   near-dup category was silently dead, v0.24 hashing would have been too; fix rides in the
+   v0.24 commit. Also fixed: cloud-only video no longer stalls slideshow auto-advance (timer
+   fallback). Probe harness kept at `.expo/review-probe/` (gitignored; re-run: esbuild bundle
+   cmd in tooling-traps memory, then `node .expo/review-probe/probe.cjs` +
+   `node .expo/review-probe/static-checks.cjs`).
+   **REVIEWED 2026-10-05 (owner: "actually test and question it"):** executable Node probe ran
+   the REAL stack (migrations v1→v14 via node:sqlite stub of expo-sqlite, real queries.ts +
+   similar.ts + pHash on synthetic JPEGs) — 29/29 green; 46/46 static checks (Ionicons glyphs,
+   expo-video playToEnd typing, StatusBar hidden, theme tokens, normalizeUserTags edge cases);
+   tsc 0. **FOUND + FIXED a shipped bug: `pHash64` threw on first call since v0.12**
+   (precomputeDct built 8 rows, loops iterate 32) — junk-sweep near-dup category was silently
+   dead, v0.24 hashing would have been too; fix rides in the v0.24 commit. Also fixed:
+   cloud-only video no longer stalls slideshow auto-advance (timer fallback). Probe harness kept
+   at `.expo/review-probe/` (gitignored) — re-run: esbuild bundle cmd in probe.cjs history, then
+   `node .expo/review-probe/probe.cjs` + `node .expo/review-probe/static-checks.cjs`.
+2. **v0.23 DONE (2026-10-04):** vibe search v1 — ML Kit image-labeling smart tags
    (`smartTagsEnabled` opt-in in settingsStore, schema v12 `media.ml_labels`, scanner
    new-insert + rescan-backfill paths, `updateMediaLabels` query, searchMediaRaw 5th param,
    Viewer "Tags" row, Settings toggle) + `docs/PLAN-PEOPLE-PETS.md` feasibility plan (doc only,
    owner approval pending; face-detection 2.0.1 + fast-tflite 3.0.1 verified on npm, model
    licensing needs owner sign-off). tsc clean; committed. Adds
    `@react-native-ml-kit/image-labeling` native module.
-2. **v0.22 DONE (2026-10-04, `8268349`):** album organizer (All/By sender/By month grouping in
+3. **v0.22 DONE (2026-10-04, `8268349`):** album organizer (All/By sender/By month grouping in
    shared albums) + S9 Phase 2 live group sync (`src/lib/groupSync.ts`: live new-message claims,
    link-only delete sync, no-op edits, debounced sequential drain, boot catch-up). Review notes:
    delete updates carry chatId in this TDLib build (verified in TdApi.java) — the filter is
    correct; a just-linked album's live events may be missed until the next boot catch-up (by
    design). Needs device verification (checklist in the CHANGELOG entry).
-3. **ONE combined gradle rebuild** unlocks v0.16 (expo-notifications native) + v0.17
+4. **ONE combined gradle rebuild** unlocks v0.16 (expo-notifications native) + v0.17
    (editMessageCaption wrapper) + v0.23 (@react-native-ml-kit/image-labeling native) + the
    allowBackup/permission-strip hardening:
    `E:\Dev\run-photogram-build.ps1` — never mid-upload, check logcat first. Everything else
    (v0.12–v0.15, v0.18–v0.22) verifies via Metro alone (8083, `--host lan`).
-4. **Device verify** per the checklists in each CHANGELOG entry (v0.12 → v0.23). Then resume the
+5. **Device verify** per the checklists in each CHANGELOG entry (v0.12 → v0.26). Then resume the
    bulk backup (~8 GB remaining; queue auto-resumes on app restart).
-5. **Security auditor round-2 fixes committed** (`9521b8c`); PRIVACY.md written (`1924772`) —
+6. **Security auditor round-2 fixes committed** (`9521b8c`); PRIVACY.md written (`1924772`) —
    owner must insert a contact email in §11 and enable GitHub Pages before Play submission.
    Play Store track: signing (EAS vs local keystore), branding assets, closed-test plan (12+
    testers / 14 days for new personal accounts). Remaining feature ideas: People & Pets v1

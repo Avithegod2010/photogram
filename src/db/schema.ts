@@ -177,6 +177,33 @@ ALTER TABLE media ADD COLUMN ml_labels TEXT;
 CREATE INDEX IF NOT EXISTS idx_media_ml_labels ON media (ml_labels) WHERE ml_labels IS NOT NULL;
 `;
 
+// v0.24 "Find similar"/duplicates: per-photo perceptual hash (64-bit pHash of
+// the 320px thumbnail, stored as 16-char hex). Similarity is computed in JS
+// over Hamming distance, so no SQL index can help — the column is just a
+// persistent store. '' is a sentinel meaning "tried, thumbnail undecodable".
+const SCHEMA_V13 = `
+ALTER TABLE media ADD COLUMN phash TEXT;
+`;
+
+// v0.25 manual tags: the owner's own words on any photo ("mom", "Kashmir
+// trip 2024"), comma-separated as typed. Local-only state — never synced —
+// and searchable exactly like the ML labels via LIKE.
+const SCHEMA_V14 = `
+ALTER TABLE media ADD COLUMN user_tags TEXT;
+`;
+
+// v0.27 Smart albums (saved searches): a gallery search ("beach", "June 2026")
+// pinned to Collections. Opening one re-runs the search through the normal
+// pipeline, so the collection auto-updates as the library changes.
+const SCHEMA_V15 = `
+CREATE TABLE IF NOT EXISTS saved_searches (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  query TEXT NOT NULL,
+  created_at INTEGER NOT NULL
+);
+`;
+
 export interface Migration {
   version: number;
   up: string;
@@ -195,6 +222,9 @@ export const MIGRATIONS: Migration[] = [
   { version: 10, up: SCHEMA_V10 },
   { version: 11, up: SCHEMA_V11 },
   { version: 12, up: SCHEMA_V12 },
+  { version: 13, up: SCHEMA_V13 },
+  { version: 14, up: SCHEMA_V14 },
+  { version: 15, up: SCHEMA_V15 },
 ];
 
 export function migrationsAfter(version: number): Migration[] {
