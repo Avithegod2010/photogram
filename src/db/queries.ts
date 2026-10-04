@@ -32,6 +32,8 @@ export interface MediaRow {
   edited_from?: number | null;
   // v0.21 place search (schema v11): offline nearest-city name at scan time.
   place_name?: string | null;
+  // v0.23 vibe search (schema v12): on-device ML labels, lowercased + space-joined.
+  ml_labels?: string | null;
 }
 
 export interface NewMediaInput {
@@ -120,6 +122,17 @@ export async function updateOcrText(id: number, text: string): Promise<void> {
   const db = await getDb();
   await db.runAsync("UPDATE media SET ocr_text = ?, updated_at = ? WHERE id = ?", [
     text,
+    Date.now(),
+    id,
+  ]);
+}
+
+// v0.23 vibe search: top on-device ML labels (lowercased, space-joined) for
+// content search. NULL = never labeled; the rescan backfill covers those.
+export async function updateMediaLabels(id: number, labels: string): Promise<void> {
+  const db = await getDb();
+  await db.runAsync("UPDATE media SET ml_labels = ?, updated_at = ? WHERE id = ?", [
+    labels,
     Date.now(),
     id,
   ]);
@@ -846,11 +859,11 @@ export async function searchMediaRaw(query: string, limit = 300): Promise<MediaR
   return db.getAllAsync<MediaRow>(
     `SELECT * FROM media
      WHERE visibility = 'visible'
-       AND (file_name LIKE ? OR tags LIKE ? OR ocr_text LIKE ? OR place_name LIKE ?)
+       AND (file_name LIKE ? OR tags LIKE ? OR ocr_text LIKE ? OR place_name LIKE ? OR ml_labels LIKE ?)
        AND edited_from IS NULL
      ${EXCLUDE_ALL_SHARED}
      ORDER BY taken_at DESC LIMIT ?`,
-    [like, like, like, like, limit]
+    [like, like, like, like, like, limit]
   );
 }
 

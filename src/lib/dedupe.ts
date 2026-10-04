@@ -25,11 +25,27 @@ export function quickFingerprint(input: FileFingerprintInput): string {
 
 export async function findDuplicate(
   fingerprint: string
-): Promise<{ id: number; state: string; taken_at: number; ocr_text: string | null } | null> {
+): Promise<{
+  id: number;
+  state: string;
+  taken_at: number;
+  ocr_text: string | null;
+  // v0.23: exposed so the scanner's smart-tag backfill can label the 320px
+  // thumbnail of pre-existing rows (ml_labels NULL = never labeled).
+  thumb_uri: string;
+  ml_labels: string | null;
+} | null> {
   const db = await getDb();
   return (
-    db.getFirstAsync<{ id: number; state: string; taken_at: number; ocr_text: string | null }>(
-      "SELECT id, state, taken_at, ocr_text FROM media WHERE fingerprint = ? LIMIT 1",
+    db.getFirstAsync<{
+      id: number;
+      state: string;
+      taken_at: number;
+      ocr_text: string | null;
+      thumb_uri: string;
+      ml_labels: string | null;
+    }>(
+      "SELECT id, state, taken_at, ocr_text, thumb_uri, ml_labels FROM media WHERE fingerprint = ? LIMIT 1",
       [fingerprint]
     ) ?? null
   );

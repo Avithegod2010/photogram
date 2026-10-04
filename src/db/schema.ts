@@ -168,6 +168,15 @@ ALTER TABLE media ADD COLUMN place_name TEXT;
 CREATE INDEX IF NOT EXISTS idx_media_place ON media (place_name) WHERE place_name IS NOT NULL;
 `;
 
+// v0.23 Vibe search v1: on-device ML Kit labels ("beach", "food", "dog")
+// captured at scan time so search matches photo content like it already
+// matches filenames/tags/OCR/place. Only populated when the owner enables
+// smart tags in Settings (opt-in, like OCR).
+const SCHEMA_V12 = `
+ALTER TABLE media ADD COLUMN ml_labels TEXT;
+CREATE INDEX IF NOT EXISTS idx_media_ml_labels ON media (ml_labels) WHERE ml_labels IS NOT NULL;
+`;
+
 export interface Migration {
   version: number;
   up: string;
@@ -185,6 +194,7 @@ export const MIGRATIONS: Migration[] = [
   { version: 9, up: SCHEMA_V9 },
   { version: 10, up: SCHEMA_V10 },
   { version: 11, up: SCHEMA_V11 },
+  { version: 12, up: SCHEMA_V12 },
 ];
 
 export function migrationsAfter(version: number): Migration[] {

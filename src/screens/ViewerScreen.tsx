@@ -363,6 +363,7 @@ export function ViewerScreen({ route, navigation }: any) {
                   </Pressable>
                 ) : null}
                 {current.place_name ? <MetaRow k="Place" v={current.place_name} /> : null}
+                {current.ml_labels ? <MetaRow k="Tags" v={current.ml_labels} /> : null}
               </>
             ) : null}
           </Pressable>

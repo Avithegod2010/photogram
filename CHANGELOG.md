@@ -4,6 +4,36 @@ Each entry below documents what a commit adds and what comes next. Newest first.
 
 ---
 
+## v0.23 — Vibe search v1: on-device ML smart tags (COMMITTED in this commit)
+
+**Added in this commit:**
+- **Smart tags (opt-in):** every photo gets on-device ML Kit content labels ("beach", "food",
+  "dog"…) at scan time, and gallery search matches them exactly like filenames/tags/OCR/place.
+  New dependency `@react-native-ml-kit/image-labeling@2.0.0` — **NATIVE module: it only works
+  after the next gradle rebuild** (same situation OCR had before its build). Until then the app
+  runs normally and the toggle just does nothing (soft-require pattern, mirror of OCR).
+- **Settings:** Search section → "Smart tags (on-device)" toggle next to the OCR row
+  (`smartTagsEnabled`, default OFF).
+- **Schema v12 (additive):** `media.ml_labels TEXT` + partial index; migration appended after
+  SCHEMA_V11, nothing else touched.
+- **Scanner:** labeling runs on the 320px thumbnail, photos only (videos skip, like OCR), on
+  BOTH the new-insert path and the rescan backfill for rows with `ml_labels` IS NULL (restored
+  photos included). Top ≤5 labels at ≥0.6 confidence, lowercased, space-joined; per-item
+  try/catch — a labeling failure never fails the scan.
+- **Search:** `searchMediaRaw` now also matches `ml_labels LIKE ?` (same escaped-LIKE param,
+  5 bound params). **Viewer:** info sheet shows a "Tags" row under Place.
+- **Also:** `docs/PLAN-PEOPLE-PETS.md` — People & Pets feasibility plan (doc only; face
+  detection/embedding candidates verified against npm/GitHub, model licensing flagged for owner
+  approval, pipeline + schema sketch + compute budget + task breakdown). No code for it yet.
+
+**Verify on device (after the gradle rebuild):**
+- Toggle Smart tags ON → scan/rescan → search a content word ("beach", "food", "dog") finds the
+  right photos; Viewer info sheet shows the Tags row; airplane mode still works (labels are
+  local). Toggle OFF → zero behavior change. On the CURRENT APK (no rebuild): app runs
+  normally, toggle does nothing, no crash.
+
+---
+
 ## v0.22 — Album organizer + S9 Phase 2 live group sync (COMMITTED in this commit)
 
 **Added in this commit** (coded by the owner's second chatbot; diff-reviewed + tsc-verified +

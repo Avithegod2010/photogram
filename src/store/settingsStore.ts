@@ -18,6 +18,9 @@ interface SettingsState {
   previewReplyUploads: boolean;
   sharedTimelineMaster: boolean;
   ocrSearchEnabled: boolean;
+  // v0.23 Vibe search: opt-in on-device image labeling at scan time. Labels
+  // live in media.ml_labels and only power search — nothing leaves the phone.
+  smartTagsEnabled: boolean;
   // F2 Junk Sweeper: opt-in. When on, a weekly in-app sweep analyzes thumbnails
   // and suggests junk in the review screen; nothing is ever auto-deleted.
   junkSweeperEnabled: boolean;
@@ -47,6 +50,7 @@ interface SettingsState {
   setPreviewReplyUploads: (v: boolean) => void;
   setSharedTimelineMaster: (v: boolean) => void;
   setOcrSearchEnabled: (v: boolean) => void;
+  setSmartTagsEnabled: (v: boolean) => void;
   setAutoBackupEnabled: (v: boolean) => void;
   setAutoBackupFolders: (v: string[]) => void;
   setMigrationBannerShown: (v: boolean) => void;
@@ -70,6 +74,7 @@ export const useSettingsStore = create<SettingsState>()(
       previewReplyUploads: true,
       sharedTimelineMaster: false,
       ocrSearchEnabled: false,
+      smartTagsEnabled: false,
       junkSweeperEnabled: false,
       autoBackupEnabled: false,
       autoBackupFolders: [],
@@ -88,6 +93,7 @@ export const useSettingsStore = create<SettingsState>()(
       setPreviewReplyUploads: (v) => set({ previewReplyUploads: v }),
       setSharedTimelineMaster: (v) => set({ sharedTimelineMaster: v }),
       setOcrSearchEnabled: (v) => set({ ocrSearchEnabled: v }),
+      setSmartTagsEnabled: (v) => set({ smartTagsEnabled: v }),
       setAutoBackupEnabled: (v) => set({ autoBackupEnabled: v }),
       setAutoBackupFolders: (v) => set({ autoBackupFolders: v }),
       setMigrationBannerShown: (v) => set({ migrationBannerShown: v }),

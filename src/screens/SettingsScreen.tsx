@@ -65,6 +65,8 @@ export function SettingsScreen() {
   const setSharedTimelineMaster = useSettingsStore((s) => s.setSharedTimelineMaster);
   const ocrSearchEnabled = useSettingsStore((s) => s.ocrSearchEnabled);
   const setOcrSearchEnabled = useSettingsStore((s) => s.setOcrSearchEnabled);
+  const smartTagsEnabled = useSettingsStore((s) => s.smartTagsEnabled);
+  const setSmartTagsEnabled = useSettingsStore((s) => s.setSmartTagsEnabled);
   const junkSweeperEnabled = useSettingsStore((s) => s.junkSweeperEnabled);
   const setJunkSweeperEnabled = useSettingsStore((s) => s.setJunkSweeperEnabled);
   const autoBackupEnabled = useSettingsStore((s) => s.autoBackupEnabled);
@@ -558,6 +560,12 @@ export function SettingsScreen() {
             sub="Lets search find words inside screenshots and receipts. Adds a few minutes to a full scan; applies to new scans and backfills older photos."
             value={ocrSearchEnabled}
             onChange={setOcrSearchEnabled}
+          />
+          <ToggleRow
+            label="Smart tags (on-device)"
+            sub="Labels what photos show — 'beach', 'food', 'dog' — so search can find them by content. Runs on this phone only; applies to new scans and backfills older photos."
+            value={smartTagsEnabled}
+            onChange={setSmartTagsEnabled}
           />
         </Section>
 

@@ -3,7 +3,8 @@ import { ImageManipulator, SaveFormat } from "expo-image-manipulator";
 import * as VideoThumbnails from "expo-video-thumbnails";
 import { File, Paths } from "expo-file-system";
 import type * as TextRecognitionModule from "@react-native-ml-kit/text-recognition";
-import { findMediaIdByMediaLibraryId, getMediaByIds, insertMedia, updateMediaLibraryId, backfillTakenAt, updateOcrText, setMediaState, setMediaPlace } from "../db/queries";
+import type * as ImageLabelingModule from "@react-native-ml-kit/image-labeling";
+import { findMediaIdByMediaLibraryId, getMediaByIds, insertMedia, updateMediaLibraryId, backfillTakenAt, updateOcrText, updateMediaLabels, setMediaState, setMediaPlace } from "../db/queries";
 import { nearestCity } from "./places";
 import { findDuplicate, quickFingerprint } from "./dedupe";
 import { useSettingsStore } from "../store/settingsStore";
@@ -116,6 +117,51 @@ async function readTextFromImage(uri: string): Promise<string | null> {
   }
 }
 
+// v0.23 vibe search: on-device ML Kit labels ("beach", "food", "dog") make
+// photos searchable by content. Same opt-in + soft-require pattern as OCR —
+// the native module only exists after the next gradle rebuild; until then
+// labeling silently does nothing.
+let imageLabeler: typeof ImageLabelingModule.default | null | undefined;
+function requireImageLabeler(): typeof ImageLabelingModule.default | null {
+  if (imageLabeler !== undefined) return imageLabeler;
+  try {
+    const mod = require("@react-native-ml-kit/image-labeling") as typeof ImageLabelingModule;
+    const fn = mod?.default;
+    imageLabeler = typeof fn?.label === "function" ? fn : null;
+  } catch {
+    imageLabeler = null;
+  }
+  return imageLabeler;
+}
+
+const LABEL_MIN_CONFIDENCE = 0.6;
+const LABEL_MAX_COUNT = 5;
+
+// Top labels at >= 0.6 confidence, lowercased, space-joined ("beach sky dog").
+// Null = module missing / nothing confident enough / failure — the row stays
+// NULL and the next rescan retries; a labeling failure never fails the scan.
+async function labelImage(uri: string): Promise<string | null> {
+  const labeler = requireImageLabeler();
+  if (!labeler) return null;
+  try {
+    const found = await labeler.label(uri);
+    const picked = (found ?? [])
+      .filter(
+        (l) =>
+          typeof l?.text === "string" &&
+          l.text.length > 0 &&
+          Number(l?.confidence ?? 0) >= LABEL_MIN_CONFIDENCE
+      )
+      .sort((a, b) => b.confidence - a.confidence)
+      .slice(0, LABEL_MAX_COUNT)
+      .map((l) => l.text.toLowerCase());
+    const joined = Array.from(new Set(picked)).join(" ").trim();
+    return joined.length > 0 ? joined : null;
+  } catch {
+    return null;
+  }
+}
+
 async function hasOnlySelectedAccess(): Promise<boolean> {
   try {
     const perm = await MediaLibrary.getPermissionsAsync();
@@ -145,6 +191,7 @@ export async function scanDeviceLibrary(
     partialAccess,
   };
   const ocrOn = useSettingsStore.getState().ocrSearchEnabled;
+  const smartTagsOn = useSettingsStore.getState().smartTagsEnabled;
   let cursor: string | undefined = undefined;
 
   do {
@@ -187,9 +234,17 @@ export async function scanDeviceLibrary(
             const row = rows[0];
             // findDuplicate's narrow shape; MediaRow doesn't expose ocr_text,
             // so null lets the OCR backfill below cover migrated+restored
-            // photos (they never had text indexed).
+            // photos (they never had text indexed). ml_labels passes through
+            // so already-labeled rows aren't re-labeled on every rescan.
             if (row) {
-              existing = { id: row.id, state: row.state, taken_at: row.taken_at, ocr_text: null };
+              existing = {
+                id: row.id,
+                state: row.state,
+                taken_at: row.taken_at,
+                ocr_text: null,
+                thumb_uri: row.thumb_uri,
+                ml_labels: row.ml_labels ?? null,
+              };
             }
           }
         }
@@ -204,6 +259,12 @@ export async function scanDeviceLibrary(
           if (ocrOn && !isVideo && (existing.ocr_text ?? null) === null) {
             const ocr = await readTextFromImage(localUri);
             if (ocr) await updateOcrText(existing.id, ocr);
+          }
+          // v0.23 smart-tag backfill for never-labeled rows (mirrors the OCR
+          // backfill above; labels run on the 320px thumbnail, photos only).
+          if (smartTagsOn && !isVideo && (existing.ml_labels ?? null) === null) {
+            const labels = await labelImage(existing.thumb_uri);
+            if (labels) await updateMediaLabels(existing.id, labels);
           }
           // v0.21 place backfill: rows carrying GPS (mirrors the OCR backfill
           // pattern; the dataset is static so recompute is idempotent).
@@ -241,6 +302,12 @@ export async function scanDeviceLibrary(
           if (ocrOn && !isVideo) {
             const ocr = await readTextFromImage(localUri);
             if (ocr) await updateOcrText(inserted, ocr);
+          }
+          // v0.23: index content labels from the thumbnail (photos only,
+          // owner opt-in).
+          if (smartTagsOn && !isVideo) {
+            const labels = await labelImage(thumbUri);
+            if (labels) await updateMediaLabels(inserted, labels);
           }
           // v0.21: offline nearest-city place name for GPS-tagged items.
           if (location?.latitude != null && location?.longitude != null) {
