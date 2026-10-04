@@ -20,6 +20,7 @@ type CollectionsNav = NativeStackNavigationProp<{
   Highlights: undefined;
   Similar: { mode?: "similar" | "groups"; mediaId?: number };
   SavedSearch: { id: number };
+  PeopleSetup: undefined;
 }>;
 
 const SECTIONS = [
@@ -30,7 +31,7 @@ const SECTIONS = [
   { key: "journal", label: "Journal", sub: "Every note you wrote, as a diary across the years", enabled: true, route: "Journal" },
   { key: "highlights", label: "Highlights", sub: "The sharpest shots of each month, auto-curated", enabled: true, route: "Highlights" },
   { key: "duplicates", label: "Find duplicates", sub: "Near-identical photos — bursts, forwards and re-saves", enabled: true, route: "Similar" },
-  { key: "people", label: "People & Pets", sub: "Face grouping arrives in Phase 2 (on-device ML)", enabled: false, route: null },
+  { key: "people", label: "People & Pets", sub: "Face grouping — pick a model to start (on-device)", enabled: true, route: "PeopleSetup" },
   { key: "archive", label: "Archive", sub: "Decluttered media — hidden from the main timeline", enabled: true, route: "Archive" },
   { key: "trash", label: "Trash", sub: "Deleted items · 30-day countdown", enabled: true, route: "Trash" },
   { key: "map", label: "Map", sub: "Photos placed on the world by GPS data", enabled: true, route: "Map" },

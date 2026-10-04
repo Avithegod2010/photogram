@@ -44,6 +44,47 @@ export interface MediaRow {
   sharpness?: number | null;
 }
 
+// --- v0.33+ People & Pets step 1 (face detection) -------------------------------
+
+export interface DetectedFaceBox {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+// Idempotent per photo: existing samples are replaced. An EMPTY face list
+// writes the box_x = -1 sentinel row ("checked, no faces") so rescans skip
+// the photo instead of re-detecting it forever.
+export async function replaceFaceSamples(mediaId: number, faces: DetectedFaceBox[]): Promise<void> {
+  const db = await getDb();
+  await db.withTransactionAsync(async () => {
+    await db.runAsync("DELETE FROM face_samples WHERE media_id = ?", [mediaId]);
+    if (faces.length === 0) {
+      await db.runAsync(
+        "INSERT INTO face_samples (media_id, box_x, box_y, box_w, box_h, quality, embedding, model_id, created_at) VALUES (?, -1, -1, 0, 0, NULL, NULL, NULL, ?)",
+        [mediaId, Date.now()]
+      );
+      return;
+    }
+    for (const f of faces) {
+      await db.runAsync(
+        "INSERT INTO face_samples (media_id, box_x, box_y, box_w, box_h, quality, embedding, model_id, created_at) VALUES (?, ?, ?, ?, ?, NULL, NULL, NULL, ?)",
+        [mediaId, f.x, f.y, f.w, f.h, Date.now()]
+      );
+    }
+  });
+}
+
+export async function hasFaceSamples(mediaId: number): Promise<boolean> {
+  const db = await getDb();
+  const row = await db.getFirstAsync<{ id: number }>(
+    "SELECT id FROM face_samples WHERE media_id = ? LIMIT 1",
+    [mediaId]
+  );
+  return row !== null;
+}
+
 export interface NewMediaInput {
   // Null for cloud-only rows built by the F1 migration (src/lib/rehydrate.ts):
   // the Telegram message exists but nothing is on this device yet.

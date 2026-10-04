@@ -4,10 +4,11 @@ import * as VideoThumbnails from "expo-video-thumbnails";
 import { File, Paths } from "expo-file-system";
 import type * as TextRecognitionModule from "@react-native-ml-kit/text-recognition";
 import type * as ImageLabelingModule from "@react-native-ml-kit/image-labeling";
-import { findMediaIdByMediaLibraryId, getMediaByIds, insertMedia, updateMediaLibraryId, backfillTakenAt, updateOcrText, updateMediaLabels, updateMediaPhash, updateMediaSharpness, setMediaState, setMediaPlace } from "../db/queries";
+import { findMediaIdByMediaLibraryId, getMediaByIds, insertMedia, updateMediaLibraryId, backfillTakenAt, updateOcrText, updateMediaLabels, updateMediaPhash, updateMediaSharpness, replaceFaceSamples, hasFaceSamples, setMediaState, setMediaPlace } from "../db/queries";
 import { nearestCity } from "./places";
 import { findDuplicate, quickFingerprint } from "./dedupe";
 import { decodeThumbToGray, pHash64, varianceOfLaplacian } from "./imageAnalysis";
+import { detectFaces } from "./faces";
 import { mmkv, useSettingsStore } from "../store/settingsStore";
 
 export interface ScanProgress {
@@ -240,6 +241,7 @@ export async function scanDeviceLibrary(
   };
   const ocrOn = useSettingsStore.getState().ocrSearchEnabled;
   const smartTagsOn = useSettingsStore.getState().smartTagsEnabled;
+  const peopleOn = useSettingsStore.getState().peopleTagsEnabled;
   let cursor: string | undefined = undefined;
 
   do {
@@ -331,6 +333,13 @@ export async function scanDeviceLibrary(
               await updateMediaSharpness(existing.id, analysis.sharpness);
             }
           }
+          // v0.33+ People & Pets: face detection for never-checked rows
+          // (photos only, owner opt-in, on-device). detectFaces null = module
+          // missing/failure — the row stays unchecked and a later scan retries.
+          if (peopleOn && !isVideo && !(await hasFaceSamples(existing.id))) {
+            const faces = await detectFaces(existing.thumb_uri);
+            if (faces !== null) await replaceFaceSamples(existing.id, faces);
+          }
           // v0.21 place backfill: rows carrying GPS (mirrors the OCR backfill
           // pattern; the dataset is static so recompute is idempotent).
           if (info.location?.latitude != null && info.location?.longitude != null) {
@@ -381,6 +390,11 @@ export async function scanDeviceLibrary(
             if (analysis.phash) await updateMediaPhash(inserted, analysis.phash);
             if (analysis.sharpness !== undefined) {
               await updateMediaSharpness(inserted, analysis.sharpness);
+            }
+            // v0.33+: face detection (photos only, owner opt-in).
+            if (peopleOn) {
+              const faces = await detectFaces(thumbUri);
+              if (faces !== null) await replaceFaceSamples(inserted, faces);
             }
           }
           // v0.21: offline nearest-city place name for GPS-tagged items.

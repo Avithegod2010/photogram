@@ -67,6 +67,8 @@ export function SettingsScreen() {
   const setOcrSearchEnabled = useSettingsStore((s) => s.setOcrSearchEnabled);
   const smartTagsEnabled = useSettingsStore((s) => s.smartTagsEnabled);
   const setSmartTagsEnabled = useSettingsStore((s) => s.setSmartTagsEnabled);
+  const peopleTagsEnabled = useSettingsStore((s) => s.peopleTagsEnabled);
+  const setPeopleTagsEnabled = useSettingsStore((s) => s.setPeopleTagsEnabled);
   const junkSweeperEnabled = useSettingsStore((s) => s.junkSweeperEnabled);
   const setJunkSweeperEnabled = useSettingsStore((s) => s.setJunkSweeperEnabled);
   const autoBackupEnabled = useSettingsStore((s) => s.autoBackupEnabled);
@@ -578,6 +580,12 @@ export function SettingsScreen() {
             sub="Labels what photos show — 'beach', 'food', 'dog' — so search can find them by content. Runs on this phone only; applies to new scans and backfills older photos."
             value={smartTagsEnabled}
             onChange={setSmartTagsEnabled}
+          />
+          <ToggleRow
+            label="Find faces (People & Pets)"
+            sub="Detects faces during scans so photos can be grouped by who is in them. On-device only; manage the model under Collections → People & Pets."
+            value={peopleTagsEnabled}
+            onChange={setPeopleTagsEnabled}
           />
         </Section>
 

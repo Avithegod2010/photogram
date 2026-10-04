@@ -4,6 +4,39 @@ Each entry below documents what a commit adds and what comes next. Newest first.
 
 ---
 
+## v0.34 — People & Pets step 1: model picker + face detection (CODED — uncommitted, commit pending owner go-ahead)
+
+The owner-approved People & Pets design starts here: **nothing is bundled — the user picks and
+downloads a face model in-app**, and face detection itself is opt-in and fully on-device.
+
+- **Model picker (`src/lib/faceModels.ts` + new PeopleSetupScreen via Collections → People &
+  Pets):** two verified models — **FaceNet-128 (~23 MB, recommended default)** and
+  **FaceNet-512 (~24 MB, separates look-alikes better)** — both ready-made tflite files from an
+  Apache-2.0 repo, with exact URLs/sizes checked via the GitHub API. Downloads run through a
+  resumable download with a live progress bar and a **safety gate**: https only, allowlisted
+  hosts (github/raw.githubusercontent/objects.githubusercontent), localhost/IP/private hosts
+  rejected. The chosen model id is stored (`faceModelId`); switching models later re-processes
+  the library (embeddings are only comparable within one model — per-sample `model_id` is
+  already in the schema for that).
+- **Face detection wiring (`src/lib/faces.ts` + scanner):** new dependency
+  `@react-native-ml-kit/face-detection@2.0.1` — **NATIVE module, joins the pending gradle
+  rebuild**; until then the app runs normally and the toggle does nothing (soft-require
+  pattern). New Settings → Search toggle **"Find faces (People & Pets)"** (`peopleTagsEnabled`,
+  default OFF, photos only). During scans, faces are detected on the 320px thumbnail and stored
+  as pixel boxes in **schema v17 `face_samples`** (with `embedding`/`model_id` columns already
+  in place for the grouping batch). Photos with no faces write a `-1` sentinel row so rescans
+  never re-detect them forever; a failed detection leaves the row unchecked (retried later).
+- **Review:** probe extended to 80/80 (URL safety gate incl. host-spoof cases, sample
+  replacement/sentinel idempotence, v15–v17 migration on a populated v14 DB, store round-trip)
+  + 48/48 static + tsc clean. No shipped bugs found this batch.
+
+**Verify on device (needs the gradle rebuild for detection; the model picker works via Metro
+alone except the actual download write… which is Metro-safe too):** Collections → People & Pets
+→ download FaceNet-128 (progress bar) → card shows SELECTED → toggle "Find faces" → rescan →
+diagnostics shows face samples; remove/re-download works.
+
+---
+
 ## Docs — People & Pets model sweep + ideas backlog (docs only)
 
 - `docs/PLAN-PEOPLE-PETS.md` §2b: **owner decision — user-selectable, download-on-demand

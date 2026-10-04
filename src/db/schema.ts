@@ -213,6 +213,28 @@ const SCHEMA_V16 = `
 ALTER TABLE media ADD COLUMN sharpness REAL;
 `;
 
+// v0.33+ People & Pets step 1 (schema v17): detected face boxes per photo —
+// pixel coordinates on the 320px thumbnail. embedding/model_id stay NULL
+// until the embedding batch lands; the embedding model is user-selectable
+// and only comparable within itself, hence the per-sample model_id. A row
+// with box_x = -1 is the "checked, no faces found" sentinel so rescans never
+// re-detect permanently face-less photos.
+const SCHEMA_V17 = `
+CREATE TABLE IF NOT EXISTS face_samples (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  media_id INTEGER NOT NULL REFERENCES media(id) ON DELETE CASCADE,
+  box_x REAL NOT NULL,
+  box_y REAL NOT NULL,
+  box_w REAL NOT NULL,
+  box_h REAL NOT NULL,
+  quality REAL,
+  embedding BLOB,
+  model_id TEXT,
+  created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_face_samples_media ON face_samples (media_id);
+`;
+
 export interface Migration {
   version: number;
   up: string;
@@ -235,6 +257,7 @@ export const MIGRATIONS: Migration[] = [
   { version: 14, up: SCHEMA_V14 },
   { version: 15, up: SCHEMA_V15 },
   { version: 16, up: SCHEMA_V16 },
+  { version: 17, up: SCHEMA_V17 },
 ];
 
 export function migrationsAfter(version: number): Migration[] {

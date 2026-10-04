@@ -21,6 +21,11 @@ interface SettingsState {
   // v0.23 Vibe search: opt-in on-device image labeling at scan time. Labels
   // live in media.ml_labels and only power search — nothing leaves the phone.
   smartTagsEnabled: boolean;
+  // v0.33+ People & Pets: opt-in face detection at scan time (on-device).
+  // faceModelId records which downloadable embedding model the user chose —
+  // embeddings are only comparable within one model.
+  peopleTagsEnabled: boolean;
+  faceModelId: string | null;
   // v0.28 Album locks: album route keys ("camera", "shared-3", …) that demand
   // a biometric check before AlbumScreen shows any content. Local-only.
   lockedAlbumKeys: string[];
@@ -54,6 +59,8 @@ interface SettingsState {
   setSharedTimelineMaster: (v: boolean) => void;
   setOcrSearchEnabled: (v: boolean) => void;
   setSmartTagsEnabled: (v: boolean) => void;
+  setPeopleTagsEnabled: (v: boolean) => void;
+  setFaceModelId: (id: string | null) => void;
   setAlbumLocked: (key: string, locked: boolean) => void;
   setAutoBackupEnabled: (v: boolean) => void;
   setAutoBackupFolders: (v: string[]) => void;
@@ -79,6 +86,8 @@ export const useSettingsStore = create<SettingsState>()(
       sharedTimelineMaster: false,
       ocrSearchEnabled: false,
       smartTagsEnabled: false,
+      peopleTagsEnabled: false,
+      faceModelId: null,
       lockedAlbumKeys: [],
       junkSweeperEnabled: false,
       autoBackupEnabled: false,
@@ -99,6 +108,8 @@ export const useSettingsStore = create<SettingsState>()(
       setSharedTimelineMaster: (v) => set({ sharedTimelineMaster: v }),
       setOcrSearchEnabled: (v) => set({ ocrSearchEnabled: v }),
       setSmartTagsEnabled: (v) => set({ smartTagsEnabled: v }),
+      setPeopleTagsEnabled: (v) => set({ peopleTagsEnabled: v }),
+      setFaceModelId: (id) => set({ faceModelId: id }),
       setAlbumLocked: (key, locked) =>
         set((s) => ({
           lockedAlbumKeys: locked

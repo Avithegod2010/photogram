@@ -23,6 +23,7 @@ import { StorageScreen } from "../screens/StorageScreen";
 import { DiagnosticsScreen } from "../screens/DiagnosticsScreen";
 import { JournalScreen } from "../screens/JournalScreen";
 import { HighlightsScreen } from "../screens/HighlightsScreen";
+import { PeopleSetupScreen } from "../screens/PeopleSetupScreen";
 
 export type RootStackParamList = {
   Tabs: undefined;
@@ -48,6 +49,7 @@ export type RootStackParamList = {
   Diagnostics: undefined;
   Journal: undefined;
   Highlights: undefined;
+  PeopleSetup: undefined;
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -85,6 +87,7 @@ export function RootNavigator() {
       <Stack.Screen name="Diagnostics" component={DiagnosticsScreen} />
       <Stack.Screen name="Journal" component={JournalScreen} />
       <Stack.Screen name="Highlights" component={HighlightsScreen} />
+      <Stack.Screen name="PeopleSetup" component={PeopleSetupScreen} />
       <Stack.Screen
         name="Slideshow"
         component={SlideshowScreen}

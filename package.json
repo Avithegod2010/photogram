@@ -4,6 +4,7 @@
   "main": "index.ts",
   "dependencies": {
     "@expo/vector-icons": "^15.1.1",
+    "@react-native-ml-kit/face-detection": "^2.0.1",
     "@react-native-ml-kit/image-labeling": "^2.0.0",
     "@react-native-ml-kit/text-recognition": "^2.0.0",
     "@react-navigation/bottom-tabs": "^7.18.17",
