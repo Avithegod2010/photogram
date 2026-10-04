@@ -51,7 +51,9 @@ export function HiddenScreen({
         <Text style={styles.lockIcon}>🔒</Text>
         <Text style={styles.lockTitle}>Hidden album</Text>
         <Text style={styles.lockBody}>
-          Unlock with your fingerprint or face to view hidden photos.
+          {lockEnabled
+            ? "Unlock with your fingerprint or face to view hidden photos."
+            : "Opening hidden photos…"}
         </Text>
         <Pressable style={styles.unlockBtn} onPress={() => void unlock()}>
           <Text style={styles.unlockBtnText}>Unlock</Text>

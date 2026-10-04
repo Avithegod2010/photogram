@@ -75,7 +75,19 @@ function sanitizeRemoteFileName(raw: string): string {
   const base = raw.split(/[\\/]/).pop() ?? "";
   const trimmed = base.trim();
   if (!trimmed || trimmed === "." || trimmed === "..") return "shared-file";
-  return trimmed.slice(0, 200);
+  // Android caps one filename component at 255 BYTES, not chars, and claimOne
+  // prepends "<messageId>-" — walk code points so an astral name (4 bytes each)
+  // cannot blow past the limit and fail the copy with ENAMETOOLONG.
+  let out = "";
+  let bytes = 0;
+  for (const ch of trimmed) {
+    const cp = ch.codePointAt(0) ?? 0;
+    const size = cp < 0x80 ? 1 : cp < 0x800 ? 2 : cp < 0x10000 ? 3 : 4;
+    if (bytes + size > 200) break;
+    out += ch;
+    bytes += size;
+  }
+  return out || "shared-file";
 }
 
 // extraction, do not change behavior.

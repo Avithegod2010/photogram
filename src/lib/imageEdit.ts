@@ -129,7 +129,14 @@ export async function renderEdit(
   );
 
   if (!hasColorAdjustments(adj)) {
-    return { uri: stage.uri, width: stage.width, height: stage.height, byteSize: 0 };
+    // Geometry-only edits (rotate/crop) still write a full-size JPEG — report
+    // its real size so the upload queue's daily/hourly budget counts it.
+    return {
+      uri: stage.uri,
+      width: stage.width,
+      height: stage.height,
+      byteSize: new File(stage.uri).size ?? 0,
+    };
   }
 
   const raw = jpeg.decode(

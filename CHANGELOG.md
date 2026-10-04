@@ -4,6 +4,39 @@ Each entry below documents what a commit adds and what comes next. Newest first.
 
 ---
 
+## Independent audit remediation — deep-pass fixes (COMMITTED in this commit)
+
+**Six fixes applied by the independent auditor in its round-2 deep pass (verified by chatbot 1
+and committed here); commit message authored by the auditor**
+- **Editor byteSize honesty:** geometry-only edits (rotate/crop, no color pass) previously
+  reported `byteSize: 0`, so their full-size JPEGs bypassed the 25 GB/day + 4 GB/h upload
+  budgets. They now report their real on-disk size.
+- **Byte-safe remote filename cap:** the sanitizer counted characters, but Android caps a
+  filename component at 255 *bytes* — a 100-emoji name produced a 406-byte component. Now walks
+  code points to a 200-byte budget (leaving room for the message-id prefix). Auditor's attack
+  harness: 19 traversal cases → 0 escapes, 0 over-length.
+- **Editor error surfacing:** Save had try/finally with no catch — any render failure silently
+  no-opped the button. Now alerts with the reason.
+- **Hidden lock-screen honesty:** the copy no longer promises a fingerprint prompt when the
+  biometric lock is off ("Opening hidden photos…" instead).
+- **biometrics.ts:** the deliberate fail-open trade-off (no enrolled biometrics → open; a
+  fail-closed change could lock the owner out) is now documented in-code; behavior unchanged.
+- **Scrub bookkeeping accuracy:** NEXT_SESSION now states the re-measured truth — Saved-Messages
+  ids verified absent from all 39 commits; the supergroup id survives in 19 commits and is
+  treated as accepted residue (not a credential).
+- Deep pass also verified clean: caption JSON injection impossible (typed Java path, never
+  concatenated JSON), no chat_id/reply_to double-target possible, no ReDoS in ladder regexes,
+  notes force-path always re-reads the caption first, editor crop clamped + bounded, all new SQL
+  parameter-bound. Deferred deliberately: uploader budget-accounting gap in the v0.20 guard
+  (needs device testing — safety-critical file), MMKV encryption (no migration path),
+  biometric fail-closed (could lock the owner out), npm downgrade advice (would break the app).
+  tsc clean.
+
+**Next**
+- Album organizer + S9 Phase 2 two-way sync (next chatbot) · gradle rebuild → device verify.
+
+---
+
 ## Security hardening round 2 — external audit triage (COMMITTED in this commit)
 
 **Actions from the independent auditor's report** (mediums fixed; lows triaged below)

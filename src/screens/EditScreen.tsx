@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { Alert, Pressable, StyleSheet, Text, View } from "react-native";
 import { StatusBar } from "expo-status-bar";
 import { Image } from "expo-image";
 import { Ionicons } from "@expo/vector-icons";
@@ -157,6 +157,10 @@ export function EditScreen({
         startWorker();
       }
       navigation.navigate("Viewer", { ids: [original.edited_from ?? original.id, editId ?? original.id], index: 0 });
+    } catch (err) {
+      // Without this the button silently does nothing on any render failure
+      // (corrupt source, decode refusal, out-of-range crop).
+      Alert.alert("Couldn't save the edit", err instanceof Error ? err.message : String(err));
     } finally {
       setSaving(false);
     }
