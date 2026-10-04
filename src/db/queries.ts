@@ -284,15 +284,21 @@ export async function listAlbumTopics(albumId: number): Promise<AlbumTopicRow[]>
   );
 }
 
+// AlbumScreen grouping (by sender): rows joined out of album_media also carry
+// the sender recorded at claim time. Optional so local-album paths compile.
+export interface AlbumMediaRow extends MediaRow {
+  sender_id?: string | null;
+}
+
 export async function listAlbumMedia(
   albumId: number,
   topicId?: string | null,
   limit = 800
-): Promise<MediaRow[]> {
+): Promise<AlbumMediaRow[]> {
   const db = await getDb();
   const topicFilter = topicId ? "AND am.forum_topic_id = ?" : "";
-  return db.getAllAsync<MediaRow>(
-    `SELECT m.* FROM media m
+  return db.getAllAsync<AlbumMediaRow>(
+    `SELECT m.*, am.sender_id AS sender_id FROM media m
      JOIN album_media am ON am.media_id = m.id
      WHERE am.album_id = ?
      ${topicFilter}
@@ -331,6 +337,34 @@ export async function setAlbumMediaTopic(
 export async function deleteSharedAlbum(id: number): Promise<void> {
   const db = await getDb();
   await db.runAsync("DELETE FROM albums WHERE id = ?", [id]);
+}
+
+// S9 Phase 2 live sync (src/lib/groupSync.ts): albums whose Telegram group is
+// linked — the ONLY chats whose updates may ever be processed.
+export interface LinkedAlbumRow {
+  id: number;
+  title: string;
+  chat_id: string;
+}
+
+export async function listLinkedAlbums(): Promise<LinkedAlbumRow[]> {
+  const db = await getDb();
+  return db.getAllAsync<LinkedAlbumRow>(
+    "SELECT id, title, chat_id FROM albums WHERE chat_id IS NOT NULL"
+  );
+}
+
+// Live delete-sync: removes ONLY the album_media link row(s) for a message
+// deleted in the group. The media row itself is never touched — the owner's
+// library copy and its Saved Messages backup stay; the photo just leaves the
+// album grid (docs/S9-DESIGN.md rule 3: family media is never auto-deleted).
+export async function deleteAlbumMediaByMessage(albumId: number, messageId: string): Promise<number> {
+  const db = await getDb();
+  const result = await db.runAsync("DELETE FROM album_media WHERE album_id = ? AND message_id = ?", [
+    albumId,
+    messageId,
+  ]);
+  return result.changes;
 }
 
 // F1 migration idempotency: has this Saved Messages message already been

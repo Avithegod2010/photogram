@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Switch, Text, View } from "react-native";
 import { StatusBar } from "expo-status-bar";
 import { Image } from "expo-image";
@@ -6,15 +6,45 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { FlashList } from "@shopify/flash-list";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { getAlbumMedia } from "../lib/albums";
+import { resolveSenderNames } from "../lib/chats";
+import { fetchProfile } from "../lib/tdlib";
 import {
   getSharedAlbum,
   listAlbumMedia,
   listAlbumTopics,
   setAlbumShowInTimeline,
+  AlbumMediaRow,
   AlbumTopicRow,
   MediaRow,
 } from "../db/queries";
 import { theme } from "../theme";
+
+// Album organizer (shared albums only): optional grouping of the grid with
+// full-width section headers, mirroring GalleryScreen's day headers. "all"
+// renders the plain grid exactly as before.
+type AlbumGroupMode = "all" | "sender" | "month";
+
+interface AlbumGridMedia {
+  __type: "media";
+  row: AlbumMediaRow;
+}
+
+interface AlbumGridHeader {
+  __type: "groupHeader";
+  key: string;
+  label: string;
+  count: number;
+}
+
+type AlbumGridItem = AlbumGridMedia | AlbumGridHeader;
+
+function monthKeyOf(ts: number): { key: string; label: string } {
+  const d = new Date(ts);
+  return {
+    key: `${d.getFullYear()}-${d.getMonth()}`,
+    label: d.toLocaleDateString(undefined, { month: "long", year: "numeric" }),
+  };
+}
 
 export function AlbumScreen({
   navigation,
@@ -25,7 +55,7 @@ export function AlbumScreen({
 }) {
   const insets = useSafeAreaInsets();
   const { key, label, sharedAlbumId } = route.params;
-  const [rows, setRows] = useState<MediaRow[]>([]);
+  const [rows, setRows] = useState<AlbumMediaRow[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [inTimeline, setInTimeline] = useState(false);
   // Forum topic sub-albums (docs/PLAN-S9-TOPICS.md D6): empty for groups
@@ -33,6 +63,10 @@ export function AlbumScreen({
   const [topics, setTopics] = useState<AlbumTopicRow[]>([]);
   const [activeTopic, setActiveTopic] = useState<string | "all">("all");
   const [totalCount, setTotalCount] = useState(0);
+  // Album organizer (shared mode only): chips All / By sender / By month.
+  const [groupMode, setGroupMode] = useState<AlbumGroupMode>("all");
+  const [senderNames, setSenderNames] = useState<Map<string, string>>(new Map());
+  const [ownUserId, setOwnUserId] = useState<string | null>(null);
 
   useEffect(() => {
     if (sharedAlbumId === undefined) {
@@ -69,6 +103,66 @@ export function AlbumScreen({
       .catch(() => {});
   }, [sharedAlbumId]);
 
+  // Sender grouping needs the owner's id ("You") and display names resolved
+  // through the SAME mechanism as the Recent-activity feed (resolveSenderNames,
+  // cached in lib/chats).
+  useEffect(() => {
+    if (sharedAlbumId === undefined) return;
+    void fetchProfile()
+      .then((profile) => {
+        const id = (profile as { id?: unknown } | null)?.id;
+        if (id !== undefined && id !== null) setOwnUserId(String(id));
+      })
+      .catch(() => {});
+  }, [sharedAlbumId]);
+
+  useEffect(() => {
+    if (sharedAlbumId === undefined || groupMode !== "sender") return;
+    void resolveSenderNames(rows.map((r) => r.sender_id ?? null))
+      .then(setSenderNames)
+      .catch(() => setSenderNames(new Map()));
+  }, [sharedAlbumId, groupMode, rows]);
+
+  // Grid data with optional full-width section headers (GalleryScreen's day
+  // header pattern: header items + overrideItemLayout span). rows arrive
+  // newest-first from SQL, so a single pass keeps both the group order (a
+  // group's position = its newest item) and the within-group order (taken_at
+  // DESC) correct — grouping composes with the active topic filter because it
+  // only re-shapes whatever rows are already loaded.
+  const data: AlbumGridItem[] = useMemo(() => {
+    const media: AlbumGridMedia[] = rows.map((row) => ({ __type: "media", row }));
+    if (sharedAlbumId === undefined || groupMode === "all") return media;
+    const groups = new Map<string, { label: string; rows: AlbumGridMedia[] }>();
+    for (const item of media) {
+      let groupKey: string;
+      let groupLabel: string;
+      if (groupMode === "sender") {
+        const senderId = item.row.sender_id ?? "";
+        groupKey = senderId;
+        groupLabel =
+          senderId && senderId === ownUserId ? "You" : (senderNames.get(senderId) ?? "Someone");
+      } else {
+        const month = monthKeyOf(item.row.taken_at);
+        groupKey = month.key;
+        groupLabel = month.label;
+      }
+      const entry = groups.get(groupKey);
+      if (entry) entry.rows.push(item);
+      else groups.set(groupKey, { label: groupLabel, rows: [item] });
+    }
+    const withHeaders: AlbumGridItem[] = [];
+    groups.forEach((entry, groupKey) => {
+      withHeaders.push({
+        __type: "groupHeader",
+        key: `h-${groupMode}-${groupKey}`,
+        label: entry.label,
+        count: entry.rows.length,
+      });
+      withHeaders.push(...entry.rows);
+    });
+    return withHeaders;
+  }, [rows, sharedAlbumId, groupMode, senderNames, ownUserId]);
+
   const toggleTimeline = useCallback(
     (value: boolean) => {
       if (sharedAlbumId === undefined) return;
@@ -79,33 +173,44 @@ export function AlbumScreen({
   );
 
   const renderItem = useCallback(
-    ({ item }: { item: MediaRow }) => (
-      <Pressable
-        style={styles.cell}
-        onPress={() =>
-          navigation.navigate("Viewer", {
-            ids: rows.map((r) => r.id),
-            index: rows.findIndex((r) => r.id === item.id),
-          })
-        }
-      >
-        <Image
-          source={{ uri: item.thumb_uri }}
-          style={StyleSheet.absoluteFill}
-          contentFit="cover"
-          recyclingKey={`a-${item.id}`}
-          transition={120}
-        />
-        {item.mime_type.startsWith("video/") ? (
-          <View style={styles.videoFlag}>
-            <Text style={styles.videoFlagText}>▶</Text>
+    ({ item }: { item: AlbumGridItem }) => {
+      if (item.__type === "groupHeader") {
+        return (
+          <View style={styles.groupHeaderWrap}>
+            <Text style={styles.groupHeaderText}>{item.label}</Text>
+            <Text style={styles.groupHeaderCount}>{item.count}</Text>
           </View>
-        ) : null}
-        {item.state !== "synced" ? (
-          <View style={[styles.stateDot, styles[`dot_${item.state}` as const]]} />
-        ) : null}
-      </Pressable>
-    ),
+        );
+      }
+      const row = item.row;
+      return (
+        <Pressable
+          style={styles.cell}
+          onPress={() =>
+            navigation.navigate("Viewer", {
+              ids: rows.map((r) => r.id),
+              index: rows.findIndex((r) => r.id === row.id),
+            })
+          }
+        >
+          <Image
+            source={{ uri: row.thumb_uri }}
+            style={StyleSheet.absoluteFill}
+            contentFit="cover"
+            recyclingKey={`a-${row.id}`}
+            transition={120}
+          />
+          {row.mime_type.startsWith("video/") ? (
+            <View style={styles.videoFlag}>
+              <Text style={styles.videoFlagText}>▶</Text>
+            </View>
+          ) : null}
+          {row.state !== "synced" ? (
+            <View style={[styles.stateDot, styles[`dot_${row.state}` as const]]} />
+          ) : null}
+        </Pressable>
+      );
+    },
     [navigation, rows]
   );
 
@@ -161,11 +266,42 @@ export function AlbumScreen({
           })}
         </ScrollView>
       ) : null}
+      {sharedAlbumId !== undefined ? (
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.chipRow}
+        >
+          {(["all", "sender", "month"] as AlbumGroupMode[]).map((mode) => {
+            const label = mode === "all" ? "All" : mode === "sender" ? "By sender" : "By month";
+            const selected = groupMode === mode;
+            return (
+              <Pressable
+                key={mode}
+                style={[styles.chip, selected && styles.chipOn]}
+                onPress={() => setGroupMode(mode)}
+              >
+                <Text style={[styles.chipText, selected && styles.chipTextOn]}>{label}</Text>
+              </Pressable>
+            );
+          })}
+        </ScrollView>
+      ) : null}
       <FlashList
-        data={rows}
+        data={data}
         numColumns={3}
         masonry
-        keyExtractor={(r) => String(r.id)}
+        keyExtractor={(it) =>
+          it.__type === "media" ? String(it.row.id) : (it as AlbumGridHeader).key
+        }
+        getItemType={(it) => it.__type}
+        overrideItemLayout={(layout, it) => {
+          // Full-width section headers, same trick as GalleryScreen's day
+          // headers (span = numColumns).
+          if (it.__type === "groupHeader") {
+            layout.span = 3;
+          }
+        }}
         renderItem={renderItem}
         contentContainerStyle={styles.listContent}
         ListEmptyComponent={
@@ -214,6 +350,17 @@ const styles = StyleSheet.create({
   chipOn: { backgroundColor: theme.colors.primaryContainer },
   chipTextOn: { color: theme.colors.onPrimaryContainer },
   listContent: { paddingBottom: 40, paddingTop: theme.spacing.sm },
+  // Album organizer section headers (full-width via overrideItemLayout span).
+  groupHeaderWrap: {
+    flexDirection: "row",
+    alignItems: "baseline",
+    gap: 8,
+    paddingHorizontal: theme.spacing.xs,
+    paddingTop: theme.spacing.sm,
+    paddingBottom: theme.spacing.xs,
+  },
+  groupHeaderText: { color: theme.colors.onSurface, fontSize: 14, fontWeight: "700" },
+  groupHeaderCount: { color: theme.colors.onSurfaceVariant, fontSize: 12 },
   cell: {
     flex: 1,
     margin: 1,

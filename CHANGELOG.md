@@ -4,6 +4,45 @@ Each entry below documents what a commit adds and what comes next. Newest first.
 
 ---
 
+## v0.22 — Album organizer + S9 Phase 2 live group sync (COMMITTED in this commit)
+
+**Added in this commit** (coded by the owner's second chatbot; diff-reviewed + tsc-verified +
+committed by chatbot 1; commit message authored by the coder)
+- **Album organizer (shared albums only):** a second chip row — **All / By sender / By month** —
+  below the topic chips (the two compose: grouping re-shapes whatever the active topic filter
+  loaded). Grouping renders full-width section headers with counts (the GalleryScreen day-header
+  pattern: item types + `overrideItemLayout` span = 3). Sender names come from the same resolver
+  the Recent-activity feed uses; the owner's own media shows as "You"; month groups read e.g.
+  "March 2026". Local (non-shared) albums render byte-identically to before.
+- **S9 Phase 2 two-way sync (`src/lib/groupSync.ts`, new):** live reflection of linked-group
+  activity — `updateNewMessage` claims just that message through the claimer engine (new
+  `claimSingleMessage` wrapper: same fingerprint dedupe + own-sender rules; deliberately does
+  NOT advance the per-album claim cursor, whose min-across-topics invariant only the full claim
+  may maintain); `updateDeleteMessages` removes **only the album_media link rows** — the owner's
+  library copy and its Saved-Messages backup are never touched (S9 rule: family media is never
+  auto-deleted); `updateMessageContent` edits are a documented no-op in this version. Events are
+  allowlisted to linked album chats, debounced (2 s), drained strictly sequentially (bursts
+  can't fire concurrent TDLib calls), capped (200) with the boot catch-up as the safety net; all
+  paths try/caught with `__DEV__` logs — sync can never crash the app.
+- **Boot catch-up:** ~20 s after start, the idempotent per-album claim re-runs; the existing
+  `last_claimed_message_id` cursor picks up exactly what arrived while the app was closed (no
+  new cursor, no duplicate claims on relaunch).
+- **Queries:** `listLinkedAlbums`, `deleteAlbumMediaByMessage` (link rows only, returns change
+  count), `listAlbumMedia` now returns `am.sender_id` (`AlbumMediaRow`). No schema change. All
+  SQL parameter-bound. tsc clean; **not yet device-verified.**
+
+**Verify on device when free** (test group)
+- Family posts a photo → it appears in the album grid without "⟳ Claim new"; the sender group
+  chip shows the right name.
+- Family deletes a photo → it leaves the album grid; the owner's own timeline/backup is
+  untouched; a delete of the owner's OWN photo in the group changes nothing locally.
+- Kill + relaunch → catch-up claims nothing twice.
+- Link a NEW album while the app is running, then have the family post immediately → the next
+  boot catch-up picks it up (live events for a just-linked chat may be missed until then — by
+  design, documented).
+
+---
+
 ## PRIVACY.md — privacy policy for the Play listing (COMMITTED in this commit)
 
 - Full privacy policy written for the app: the developer collects **nothing** (no accounts, no

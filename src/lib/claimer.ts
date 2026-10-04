@@ -290,6 +290,46 @@ async function claimOne(
   return outcome;
 }
 
+// S9 Phase 2 live-sync entry point (src/lib/groupSync.ts): claim ONE message
+// the moment it arrives in a linked group, through the exact engine path
+// "⟳ Claim new" uses — fingerprint dedupe (findClaimedMessage + insertMedia's
+// unique fingerprint) and the own-sender timeline rule included, so no double
+// rows can appear. Deliberately does NOT touch albums.last_claimed_message_id:
+// the per-album cursor has a min-across-topics invariant only claimAlbumMedia
+// may maintain, and the dedupe above already makes a re-encounter of this
+// message a harmless duplicate on the next full claim.
+export async function claimSingleMessage(
+  album: { id: number; chat_id: string },
+  message: TdAny
+): Promise<"claimed" | "duplicate" | "failed"> {
+  if (!message || typeof message.id !== "number") return "failed";
+  if (!extractMedia(message)) return "failed";
+  // Same thread-resolution as the pre-topic backfill below: forum messages
+  // carry the thread id, General-topic messages resolve to null (shown under
+  // "All" only — the same accepted state as pre-feature rows).
+  const threadId = firstDefined(
+    message.messageThreadId,
+    message.message_thread_id,
+    message.replyTo?.messageReplyToMessage?.replyToMessageId,
+    message.replyTo?.messageReplyToMessage?.reply_to_message_id
+  );
+  const ownUserId = await currentUserId();
+  try {
+    return await claimOne(
+      album.id,
+      album.chat_id,
+      message,
+      ownUserId,
+      typeof threadId === "number" || typeof threadId === "string" ? String(threadId) : null
+    );
+  } catch (err) {
+    if (__DEV__) {
+      console.log("[claimer] live claim failed:", err instanceof Error ? err.message : err);
+    }
+    return "failed";
+  }
+}
+
 // The original (non-forum) claim path (D5): groups without topics behave
 // exactly as before this feature — getChatHistory → oldest-first → max-id
 // cursor. The forum path below is fully additive behind isForumChat.
