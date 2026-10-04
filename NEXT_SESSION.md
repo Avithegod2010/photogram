@@ -14,16 +14,23 @@ import from the v0.11.2 handoff) + `387756d` v0.12.1–v0.17 + `2ea7a67`/`3207e4
 Working tree clean, tsc clean. Owner picked MIT. History was fully REWRITTEN before going public: all commit identities → 258314859+Avithegod2010@users.noreply.github.com (repo git config set to it — future commits safe), and the personal traces (Saved-Messages chat/message ids, device serial, LAN IPs, real name) were scrubbed from all commits; doc hash refs updated post-rewrite. Scrub gap (external audit, re-measured round 2): the test-group supergroup id survived the rewrite (19 commits); the Saved-Messages chat/message ids were verified absent from all commits. A group id is not a credential (known to every member); redacted at the tip and treated as accepted residue, not worth another force-push. GitHub-side caveats: pre-rewrite commit objects may linger by SHA until GitHub GCs (repo was private the whole time, so they were never crawled); dependabot PR #1 closed. allowBackup=false lands in APK at next gradle rebuild.**
 
 ### FIRST ACTIONS for the next session
-1. **ONE combined gradle rebuild** unlocks v0.16 (expo-notifications native) + v0.17
-   (editMessageCaption wrapper): `E:\Dev\run-photogram-build.ps1` — never mid-upload, check logcat
-   first. Everything else (v0.12–v0.15, v0.18, v0.21) verifies via Metro alone (8083, `--host lan`).
-2. **Device verify** per the checklists in each CHANGELOG entry (v0.12 → v0.21). v0.18–v0.21 are
-   ALL COMMITTED (owner ordered the remaining features coded): v0.18 Wrapped, v0.19 photo editor +
-   versioned archive (schema v10 edited_from + upload_queue.reply_to_message_id; uploader reply-to
-   hunk + preview-skip), v0.20 send-to-album (uploader remote-link guard + chat-aware dedupe
-   grouping), v0.21 place search (schema v11 place_name; offline 24k-city dataset
-   assets/geo/cities.json; scanner index+backfill; searchable).
-3. **Security auditor chatbot results** (owner-relayed) → triage and fix.
+1. **v0.22 DONE (2026-10-04, `8268349`):** album organizer (All/By sender/By month grouping in
+   shared albums) + S9 Phase 2 live group sync (`src/lib/groupSync.ts`: live new-message claims,
+   link-only delete sync, no-op edits, debounced sequential drain, boot catch-up). Review notes:
+   delete updates carry chatId in this TDLib build (verified in TdApi.java) — the filter is
+   correct; a just-linked album's live events may be missed until the next boot catch-up (by
+   design). Needs device verification (checklist in the CHANGELOG entry).
+2. **ONE combined gradle rebuild** unlocks v0.16 (expo-notifications native) + v0.17
+   (editMessageCaption wrapper) + the allowBackup/permission-strip hardening:
+   `E:\Dev\run-photogram-build.ps1` — never mid-upload, check logcat first. Everything else
+   (v0.12–v0.15, v0.18–v0.22) verifies via Metro alone (8083, `--host lan`).
+3. **Device verify** per the checklists in each CHANGELOG entry (v0.12 → v0.22). Then resume the
+   bulk backup (~8 GB remaining; queue auto-resumes on app restart).
+4. **Security auditor round-2 fixes committed** (`9521b8c`); PRIVACY.md written (`1924772`) —
+   owner must insert a contact email in §11 and enable GitHub Pages before Play submission.
+   Play Store track: signing (EAS vs local keystore), branding assets, closed-test plan (12+
+   testers / 14 days for new personal accounts). Remaining feature ideas: vibe search v1 (ML Kit
+   labeling), People & Pets (face pipeline).
 
 ### Housekeeping notes
 - Backup stash `da826ce` can be dropped now that everything is pushed (`git stash drop`).
