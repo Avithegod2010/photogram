@@ -26,6 +26,7 @@ import { JournalScreen } from "../screens/JournalScreen";
 import { HighlightsScreen } from "../screens/HighlightsScreen";
 import { PeopleSetupScreen } from "../screens/PeopleSetupScreen";
 import { PeopleScreen } from "../screens/PeopleScreen";
+import { ExportScreen } from "../screens/ExportScreen";
 
 export type RootStackParamList = {
   Tabs: undefined;
@@ -54,6 +55,7 @@ export type RootStackParamList = {
   Highlights: undefined;
   PeopleSetup: undefined;
   People: undefined;
+  Export: undefined;
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -94,6 +96,7 @@ export function RootNavigator() {
       <Stack.Screen name="Highlights" component={HighlightsScreen} />
       <Stack.Screen name="PeopleSetup" component={PeopleSetupScreen} />
       <Stack.Screen name="People" component={PeopleScreen} />
+      <Stack.Screen name="Export" component={ExportScreen} />
       <Stack.Screen
         name="Slideshow"
         component={SlideshowScreen}

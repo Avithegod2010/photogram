@@ -4,6 +4,47 @@ Each entry below documents what a commit adds and what comes next. Newest first.
 
 ---
 
+## v0.37 + v0.38 — Scheduled integrity checks + export-everything (COMMITTED — two JS-only picks, owner-approved; plus handoff-doc refresh; no migration, no new native modules)
+
+- **v0.37 Scheduled integrity checks (Safety check screen):** the "Backup integrity" card now has
+  **Off / Weekly / Monthly** chips. When ON, a boot-started in-app loop (same pattern as the junk
+  auto-sweep: `src/lib/integritySchedule.ts`, checks a few times a day) re-verifies the whole
+  library against Telegram on the chosen interval. The last-auto-run timestamp is written ONLY
+  when a pass reaches `finishedAt` (the whole library walked) — a stopped/partial pass (network,
+  auth) never counts as done, so the next check just continues. A module-level lock in
+  `integrity.ts` (`isIntegrityRunning`) means the scheduled pass and the manual Run button can
+  never interleave their cursors — the second arrival reads the report from meta instead.
+- **v0.38 Export library (Settings → Diagnostics → Export):** the escape hatch for the
+  Telegram-warehouse design. Two exports from a new `ExportScreen`: the **full JSON manifest**
+  (every media row INCLUDING trashed/edited copies, tags, notes, favorites, GPS, place, OCR, pHash,
+  people, face samples with hex-encoded embeddings, and each item's exact Telegram chat/message
+  id) and an **Excel-friendly CSV** (RFC 4180 escaping). Files are written under the app's
+  documents/export/ folder via the SDK-57 File API, then shared through the system sheet — the
+  owner picks where it goes (Saved Messages, Drive, a PC), nothing uploads on its own. Photos
+  themselves are never copied; this is the addressable index of the warehouse. New queries
+  (`listAllMediaForExport`/`listPeopleForExport`/`listFacesForExport`) deliberately include
+  everything, unlike every read UI. MediaRow gains optional `tags`/`latitude`/`longitude`/
+  `ocr_text` typing (existed in schema since v2/v5 — additive only).
+- **Review: probe extended to 136/136** — schedule due-gate math (off/weekly/monthly boundaries,
+  malformed timestamps), manifest JSON parse + header, `media_count` == `COUNT(*)` (proves the
+  export covers ALL rows), ISO dates + Telegram ids on every entry, people/face arrays, hex
+  embedding check, full RFC-4180 CSV escaping matrix, CSV column header + one-row-per-media, and
+  an **end-to-end export**: the REAL `runExport` pipeline wrote + read back a JSON manifest
+  through the in-memory FS stub (the stub gained `create`/`write`/`text`/`uri` and a two-arg
+  `File`/`Directory` — the end-to-end probe caught and fixed a missing `uri` getter). tsc clean;
+  48/48 static.
+- **Docs:** NEXT_SESSION.md refreshed to the true 2026-10-17 state: both versions committed+
+  pushed (`018feea`, `a1056f2`), gradle rebuild done and the APK INSTALLED (Success, TDLib session
+  survived, backup never interrupted), remaining device checklist (AI tags + faces toggles →
+  rescan → People model → Scenes/Similar), three new session traps.
+
+**Verify on device (Metro alone):** Safety check → pick Weekly, run a pass, see the chips
+highlight; Settings → Diagnostics → Export library → JSON export → share sheet; import the CSV
+into Google Sheets; compact toggle changes file size. Integrity auto-runs need a day+ to prove
+themselves — verify the chips + one manual pass now.
+
+---
+
 ## v0.36 — Scene auto-albums + duplicate merge (COMMITTED — two JS-only picks from docs/IDEAS-BACKLOG.md; no migration, no new native modules)
 
 Two JS-only picks from docs/IDEAS-BACKLOG.md; no migration, no new native modules.

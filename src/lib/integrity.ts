@@ -54,6 +54,15 @@ export async function loadIntegrityReport(): Promise<IntegrityReport | null> {
   }
 }
 
+// v0.37: one pass at a time, ever. The scheduled auto-check and the manual
+// button share this flag — whoever arrives second just reads the report from
+// meta instead of interleaving two cursors into one walk.
+let running = false;
+
+export function isIntegrityRunning(): boolean {
+  return running;
+}
+
 async function saveReport(report: IntegrityReport): Promise<void> {
   await setMeta(REPORT_KEY, JSON.stringify(report));
 }
@@ -79,6 +88,20 @@ function brokenRow(row: { id: number; thumb_uri: string; file_name: string | nul
 }
 
 export async function runIntegrityPass(
+  onProgress?: (report: IntegrityReport) => void,
+  cancelRef?: { cancelled: boolean },
+  budget = 400
+): Promise<IntegrityReport> {
+  if (running) return (await loadIntegrityReport()) ?? emptyReport();
+  running = true;
+  try {
+    return await runIntegrityPassInner(onProgress, cancelRef, budget);
+  } finally {
+    running = false;
+  }
+}
+
+async function runIntegrityPassInner(
   onProgress?: (report: IntegrityReport) => void,
   cancelRef?: { cancelled: boolean },
   budget = 400

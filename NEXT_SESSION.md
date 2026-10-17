@@ -1,11 +1,32 @@
 # PHOTOGRAM — MASTER HANDOFF (read this fully before coding)
 
 _This file is the single source of truth for any AI agent or developer picking up this project cold.
-Last updated: late 2026-09-06 (§0). Read §0, then §1–§17. CHANGELOG.md has per-version notes._
+Last updated: 2026-10-17 (§0). Read §0, then §1–§17. CHANGELOG.md has per-version notes._
 
 ---
 
-## 0. CURRENT STATE — 2026-09-06 END · ALL SEVEN VERSIONS COMMITTED & PUBLISHED · PUBLIC GITHUB REPO (MIT)
+## 0. CURRENT STATE — 2026-10-17 · v0.34.1 + v0.36 COMMITTED, PUSHED, REBUILT & INSTALLED · DEVICE VERIFY PART-DONE (PAUSED — PHONE UNDER ANOTHER CHATBOT'S CONTROL)
+
+**2026-10-17 session status (all owner-approved; tree clean at HEAD `a1056f2` = origin/master):**
+Both commits PUSHED (`dd13882..a1056f2`). The combined gradle rebuild was DONE compile-only
+(`E:\Dev\run-photogram-gradle-assemble.ps1`, GRADLE-EXITCODE=0, ~174 MB APK with
+libNitroTflite/libNitroModules/libNitroMmkv/libface_detector_v2_jni/libtdjni confirmed inside) and
+the APK was then **installed over wireless adb** (`192.168.29.97:35247`, `install -r` → Success;
+TDLib session survived, no re-login). App re-launched and healthy: header `1945/2181 in Telegram ·
+last backup 2h ago` — bulk backup kept running through the whole rebuild (no interruption).
+Metro on 8083 (PID check via netstat; start with `E:\Dev\run-photogram-metro-fast.ps1`) + reverse
+tunnel re-established after one stale-tunnel ECONNREFUSED error screen (tap Reload → dev-launcher
+home → deep-link `exp+photogram://expo-development-client/?url=http%3A%2F%2Flocalhost%3A8083`).
+Probe re-verified end of session: **111/111 + 48/48 static + tsc 0.**
+**REMAINING DEVICE WORK (do only when the phone is FREE — it was handed to another chatbot
+2026-10-17 evening; never fire taps/swipes without confirming `com.photogram.app` is the
+foreground package via uiautomator dump):** Settings → turn ON "Smart tags (on-device)" and
+"Find faces" (both switches right side of SEARCH rows) → gallery ⟳ rescan (labels + face boxes
+for the whole library in one pass) → PeopleSetup: download FaceNet-128 → "Detect & embed" phase
+→ "Group faces" → verify People screen + Scenes screen counts + SimilarScreen merge chip.
+Commit-time note: v0.35 slot was SKIPPED to avoid ambiguity (People step 2 folded into v0.34.1 at
+the owner's request).
+
 
 **PUBLISHED & PUBLIC: https://github.com/Avithegod2010/photogram (MIT license). 28 commits pushed
 (master = origin/master at `3207e41`). All seven versions committed: `f372998` v0.12 Junk Sweeper
@@ -14,14 +35,14 @@ import from the v0.11.2 handoff) + `387756d` v0.12.1–v0.17 + `2ea7a67`/`3207e4
 Working tree clean, tsc clean. Owner picked MIT. History was fully REWRITTEN before going public: all commit identities → 258314859+Avithegod2010@users.noreply.github.com (repo git config set to it — future commits safe), and the personal traces (Saved-Messages chat/message ids, device serial, LAN IPs, real name) were scrubbed from all commits; doc hash refs updated post-rewrite. Scrub gap (external audit, re-measured round 2): the test-group supergroup id survived the rewrite (19 commits); the Saved-Messages chat/message ids were verified absent from all commits. A group id is not a credential (known to every member); redacted at the tip and treated as accepted residue, not worth another force-push. GitHub-side caveats: pre-rewrite commit objects may linger by SHA until GitHub GCs (repo was private the whole time, so they were never crawled); dependabot PR #1 closed. allowBackup=false lands in APK at next gradle rebuild.**
 
 ### FIRST ACTIONS for the next session
-1. **v0.36 COMMITTED (2026-10-17, owner-approved):** scene auto-albums (`src/lib/scenes.ts`
+1. **v0.36 COMMITTED & PUSHED (2026-10-17, owner-approved, `a1056f2`):** scene auto-albums (`src/lib/scenes.ts`
    + Scenes screen on the existing ML tags — six curated scenes, boundary-safe `" label "`
    matching, same universe as search/smart albums) + duplicate merge (`src/lib/merge.ts`:
    keeper stays, rest → the REVERSIBLE trash path; fresh re-read prevents stale-snapshot
    re-trash; sets up purge to clean local files + Telegram copies within 30 days). Merge picker
    UI in SimilarScreen (GroupCard "Merge" chip), Collections route "Scenes". **Probe 111/111**
    + 48/48 + tsc 0. No migration, JS-only. THEN device verify v0.12 → v0.36 per checklists.
-2. **v0.34.1 COMMITTED (2026-10-17; owner-approved renumber of "v0.35"):** People & Pets step 2
+2. **v0.34.1 COMMITTED & PUSHED (2026-10-17; owner-approved renumber of "v0.35"; `018feea`):** People & Pets step 2
    — library backfill
    (`src/lib/people.ts backfillFaces`: resumable detect+embed over ALREADY-SCANNED photos,
    cursors `faces_detect_cursor`/`faces_embed_cursor` in meta, zero-length-BLOB failed-embed
@@ -103,16 +124,25 @@ Working tree clean, tsc clean. Owner picked MIT. History was fully REWRITTEN bef
    delete updates carry chatId in this TDLib build (verified in TdApi.java) — the filter is
    correct; a just-linked album's live events may be missed until the next boot catch-up (by
    design). Needs device verification (checklist in the CHANGELOG entry).
-6. **ONE combined gradle rebuild — DONE (2026-10-17, compile-only; no device attached):**
+6. **ONE combined gradle rebuild — DONE (2026-10-17, compile-only; no device attached initially):
    runner `E:\Dev\run-photogram-gradle-assemble.ps1` (same env as run-photogram-build.ps1;
    `gradlew :app:assembleDebug` — identical dev APK since the dev client takes its manifest
    from Metro at runtime, not the APK); log `E:\Dev\photogram-build.log`, `GRADLE-EXITCODE=0`
    in 45 min; APK ~174 MB at `android\app\build\outputs\apk\debug\app-debug.apk` with
    libNitroTflite/libNitroModules/libNitroMmkv/libface_detector_v2_jni/libtdjni confirmed
    inside. Still unlocks v0.16 + v0.17 + v0.23 + face-detection + fast-tflite/nitro +
-   allowBackup hardening. Install: USB → `adb install -r <apk>` — never mid-upload.
-7. **Device verify** per the checklists in each CHANGELOG entry (v0.12 → v0.34). Then resume the
-   bulk backup (~8 GB remaining; queue auto-resumes on app restart).
+   allowBackup hardening. **Installed 2026-10-17 over wireless adb: `install -r` → Success,
+   TDLib session survived, app healthy (1945/2181, backup running).** Install: check logcat
+   for in-flight uploads first — never mid-upload.
+7. **Device verify** per the checklists in each CHANGELOG entry (v0.12 → v0.36). Progress:
+   install + app-health done; Smart tags/Find faces toggles, rescan, People model setup,
+   Scenes/Similar verification all still PENDING. Then resume the bulk backup (~8 GB
+   remaining; queue auto-resumes on app restart — it kept running through 2026-10-17).
+   **Traps added 2026-10-17:** (a) Metro's `/status` endpoint may hang from the PC even while
+   Metro works — the real health test is a phone fetch through `adb reverse`; (b) PowerShell
+   redirection `> cmd /c dummy` creates a stray file named `cmd` — wrap the whole native call
+   in `cmd /c '"adb.exe" ... file'`; (c) the phone is SHARED — always dump UI and check the
+   `package=` attr before any input; another app (or person) may be in the foreground.
 8. **Security auditor round-2 fixes committed** (`9521b8c`); PRIVACY.md written (`1924772`) —
    owner must insert a contact email in §11 and enable GitHub Pages before Play submission.
    Play Store track: signing (EAS vs local keystore), branding assets, closed-test plan (12+

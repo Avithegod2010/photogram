@@ -42,6 +42,11 @@ export interface MediaRow {
   // v0.33 highlights (schema v16): variance of the Laplacian over the thumb;
   // -1 = tried but the thumbnail was undecodable.
   sharpness?: number | null;
+  // Exposed for v0.38 export (already real columns since v2/v5).
+  tags?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
+  ocr_text?: string | null;
 }
 
 // --- v0.33+ People & Pets step 1 (face detection) -------------------------------
@@ -1698,4 +1703,48 @@ export async function setMediaPlace(id: number, placeName: string | null): Promi
     Date.now(),
     id,
   ]);
+}
+
+// --- v0.38 export-everything --------------------------------------------------
+
+// Escape hatch: the complete library as portable data. Unlike every read UI,
+// exports deliberately include EVERYTHING — trashed, edited copies, hidden and
+// shared-row bookkeeping — because the point is "if this phone died, what do I
+// have?" BLOB embeddings come back as Uint8Array and are hex-encoded by
+// exportManifest.ts (portable, no Buffer dependency).
+export async function listAllMediaForExport(): Promise<MediaRow[]> {
+  const db = await getDb();
+  return db.getAllAsync<MediaRow>("SELECT * FROM media ORDER BY id");
+}
+
+export interface ExportPersonRow {
+  id: number;
+  name: string | null;
+  created_at: number;
+}
+
+export async function listPeopleForExport(): Promise<ExportPersonRow[]> {
+  const db = await getDb();
+  return db.getAllAsync<ExportPersonRow>("SELECT id, name, created_at FROM people ORDER BY id");
+}
+
+export interface ExportFaceRow {
+  id: number;
+  media_id: number;
+  box_x: number;
+  box_y: number;
+  box_w: number;
+  box_h: number;
+  quality: number | null;
+  model_id: string | null;
+  person_id: number | null;
+  created_at: number;
+  embedding: Uint8Array | null;
+}
+
+export async function listFacesForExport(): Promise<ExportFaceRow[]> {
+  const db = await getDb();
+  return db.getAllAsync<ExportFaceRow>(
+    "SELECT id, media_id, box_x, box_y, box_w, box_h, quality, model_id, person_id, created_at, embedding FROM face_samples ORDER BY id"
+  );
 }

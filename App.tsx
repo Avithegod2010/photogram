@@ -10,6 +10,7 @@ import { purgeExpiredTrash } from "./src/lib/trash";
 import { repairTakenAtUnits } from "./src/db/queries";
 import { startAutoBackupLoop } from "./src/lib/autoBackup";
 import { startJunkAutoSweepLoop } from "./src/lib/junkAutoSweep";
+import { startScheduledIntegrityLoop } from "./src/lib/integritySchedule";
 import { startGroupSync } from "./src/lib/groupSync";
 import { startNotifyLoop } from "./src/lib/notify";
 import { syncPendingNotes } from "./src/lib/notes";
@@ -24,6 +25,7 @@ export default function App() {
       void repairTakenAtUnits().catch(() => {});
       startAutoBackupLoop();
       startJunkAutoSweepLoop();
+      startScheduledIntegrityLoop();
       startGroupSync();
       startNotifyLoop();
       void syncPendingNotes().catch(() => {});

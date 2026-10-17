@@ -1,6 +1,9 @@
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 import { createMMKV } from "react-native-mmkv";
+import type { IntegritySchedule } from "../lib/integritySchedule";
+
+export type { IntegritySchedule };
 
 export const mmkv = createMMKV({ id: "photogram-settings" });
 
@@ -50,6 +53,14 @@ interface SettingsState {
   notificationsEnabled: boolean;
   notifyBackupFinished: boolean;
   notifyOnThisDay: boolean;
+  // v0.37: how often the app auto-walks the library and verifies every
+  // "synced" item against Telegram ("backup integrity"). An in-app loop
+  // checks a few times a day; the interval gate decides when a pass runs.
+  integritySchedule: IntegritySchedule;
+  setIntegritySchedule: (v: IntegritySchedule) => void;
+  // v0.38: export the manifest as compact one-line JSON instead of indented.
+  exportMinifyJson: boolean;
+  setExportMinifyJson: (v: boolean) => void;
   setExifPreserve: (v: boolean) => void;
   setHiddenLockEnabled: (v: boolean) => void;
   setWifiOnlyUpload: (v: boolean) => void;
@@ -99,6 +110,10 @@ export const useSettingsStore = create<SettingsState>()(
       notificationsEnabled: false,
       notifyBackupFinished: true,
       notifyOnThisDay: true,
+      integritySchedule: "off",
+      setIntegritySchedule: (v) => set({ integritySchedule: v }),
+      exportMinifyJson: false,
+      setExportMinifyJson: (v) => set({ exportMinifyJson: v }),
       setExifPreserve: (v) => set({ exifPreserve: v }),
       setHiddenLockEnabled: (v) => set({ hiddenLockEnabled: v }),
       setWifiOnlyUpload: (v) => set({ wifiOnlyUpload: v }),

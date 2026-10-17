@@ -32,7 +32,7 @@ import { enableNotifications } from "../lib/notify";
 import { useAuthStore } from "../auth/authStore";
 import { theme } from "../theme";
 
-type SettingsNav = NativeStackNavigationProp<{ Migrate: undefined; JunkSweeper: undefined; Storage: undefined; Diagnostics: undefined }>;
+type SettingsNav = NativeStackNavigationProp<{ Migrate: undefined; JunkSweeper: undefined; Storage: undefined; Diagnostics: undefined; Export: undefined }>;
 
 export function SettingsScreen() {
   const insets = useSafeAreaInsets();
@@ -590,6 +590,19 @@ export function SettingsScreen() {
         </Section>
 
         <Section title="Diagnostics">
+          <Pressable
+            style={styles.row}
+            onPress={() => navigation.navigate("Export")}
+            android_ripple={{ color: theme.colors.outlineVariant }}
+          >
+            <View style={styles.toggleText}>
+              <Text style={styles.rowLabel}>Export library</Text>
+              <Text style={styles.rowSub}>
+                Every photo's index — dates, tags, notes, people, Telegram ids — as a JSON/CSV file
+                you can keep anywhere. An escape hatch for the cloud-warehouse design.
+              </Text>
+            </View>
+          </Pressable>
           <Pressable
             style={styles.row}
             onPress={() => navigation.navigate("Diagnostics")}

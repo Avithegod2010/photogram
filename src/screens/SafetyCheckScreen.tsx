@@ -8,7 +8,15 @@ import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { getSafetyReport, SafetyReport } from "../db/queries";
 import { formatBytes } from "../lib/stats";
 import { IntegrityReport, loadIntegrityReport, runIntegrityPass } from "../lib/integrity";
+import type { IntegritySchedule } from "../lib/integritySchedule";
+import { useSettingsStore } from "../store/settingsStore";
 import { theme } from "../theme";
+
+const SCHEDULE_LABEL: Record<IntegritySchedule, string> = {
+  off: "Off",
+  weekly: "Weekly",
+  monthly: "Monthly",
+};
 
 const STATE_LABEL: Record<string, string> = {
   local: "Not backed up yet",
@@ -27,6 +35,8 @@ export function SafetyCheckScreen({
   navigation: NativeStackNavigationProp<{ Tabs: undefined; Viewer: { ids: number[]; index: number } }>;
 }) {
   const insets = useSafeAreaInsets();
+  const schedule = useSettingsStore((s) => s.integritySchedule);
+  const setSchedule = useSettingsStore((s) => s.setIntegritySchedule);
   const [report, setReport] = useState<SafetyReport | null>(null);
   const [integrity, setIntegrity] = useState<IntegrityReport | null>(null);
   const [checking, setChecking] = useState(false);
@@ -124,8 +134,30 @@ export function SafetyCheckScreen({
               <View style={{ flex: 1 }}>
                 <Text style={styles.integrityTitle}>Backup integrity</Text>
                 <Text style={styles.integritySub}>
+                  {schedule !== "off"
+                    ? `Auto-check ${SCHEDULE_LABEL[schedule].toLowerCase()} — re-verifies the whole library and re-checks anything Telegram says is missing.`
+                    : "Asks Telegram whether every backed-up photo still exists."}
+                </Text>
+              </View>
+            </View>
+            <View style={styles.scheduleRow}>
+              {(["off", "weekly", "monthly"] as IntegritySchedule[]).map((s) => (
+                <Pressable
+                  key={s}
+                  style={[styles.scheduleChip, schedule === s && styles.scheduleChipOn]}
+                  onPress={() => setSchedule(s)}
+                >
+                  <Text style={[styles.scheduleChipText, schedule === s && styles.scheduleChipTextOn]}>
+                    {SCHEDULE_LABEL[s]}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: theme.spacing.sm, marginTop: theme.spacing.sm }}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.integritySub}>
                   {integrity === null
-                    ? "Asks Telegram whether every backed-up photo still exists."
+                    ? "Ask Telegram now, or pick a schedule above."
                     : integrity.stoppedReason
                     ? `Paused: ${integrity.stoppedReason} — run again to continue.`
                     : integrity.finishedAt !== null
@@ -257,6 +289,16 @@ const styles = StyleSheet.create({
     padding: theme.spacing.md,
   },
   integrityHead: { flexDirection: "row", alignItems: "center", gap: theme.spacing.sm },
+  scheduleRow: { flexDirection: "row", gap: 6, marginTop: theme.spacing.sm },
+  scheduleChip: {
+    backgroundColor: theme.colors.surfaceHighest,
+    borderRadius: theme.radius.full,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+  },
+  scheduleChipOn: { backgroundColor: theme.colors.primary },
+  scheduleChipText: { color: theme.colors.onSurfaceVariant, fontSize: 11, fontWeight: "600" },
+  scheduleChipTextOn: { color: theme.colors.onPrimary },
   integrityTitle: { color: theme.colors.onSurface, fontSize: 14.5, fontWeight: "700" },
   integritySub: { color: theme.colors.onSurfaceVariant, fontSize: 12, marginTop: 2 },
   integrityBrokenTitle: {
