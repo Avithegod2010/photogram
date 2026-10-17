@@ -14,7 +14,25 @@ import from the v0.11.2 handoff) + `387756d` v0.12.1–v0.17 + `2ea7a67`/`3207e4
 Working tree clean, tsc clean. Owner picked MIT. History was fully REWRITTEN before going public: all commit identities → 258314859+Avithegod2010@users.noreply.github.com (repo git config set to it — future commits safe), and the personal traces (Saved-Messages chat/message ids, device serial, LAN IPs, real name) were scrubbed from all commits; doc hash refs updated post-rewrite. Scrub gap (external audit, re-measured round 2): the test-group supergroup id survived the rewrite (19 commits); the Saved-Messages chat/message ids were verified absent from all commits. A group id is not a credential (known to every member); redacted at the tip and treated as accepted residue, not worth another force-push. GitHub-side caveats: pre-rewrite commit objects may linger by SHA until GitHub GCs (repo was private the whole time, so they were never crawled); dependabot PR #1 closed. allowBackup=false lands in APK at next gradle rebuild.**
 
 ### FIRST ACTIONS for the next session
-1. **v0.34 CODED, UNCOMMITTED (2026-10-05):** People & Pets step 1 — model picker
+1. **v0.34.1 COMMITTED (2026-10-17; owner-approved renumber of "v0.35"):** People & Pets step 2
+   — library backfill
+   (`src/lib/people.ts backfillFaces`: resumable detect+embed over ALREADY-SCANNED photos,
+   cursors `faces_detect_cursor`/`faces_embed_cursor` in meta, zero-length-BLOB failed-embed
+   sentinel; owner explicitly required existing photos to be covered), embeddings
+   (`faces.ts embedFace`: crop→jpeg-js→**per-image z-score standardization verified from the
+   model repo's FaceNetModel.kt** — NOT (x−127.5)/128 — via `react-native-fast-tflite@3.0.1`
+   + `react-native-nitro-modules`, BOTH soft-required native modules for the pending rebuild),
+   clustering (`runClustering`: cosine ≥ 0.6 union-find, person_id-NULL samples only → named
+   people frozen; schema v18 `people` + `face_samples.person_id`), NEW PeopleScreen
+   (cover/count cards → person's photos → ✎ rename modal; "Group faces" button) + PeopleSetup
+   Step-3 "Detect & embed" with live counts. Probe **93/93** + 48/48 + tsc 0. **Probe caught 1
+   real bug: bytesToF32 decoded BLOB bit-patterns as integers (embeddings would read back
+   garbage) — fixed with DataView.** Committed as v0.34.1 at the owner's request (fold step 2
+   into the v0.34 People & Pets family; all older "v0.35" references mean this v0.34.1).
+   **P&P v1 is now CODE-COMPLETE (v0.34+v0.34.1). Remaining: the gradle rebuild (now carries
+   v0.16+v0.17+v0.23+face-detection+fast-tflite/nitro+hardening) → device verify
+   v0.12–v0.34.1. Ideas for later: docs/IDEAS-BACKLOG.md.**
+2. **v0.34 DONE (committed `dd13882`, 2026-10-05):** People & Pets step 1 — model picker
    (`src/lib/faceModels.ts`: FaceNet-128 ~23MB default + FaceNet-512 ~24MB, both verified
    ready-made tflite via the GitHub API; `validateModelUrl` https+allowlist gate;
    `downloadModel` resumable with progress; `faceModelId` in settingsStore) + NEW
@@ -46,7 +64,25 @@ Working tree clean, tsc clean. Owner picked MIT. History was fully REWRITTEN bef
    review: 71/71 integration + 48/48 static + tsc 0; **pHash64-since-v0.12 DCT bug (8 vs 32
    basis rows) found+fixed — the junk sweep's near-dup category starts working after this
    batch**; cloud-only video no longer stalls the slideshow. Probe harness lives at
-   `.expo/review-probe/` (gitignored; re-run cmd in tooling-traps memory).
+   `.expo/review-probe/` (gitignored). **Re-run cmd (verified 2026-10-17; alias targets must be
+   ABSOLUTE or esbuild fails to resolve them):** from repo root —
+   `$P=(Get-Location).Path -replace '\\','/'` then
+   `npx --no-install esbuild .expo/review-probe/probe.ts --bundle --platform=node --format=cjs
+   --outfile=.expo/review-probe/probe.cjs` followed by
+   `--alias:expo-sqlite="$P/.expo/review-probe/stubs/expo-sqlite.ts"`
+   `--alias:expo-file-system="$P/.expo/review-probe/stubs/expo-file-system.ts"`
+   `--alias:expo-file-system/legacy="$P/.expo/review-probe/stubs/expo-file-system-legacy.ts"`
+   `--alias:expo-image-manipulator="$P/.expo/review-probe/stubs/expo-image-manipulator.ts"`
+   `--alias:expo-media-library="$P/.expo/review-probe/stubs/expo-media-library.ts"`
+   `--alias:expo-media-library/legacy="$P/.expo/review-probe/stubs/expo-media-library-legacy.ts"`
+   `--alias:expo-constants="$P/.expo/review-probe/stubs/expo-constants.ts"`
+   `--alias:react-native="$P/.expo/review-probe/stubs/react-native.ts"`
+   `--alias:react-native-tdlib="$P/.expo/review-probe/stubs/react-native-tdlib.ts"`
+   `--alias:react-native-mmkv="$P/.expo/review-probe/stubs/react-native-mmkv.ts"`
+   `--alias:react-native-fast-tflite="$P/.expo/review-probe/stubs/react-native-fast-tflite.ts"`
+   (one command line; diag.ts same pattern with expo-file-system + react-native aliases only).
+   static-checks.cjs is plain node — no bundling. The createAssetAsync undefined-import warning
+   is known and benign.
 4. **v0.23 DONE (2026-10-04):** vibe search v1 — ML Kit image-labeling smart tags
    (`smartTagsEnabled` opt-in in settingsStore, schema v12 `media.ml_labels`, scanner
    new-insert + rescan-backfill paths, `updateMediaLabels` query, searchMediaRaw 5th param,

@@ -4,7 +4,46 @@ Each entry below documents what a commit adds and what comes next. Newest first.
 
 ---
 
-## v0.34 — People & Pets step 1: model picker + face detection (CODED — uncommitted, commit pending owner go-ahead)
+## v0.34.1 — People & Pets step 2: library backfill, embeddings, clustering, People screen (COMMITTED — owner renumbered "v0.35" to v0.34.1 to fold step 2 into the v0.34 family)
+
+The grouping half of People & Pets — including the owner's explicit requirement that **photos
+already in the library get face detection too**, not just future scans.
+
+- **Library backfill (`backfillFaces` in `src/lib/people.ts`):** a resumable, cancelable,
+  chunked walk over every library photo still missing face samples (detection phase), then over
+  every face still missing an embedding for the chosen model (embedding phase) — cursors in
+  `meta`, safe to stop and re-run, driven from People & Pets setup → "Detect & embed" with live
+  progress. Already-checked photos and already-embedded faces are never redone; a failed crop
+  writes a zero-length-BLOB sentinel so one bad face can never stall the pass.
+- **Embeddings (`src/lib/faces.ts`):** the downloaded model loads through
+  `react-native-fast-tflite@3.0.1` (+ `react-native-nitro-modules`) — **two new native modules
+  joining the pending gradle rebuild**; both soft-required so the current APK keeps working.
+  Face crops (via expo-image-manipulator) are decoded with jpeg-js and preprocessed with the
+  **exact math verified from the model repo's own source**: bilinear resize, then a per-image
+  standardization `(x − mean) / max(std, 1/√N)` — not the common (x−127.5)/128; getting this
+  wrong would have made every embedding garbage.
+- **Clustering (`runClustering`):** union-find over cosine similarity ≥ 0.6 (conservative —
+  wrong merges are worse than missed matches) across L2-normalized embeddings. Only samples
+  with no person participate, so **named people are frozen**; re-runs are idempotent. Groups of
+  2+ become unnamed people (schema v18: `people` table + `face_samples.person_id`).
+- **People screen (Collections → People & Pets → "View people"):** cards with cover face +
+  count, tap → that person's photos, ✎ rename (stored locally), "Group faces" button. The
+  People & Pets setup screen now shows live counts (photos left to detect / faces to embed /
+  people found).
+- **Review:** probe extended to **93/93** — preprocessing math (constant → zeros; varied →
+  mean≈0/std≈1), both backfill phases with a controllable native-detection stub, the full
+  embed→BLOB→read-back round trip, clustering with controlled vectors (orthogonal face stays
+  ungrouped; transitively-similar faces merge), and idempotence. **The probe caught one real
+  bug: the BLOB→float32 decoder reconstructed bit patterns as integers (every embedding would
+  have read back as garbage) — fixed with a DataView read.** tsc clean; 48/48 static.
+
+**Verify on device (after the gradle rebuild):** People & Pets → download model → toggle Find
+faces → "Detect & embed" over the existing library (progress, resumable) → Group faces → People
+screen: unnamed groups, rename one, open their photos.
+
+---
+
+## v0.34 — People & Pets step 1: model picker + face detection (COMMITTED in dd13882)
 
 The owner-approved People & Pets design starts here: **nothing is bundled — the user picks and
 downloads a face model in-app**, and face detection itself is opt-in and fully on-device.

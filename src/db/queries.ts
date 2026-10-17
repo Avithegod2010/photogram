@@ -85,6 +85,191 @@ export async function hasFaceSamples(mediaId: number): Promise<boolean> {
   return row !== null;
 }
 
+// v0.35 People & Pets step 2: embeddings + clustering ----------------------------
+
+export interface FaceNeedingEmbedding {
+  sample_id: number;
+  thumb_uri: string;
+  box_x: number;
+  box_y: number;
+  box_w: number;
+  box_h: number;
+}
+
+// Faces that still need an embedding under THIS model (never embedded, or
+// embedded by a different model). Sentinel rows (box_x = -1) and non-photos
+// are out; the shared-album exclusion keeps the universe consistent.
+export async function listFacesNeedingEmbedding(
+  afterId: number,
+  limit: number,
+  modelId: string
+): Promise<FaceNeedingEmbedding[]> {
+  const db = await getDb();
+  return db.getAllAsync<FaceNeedingEmbedding>(
+    `SELECT fs.id AS sample_id, media.thumb_uri AS thumb_uri, fs.box_x, fs.box_y, fs.box_w, fs.box_h
+     FROM media
+     JOIN face_samples fs ON fs.media_id = media.id
+     WHERE (fs.embedding IS NULL OR fs.model_id IS NULL OR fs.model_id != ?)
+       AND fs.box_x >= 0
+       AND media.mime_type LIKE 'image/%'
+       AND media.visibility != 'trashed' AND media.edited_from IS NULL
+       AND fs.id > ?
+     ${EXCLUDE_ALL_SHARED}
+     ORDER BY fs.id
+     LIMIT ?`,
+    [modelId, afterId, limit]
+  );
+}
+
+export async function countFacesNeedingEmbedding(modelId: string): Promise<number> {
+  const db = await getDb();
+  const row = await db.getFirstAsync<{ n: number }>(
+    `SELECT COUNT(*) AS n FROM media
+     JOIN face_samples fs ON fs.media_id = media.id
+     WHERE (fs.embedding IS NULL OR fs.model_id IS NULL OR fs.model_id != ?)
+       AND fs.box_x >= 0
+       AND media.mime_type LIKE 'image/%'
+       AND media.visibility != 'trashed' AND media.edited_from IS NULL
+     ${EXCLUDE_ALL_SHARED}`
+  );
+  return row?.n ?? 0;
+}
+
+export async function setFaceEmbedding(
+  sampleId: number,
+  embedding: Uint8Array,
+  modelId: string
+): Promise<void> {
+  const db = await getDb();
+  await db.runAsync("UPDATE face_samples SET embedding = ?, model_id = ? WHERE id = ?", [
+    embedding,
+    modelId,
+    sampleId,
+  ]);
+}
+
+export interface UngroupedEmbedding {
+  sample_id: number;
+  embedding: Uint8Array;
+}
+
+// Samples with an embedding but no person yet — the only rows clustering
+// may touch (named people's clusters are frozen).
+export async function listUngroupedEmbeddings(): Promise<UngroupedEmbedding[]> {
+  const db = await getDb();
+  return db.getAllAsync<UngroupedEmbedding>(
+    `SELECT fs.id AS sample_id, fs.embedding
+     FROM media
+     JOIN face_samples fs ON fs.media_id = media.id
+     WHERE fs.embedding IS NOT NULL AND fs.person_id IS NULL
+       AND media.visibility != 'trashed' AND media.edited_from IS NULL
+     ${EXCLUDE_ALL_SHARED}`
+  );
+}
+
+export async function createPerson(name: string | null): Promise<number> {
+  const db = await getDb();
+  const result = await db.runAsync(
+    "INSERT INTO people (name, created_at) VALUES (?, ?)",
+    [name, Date.now()]
+  );
+  return result.lastInsertRowId;
+}
+
+export async function assignFacesToPerson(sampleIds: number[], personId: number): Promise<void> {
+  if (sampleIds.length === 0) return;
+  const db = await getDb();
+  const placeholders = sampleIds.map(() => "?").join(",");
+  await db.runAsync(
+    `UPDATE face_samples SET person_id = ? WHERE id IN (${placeholders})`,
+    [personId, ...sampleIds]
+  );
+}
+
+export async function renamePerson(personId: number, name: string | null): Promise<void> {
+  const db = await getDb();
+  await db.runAsync("UPDATE people SET name = ? WHERE id = ?", [name, personId]);
+}
+
+export interface PeopleRow {
+  id: number;
+  name: string | null;
+  face_count: number;
+  cover: string | null; // thumb of the largest face box in the cluster
+}
+
+export async function listPeople(): Promise<PeopleRow[]> {
+  const db = await getDb();
+  return db.getAllAsync<PeopleRow>(
+    `SELECT p.id, p.name,
+       COUNT(fs.id) AS face_count,
+       (SELECT m.thumb_uri FROM face_samples f2
+         JOIN media m ON m.id = f2.media_id
+         WHERE f2.person_id = p.id
+         ORDER BY f2.box_w * f2.box_h DESC
+         LIMIT 1) AS cover
+     FROM people p
+     JOIN face_samples fs ON fs.person_id = p.id
+     GROUP BY p.id
+     ORDER BY face_count DESC`
+  );
+}
+
+export async function listFacesForPerson(personId: number): Promise<MediaRow[]> {
+  const db = await getDb();
+  return db.getAllAsync<MediaRow>(
+    `SELECT media.* FROM media
+     JOIN face_samples fs ON fs.media_id = media.id
+     WHERE fs.person_id = ? AND media.visibility != 'trashed'
+     GROUP BY media.id
+     ORDER BY media.taken_at DESC, media.id DESC`,
+    [personId]
+  );
+}
+
+export async function countPeople(): Promise<number> {
+  const db = await getDb();
+  const row = await db.getFirstAsync<{ n: number }>("SELECT COUNT(*) AS n FROM people");
+  return row?.n ?? 0;
+}
+
+// --- v0.35 face-detection backfill (photos already in the library) --------------
+
+export interface PhotoMissingFaces {
+  id: number;
+  thumb_uri: string;
+}
+
+export async function listMediaMissingFaces(
+  afterId: number,
+  limit: number
+): Promise<PhotoMissingFaces[]> {
+  const db = await getDb();
+  return db.getAllAsync<PhotoMissingFaces>(
+    `SELECT id, thumb_uri FROM media
+     WHERE mime_type LIKE 'image/%'
+       AND visibility != 'trashed' AND edited_from IS NULL
+       AND id > ?
+       AND NOT EXISTS (SELECT 1 FROM face_samples f WHERE f.media_id = media.id)
+     ${EXCLUDE_ALL_SHARED}
+     ORDER BY id
+     LIMIT ?`,
+    [afterId, limit]
+  );
+}
+
+export async function countMediaMissingFaces(): Promise<number> {
+  const db = await getDb();
+  const row = await db.getFirstAsync<{ n: number }>(
+    `SELECT COUNT(*) AS n FROM media
+     WHERE mime_type LIKE 'image/%'
+       AND visibility != 'trashed' AND edited_from IS NULL
+       AND NOT EXISTS (SELECT 1 FROM face_samples f WHERE f.media_id = media.id)
+     ${EXCLUDE_ALL_SHARED}`
+  );
+  return row?.n ?? 0;
+}
+
 export interface NewMediaInput {
   // Null for cloud-only rows built by the F1 migration (src/lib/rehydrate.ts):
   // the Telegram message exists but nothing is on this device yet.

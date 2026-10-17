@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { StatusBar } from "expo-status-bar";
 import { Alert } from "react-native";
@@ -13,13 +13,18 @@ import {
   isModelDownloaded,
   validateModelUrl,
 } from "../lib/faceModels";
+import { backfillFaces } from "../lib/people";
+import { countMediaMissingFaces, countFacesNeedingEmbedding, countPeople } from "../db/queries";
 import { theme } from "../theme";
 
-// v0.33+ People & Pets step 1: pick and download a face-embedding model
-// (nothing is bundled; downloads are https + host-allowlisted), plus the
-// detection toggle. Grouping (clustering + naming) is the next batch and
-// stays disabled until a model is downloaded.
-export function PeopleSetupScreen({ navigation }: { navigation: NativeStackNavigationProp<{ Tabs: undefined }> }) {
+// v0.33+ People & Pets setup: pick + download a face model, toggle detection,
+// process the EXISTING library (detect + embed — the scanner only covers rows
+// it encounters), and open the grouped People screen.
+export function PeopleSetupScreen({
+  navigation,
+}: {
+  navigation: NativeStackNavigationProp<{ Tabs: undefined; People: undefined }>;
+}) {
   const insets = useSafeAreaInsets();
   const peopleTagsEnabled = useSettingsStore((s) => s.peopleTagsEnabled);
   const setPeopleTagsEnabled = useSettingsStore((s) => s.setPeopleTagsEnabled);
@@ -28,6 +33,10 @@ export function PeopleSetupScreen({ navigation }: { navigation: NativeStackNavig
   const [downloaded, setDownloaded] = useState<Record<string, boolean>>({});
   const [progress, setProgress] = useState<Record<string, number>>({});
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [processing, setProcessing] = useState(false);
+  const [status, setStatus] = useState<string | null>(null);
+  const [counts, setCounts] = useState({ missingFaces: 0, missingEmbeddings: 0, people: 0 });
+  const cancelRef = useRef({ cancelled: false });
 
   const refresh = useCallback(async () => {
     const states: Record<string, boolean> = {};
@@ -35,11 +44,44 @@ export function PeopleSetupScreen({ navigation }: { navigation: NativeStackNavig
       states[model.id] = await isModelDownloaded(model.id);
     }
     setDownloaded(states);
-  }, []);
+    setCounts({
+      missingFaces: await countMediaMissingFaces().catch(() => 0),
+      missingEmbeddings: faceModelId
+        ? await countFacesNeedingEmbedding(faceModelId).catch(() => 0)
+        : 0,
+      people: await countPeople().catch(() => 0),
+    });
+  }, [faceModelId]);
 
   useEffect(() => {
     void refresh();
   }, [refresh]);
+
+  const processLibrary = useCallback(async () => {
+    if (processing) return;
+    setProcessing(true);
+    cancelRef.current = { cancelled: false };
+    try {
+      // backfillFaces caps each call; keep starting passes until both phases
+      // report done (or the owner stops it) — the integrity-run pattern.
+      for (;;) {
+        const result = await backfillFaces((p) => setStatus(`Processed ${p.processed}…`), cancelRef.current);
+        setStatus(
+          result.detectDone && result.embedDone
+            ? null
+            : result.detectionReady
+            ? `Part done (${result.processed} this run) — run again to continue.`
+            : "Face detection needs the app rebuild — run again after updating."
+        );
+        if (result.detectDone && result.embedDone) break;
+        if (cancelRef.current.cancelled) break;
+        if (!result.detectionReady) break;
+      }
+    } finally {
+      setProcessing(false);
+      void refresh();
+    }
+  }, [processing, refresh]);
 
   const choose = useCallback(
     async (model: FaceModelDef) => {
@@ -172,6 +214,46 @@ export function PeopleSetupScreen({ navigation }: { navigation: NativeStackNavig
             arrives in the next update.
           </Text>
         </View>
+
+        <View style={styles.card}>
+          <Text style={styles.sectionTitle}>Step 3 · Process your library</Text>
+          <Text style={styles.sectionSub}>
+            Detects faces and computes embeddings for photos already in your library — including
+            everything uploaded before today. Resumable; safe to stop and re-run.
+          </Text>
+          <Text style={styles.statusLine}>
+            {counts.missingFaces} photo{counts.missingFaces === 1 ? "" : "s"} left to detect ·{" "}
+            {faceModelId ? `${counts.missingEmbeddings} faces to embed` : "no model chosen yet"} ·{" "}
+            {counts.people} people grouped
+          </Text>
+          <View style={styles.modelActions}>
+            <Pressable
+              style={[styles.btn, processing && styles.btnDisabled]}
+              disabled={processing}
+              onPress={() => void processLibrary()}
+            >
+              <Text style={styles.btnText}>{processing ? "Processing…" : "Detect & embed"}</Text>
+            </Pressable>
+            {processing ? (
+              <Pressable
+                style={styles.btn}
+                onPress={() => {
+                  cancelRef.current.cancelled = true;
+                }}
+              >
+                <Text style={styles.btnText}>Stop</Text>
+              </Pressable>
+            ) : null}
+            <Pressable
+              style={[styles.btn, counts.people === 0 && styles.btnDisabled]}
+              disabled={counts.people === 0}
+              onPress={() => navigation.navigate("People")}
+            >
+              <Text style={styles.btnText}>View people ({counts.people})</Text>
+            </Pressable>
+          </View>
+          {status ? <Text style={styles.footnote}>{status}</Text> : null}
+        </View>
       </ScrollView>
     </View>
   );
@@ -238,4 +320,10 @@ const styles = StyleSheet.create({
   btnDisabled: { opacity: 0.5 },
   btnText: { color: theme.colors.onPrimaryContainer, fontWeight: "700", fontSize: 12 },
   footnote: { color: theme.colors.onSurfaceVariant, fontSize: 11.5, marginTop: theme.spacing.sm },
+  statusLine: {
+    color: theme.colors.onSurface,
+    fontSize: 12.5,
+    marginTop: theme.spacing.xs,
+    marginBottom: theme.spacing.sm,
+  },
 });

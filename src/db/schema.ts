@@ -235,6 +235,20 @@ CREATE TABLE IF NOT EXISTS face_samples (
 CREATE INDEX IF NOT EXISTS idx_face_samples_media ON face_samples (media_id);
 `;
 
+// v0.35 People & Pets step 2 (schema v18): person clusters. A person row is
+// created by clustering (name NULL = "Unnamed"); renaming freezes the cluster
+// — re-clustering only ever touches samples with person_id NULL, so named
+// people are never re-shuffled. person_id on a sample pins it to a person.
+const SCHEMA_V18 = `
+ALTER TABLE face_samples ADD COLUMN person_id INTEGER;
+CREATE TABLE IF NOT EXISTS people (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT,
+  created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_face_samples_person ON face_samples (person_id) WHERE person_id IS NOT NULL;
+`;
+
 export interface Migration {
   version: number;
   up: string;
@@ -258,6 +272,7 @@ export const MIGRATIONS: Migration[] = [
   { version: 15, up: SCHEMA_V15 },
   { version: 16, up: SCHEMA_V16 },
   { version: 17, up: SCHEMA_V17 },
+  { version: 18, up: SCHEMA_V18 },
 ];
 
 export function migrationsAfter(version: number): Migration[] {
