@@ -14,7 +14,14 @@ import from the v0.11.2 handoff) + `387756d` v0.12.1–v0.17 + `2ea7a67`/`3207e4
 Working tree clean, tsc clean. Owner picked MIT. History was fully REWRITTEN before going public: all commit identities → 258314859+Avithegod2010@users.noreply.github.com (repo git config set to it — future commits safe), and the personal traces (Saved-Messages chat/message ids, device serial, LAN IPs, real name) were scrubbed from all commits; doc hash refs updated post-rewrite. Scrub gap (external audit, re-measured round 2): the test-group supergroup id survived the rewrite (19 commits); the Saved-Messages chat/message ids were verified absent from all commits. A group id is not a credential (known to every member); redacted at the tip and treated as accepted residue, not worth another force-push. GitHub-side caveats: pre-rewrite commit objects may linger by SHA until GitHub GCs (repo was private the whole time, so they were never crawled); dependabot PR #1 closed. allowBackup=false lands in APK at next gradle rebuild.**
 
 ### FIRST ACTIONS for the next session
-1. **v0.34.1 COMMITTED (2026-10-17; owner-approved renumber of "v0.35"):** People & Pets step 2
+1. **v0.36 COMMITTED (2026-10-17, owner-approved):** scene auto-albums (`src/lib/scenes.ts`
+   + Scenes screen on the existing ML tags — six curated scenes, boundary-safe `" label "`
+   matching, same universe as search/smart albums) + duplicate merge (`src/lib/merge.ts`:
+   keeper stays, rest → the REVERSIBLE trash path; fresh re-read prevents stale-snapshot
+   re-trash; sets up purge to clean local files + Telegram copies within 30 days). Merge picker
+   UI in SimilarScreen (GroupCard "Merge" chip), Collections route "Scenes". **Probe 111/111**
+   + 48/48 + tsc 0. No migration, JS-only. THEN device verify v0.12 → v0.36 per checklists.
+2. **v0.34.1 COMMITTED (2026-10-17; owner-approved renumber of "v0.35"):** People & Pets step 2
    — library backfill
    (`src/lib/people.ts backfillFaces`: resumable detect+embed over ALREADY-SCANNED photos,
    cursors `faces_detect_cursor`/`faces_embed_cursor` in meta, zero-length-BLOB failed-embed
@@ -29,9 +36,9 @@ Working tree clean, tsc clean. Owner picked MIT. History was fully REWRITTEN bef
    real bug: bytesToF32 decoded BLOB bit-patterns as integers (embeddings would read back
    garbage) — fixed with DataView.** Committed as v0.34.1 at the owner's request (fold step 2
    into the v0.34 People & Pets family; all older "v0.35" references mean this v0.34.1).
-   **P&P v1 is now CODE-COMPLETE (v0.34+v0.34.1). Remaining: the gradle rebuild (now carries
-   v0.16+v0.17+v0.23+face-detection+fast-tflite/nitro+hardening) → device verify
-   v0.12–v0.34.1. Ideas for later: docs/IDEAS-BACKLOG.md.**
+   **P&P v1 is now CODE-COMPLETE (v0.34+v0.34.1). THE gradle rebuild is DONE (2026-10-17,
+   compile-only — see §1 note below) → device verify v0.12–v0.34.1. Ideas for later:
+   docs/IDEAS-BACKLOG.md.**
 2. **v0.34 DONE (committed `dd13882`, 2026-10-05):** People & Pets step 1 — model picker
    (`src/lib/faceModels.ts`: FaceNet-128 ~23MB default + FaceNet-512 ~24MB, both verified
    ready-made tflite via the GitHub API; `validateModelUrl` https+allowlist gate;
@@ -96,11 +103,14 @@ Working tree clean, tsc clean. Owner picked MIT. History was fully REWRITTEN bef
    delete updates carry chatId in this TDLib build (verified in TdApi.java) — the filter is
    correct; a just-linked album's live events may be missed until the next boot catch-up (by
    design). Needs device verification (checklist in the CHANGELOG entry).
-6. **ONE combined gradle rebuild** unlocks v0.16 (expo-notifications native) + v0.17
-   (editMessageCaption wrapper) + v0.23 (@react-native-ml-kit/image-labeling native) + the
-   allowBackup/permission-strip hardening:
-   `E:\Dev\run-photogram-build.ps1` — never mid-upload, check logcat first. Everything else
-   (v0.12–v0.15, v0.18–v0.22, v0.24–v0.33) verifies via Metro alone (8083, `--host lan`).
+6. **ONE combined gradle rebuild — DONE (2026-10-17, compile-only; no device attached):**
+   runner `E:\Dev\run-photogram-gradle-assemble.ps1` (same env as run-photogram-build.ps1;
+   `gradlew :app:assembleDebug` — identical dev APK since the dev client takes its manifest
+   from Metro at runtime, not the APK); log `E:\Dev\photogram-build.log`, `GRADLE-EXITCODE=0`
+   in 45 min; APK ~174 MB at `android\app\build\outputs\apk\debug\app-debug.apk` with
+   libNitroTflite/libNitroModules/libNitroMmkv/libface_detector_v2_jni/libtdjni confirmed
+   inside. Still unlocks v0.16 + v0.17 + v0.23 + face-detection + fast-tflite/nitro +
+   allowBackup hardening. Install: USB → `adb install -r <apk>` — never mid-upload.
 7. **Device verify** per the checklists in each CHANGELOG entry (v0.12 → v0.34). Then resume the
    bulk backup (~8 GB remaining; queue auto-resumes on app restart).
 8. **Security auditor round-2 fixes committed** (`9521b8c`); PRIVACY.md written (`1924772`) —

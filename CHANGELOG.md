@@ -4,6 +4,40 @@ Each entry below documents what a commit adds and what comes next. Newest first.
 
 ---
 
+## v0.36 — Scene auto-albums + duplicate merge (COMMITTED — two JS-only picks from docs/IDEAS-BACKLOG.md; no migration, no new native modules)
+
+Two JS-only picks from docs/IDEAS-BACKLOG.md; no migration, no new native modules.
+
+- **Scene auto-albums (Collections → "Scene albums"):** six curated scenes — Beach days, Food,
+  Pets & animals, Nature, City life, Snow & winter — each built purely from the ML tags vibe
+  search already stores at scan time (schema v12 `media.ml_labels`, lowercased + space-joined; a
+  photo needs the "AI tags" toggle on to gain labels; scenes fill in automatically as tags
+  accumulate, no re-scan needed). The label match is **boundary-safe** — the padded
+  `" label "` pattern means "sea" can never partial-hit "seashore". The row universe matches
+  search/smart albums exactly (visible, not edited copies, not shared-album rows, newest first),
+  so scene counts go stale the same instant a photo is edited/trashed — like every other
+  collection screen they re-run live. No settings, no schema.
+- **Duplicate merge (Find duplicates → a group's "Merge" chip):** pick the keeper (defaults to
+  the largest file; tap any thumb to switch), confirm, and the rest of the group moves to
+  **Trash** — the app's only reversible deletion path: 30-day countdown, files recoverable, and
+  the purge that runs afterwards also clears the kept-duplicates' Telegram copies through the
+  proven `purgeExpiredTrash` route. No direct deletion exists in the merge path on purpose.
+  The engine (`src/lib/merge.ts`) re-reads rows fresh before trashing, so a stale snapshot
+  (another merge, junk review) can only ever skip, never double-trash, and merging a group whose
+  keeper is missing is a hard no-op.
+- **Review: probe extended to 107/107** — scene boundary math ("sea" vs "seashore"), case
+  tolerance ("Food Dish"), edited/shared/trashed exclusion pinned by count, newest-first
+  ordering, unknown-key null (no crash), unknown/blank scenes; merge outcome counts and bytes,
+  keeper-untouched assertion, drop-out of duplicates list + scenes after merge, stale-snapshot
+  no-op re-merge, and the not-in-group no-op. tsc clean; 48/48 static.
+
+**Verify on device (Metro alone):** open at least one photo of each kind? No — let AI tags
+accumulate on opt-in, then Collections → Scene albums: chips show counts, tap scenes switch
+grids. Find duplicates → Merge: pick the keeper, confirm, check Trash shows the moved copies
+with countdown, gallery shows the keeper only.
+
+---
+
 ## v0.34.1 — People & Pets step 2: library backfill, embeddings, clustering, People screen (COMMITTED — owner renumbered "v0.35" to v0.34.1 to fold step 2 into the v0.34 family)
 
 The grouping half of People & Pets — including the owner's explicit requirement that **photos

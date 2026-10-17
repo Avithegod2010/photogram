@@ -19,6 +19,7 @@ import { JunkSweeperScreen } from "../screens/JunkSweeperScreen";
 import { SimilarScreen } from "../screens/SimilarScreen";
 import { SlideshowScreen } from "../screens/SlideshowScreen";
 import { SavedSearchScreen } from "../screens/SavedSearchScreen";
+import { ScenesScreen } from "../screens/ScenesScreen";
 import { StorageScreen } from "../screens/StorageScreen";
 import { DiagnosticsScreen } from "../screens/DiagnosticsScreen";
 import { JournalScreen } from "../screens/JournalScreen";
@@ -46,6 +47,7 @@ export type RootStackParamList = {
   Similar: { mode?: "similar" | "groups"; mediaId?: number };
   Slideshow: { ids: number[]; index: number };
   SavedSearch: { id: number };
+  Scenes: undefined;
   Storage: undefined;
   Diagnostics: undefined;
   Journal: undefined;
@@ -85,6 +87,7 @@ export function RootNavigator() {
       <Stack.Screen name="JunkSweeper" component={JunkSweeperScreen} />
       <Stack.Screen name="Similar" component={SimilarScreen} />
       <Stack.Screen name="SavedSearch" component={SavedSearchScreen} />
+      <Stack.Screen name="Scenes" component={ScenesScreen} />
       <Stack.Screen name="Storage" component={StorageScreen} />
       <Stack.Screen name="Diagnostics" component={DiagnosticsScreen} />
       <Stack.Screen name="Journal" component={JournalScreen} />

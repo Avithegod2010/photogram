@@ -1,11 +1,12 @@
 import React, { useEffect, useRef, useState } from "react";
-import { Dimensions, FlatList, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Alert, Dimensions, FlatList, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { StatusBar } from "expo-status-bar";
 import { Image } from "expo-image";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { countMissingAnalysis, MediaRow } from "../db/queries";
 import { DuplicateGroup, backfillAnalysis, findDuplicateGroups, findSimilarTo } from "../lib/similar";
+import { mergeDuplicateGroup } from "../lib/merge";
 import { formatBytes } from "../lib/stats";
 import { theme } from "../theme";
 
@@ -29,6 +30,9 @@ export function SimilarScreen({
   const [indexing, setIndexing] = useState<number | null>(null);
   const [similar, setSimilar] = useState<MediaRow[] | null>(null);
   const [groups, setGroups] = useState<DuplicateGroup[] | null>(null);
+  // v0.36 duplicate merge: active picker state (group + chosen keeper).
+  const [merging, setMerging] = useState<{ group: DuplicateGroup; keeperId: number } | null>(null);
+  const [mergeBusy, setMergeBusy] = useState(false);
 
   useEffect(() => {
     cancelRef.current = { cancelled: false };
@@ -52,9 +56,46 @@ export function SimilarScreen({
     };
   }, [mode, mediaId]);
 
+  const startMerge = (group: DuplicateGroup) => {
+    setMerging({ group, keeperId: group.items[0].id });
+  };
+
+  const confirmMerge = () => {
+    if (!merging || mergeBusy) return;
+    const { group, keeperId } = merging;
+    const others = group.items.filter((r) => r.id !== keeperId);
+    const bytes = others.reduce((sum, r) => sum + r.byte_size, 0);
+    Alert.alert(
+      "Merge duplicates?",
+      `Keeping 1 photo. The other ${others.length} move${others.length === 1 ? "s" : ""} to Trash — ` +
+        `about ${formatBytes(bytes)}. The 30-day trash count-down applies, and the purge ` +
+        `afterwards also clears their Telegram copies.`,
+      [
+        { text: "Cancel", style: "cancel", onPress: () => setMerging(null) },
+        {
+          text: "Move to Trash",
+          style: "destructive",
+          onPress: () => {
+            setMergeBusy(true);
+            void mergeDuplicateGroup(group, keeperId)
+              .then(() => {
+                setGroups((prev) => (prev ? prev.filter((g) => g !== group) : prev));
+              })
+              .finally(() => {
+                setMergeBusy(false);
+                setMerging(null);
+              });
+          },
+        },
+      ]
+    );
+  };
+
   const sub =
     indexing !== null
-      ? `Indexing your photos… ${indexing} done so far`
+      ? `Indexing your photos. ${indexing} done so far`
+      : merging
+      ? "Reading the group."
       : mode === "similar"
       ? "Photos that look like the one you opened"
       : groups !== null
@@ -82,7 +123,7 @@ export function SimilarScreen({
       ) : mode === "similar" ? (
         similar === null ? (
           <View style={styles.center}>
-            <Text style={styles.centerText}>Comparing…</Text>
+            <Text style={styles.centerText}>Comparing.</Text>
           </View>
         ) : similar.length === 0 ? (
           <View style={styles.center}>
@@ -110,6 +151,57 @@ export function SimilarScreen({
             contentContainerStyle={styles.listContent}
           />
         )
+      ) : merging !== null ? (
+        <View style={styles.pickerRoot}>
+          <Text style={styles.pickerTitle}>Choose the keeper</Text>
+          <Text style={styles.pickerSub}>
+            Tap a photo to keep it — the rest of the group moves to Trash.
+          </Text>
+          <View style={styles.pickerRow}>
+            {merging.group.items.map((r) => {
+              const isKeeper = r.id === merging.keeperId;
+              return (
+                <Pressable
+                  key={String(r.id)}
+                  style={[styles.pickerCell, isKeeper && styles.pickerSelected]}
+                  onPress={() => setMerging({ ...merging, keeperId: r.id })}
+                  disabled={mergeBusy}
+                >
+                  <Image
+                    source={{ uri: r.thumb_uri }}
+                    style={styles.pickerImg}
+                    contentFit="cover"
+                    transition={120}
+                    recyclingKey={`keep-${r.id}`}
+                  />
+                  {isKeeper ? (
+                    <View style={styles.pickerBadge}>
+                      <Text style={styles.pickerBadgeText}>KEEP</Text>
+                    </View>
+                  ) : null}
+                </Pressable>
+              );
+            })}
+          </View>
+          <View style={styles.mergeButtons}>
+            <Pressable
+              style={[styles.mergeBtn, mergeBusy && styles.mergeBtnDisabled]}
+              onPress={() => setMerging(null)}
+              disabled={mergeBusy}
+            >
+              <Text style={styles.mergeBtnText}>Cancel</Text>
+            </Pressable>
+            <Pressable
+              style={[styles.mergeBtnDanger, mergeBusy && styles.mergeBtnDisabled]}
+              onPress={confirmMerge}
+              disabled={mergeBusy}
+            >
+              <Text style={styles.mergeBtnDangerText}>
+                {mergeBusy ? "Working…" : "Move rest to Trash"}
+              </Text>
+            </Pressable>
+          </View>
+        </View>
       ) : groups === null ? (
         <View style={styles.center}>
           <Text style={styles.centerText}>Looking…</Text>
@@ -128,6 +220,7 @@ export function SimilarScreen({
               onOpen={(index) =>
                 navigation.navigate("Viewer", { ids: item.items.map((r) => r.id), index })
               }
+              onMerge={() => startMerge(item)}
             />
           )}
           contentContainerStyle={styles.listContent}
@@ -137,17 +230,32 @@ export function SimilarScreen({
   );
 }
 
-function GroupCard({ group, onOpen }: { group: DuplicateGroup; onOpen: (index: number) => void }) {
+function GroupCard({
+  group,
+  onOpen,
+  onMerge,
+}: {
+  group: DuplicateGroup;
+  onOpen: (index: number) => void;
+  onMerge: () => void;
+}) {
   const leader = group.items[0];
   const bytes = group.items.reduce((sum, r) => sum + r.byte_size, 0);
   return (
     <View style={styles.groupCard}>
-      <Text style={styles.groupTitle}>
-        {group.items.length} near-identical · {new Date(leader.taken_at).toLocaleDateString()}
-      </Text>
-      <Text style={styles.groupSub}>
-        Largest: {formatBytes(leader.byte_size)} · group total {formatBytes(bytes)}
-      </Text>
+      <View style={styles.groupHeader}>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.groupTitle}>
+            {group.items.length} near-identical · {new Date(leader.taken_at).toLocaleDateString()}
+          </Text>
+          <Text style={styles.groupSub}>
+            Largest: {formatBytes(leader.byte_size)} · group total {formatBytes(bytes)}
+          </Text>
+        </View>
+        <Pressable style={styles.groupMergeBtn} onPress={onMerge}>
+          <Text style={styles.groupMergeText}>Merge</Text>
+        </Pressable>
+      </View>
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.groupRow}>
         {group.items.map((r, i) => (
           <Pressable key={String(r.id)} onPress={() => onOpen(i)}>
@@ -204,4 +312,65 @@ const styles = StyleSheet.create({
     borderRadius: theme.radius.md,
     backgroundColor: theme.colors.surfaceHighest,
   },
+  groupHeader: { flexDirection: "row", alignItems: "center", gap: theme.spacing.sm },
+  groupMergeBtn: {
+    backgroundColor: theme.colors.surfaceHighest,
+    borderRadius: theme.radius.full,
+    paddingHorizontal: theme.spacing.md,
+    paddingVertical: 8,
+    borderWidth: 1,
+    borderColor: theme.colors.outlineVariant,
+  },
+  groupMergeText: { color: theme.colors.primary, fontSize: 13, fontWeight: "700" },
+  pickerRoot: { flex: 1, paddingHorizontal: theme.spacing.lg, paddingTop: theme.spacing.sm },
+  pickerTitle: { color: theme.colors.onSurface, fontSize: 17, fontWeight: "700" },
+  pickerSub: { color: theme.colors.onSurfaceVariant, fontSize: 13, marginTop: 4 },
+  pickerRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 10,
+    marginTop: theme.spacing.md,
+  },
+  pickerCell: {
+    width: 132,
+    height: 132,
+    borderRadius: theme.radius.lg,
+    overflow: "hidden",
+    borderWidth: 3,
+    borderColor: "transparent",
+  },
+  pickerSelected: { borderColor: theme.colors.primary },
+  pickerImg: { width: "100%", height: "100%" },
+  pickerBadge: {
+    position: "absolute",
+    bottom: 6,
+    right: 6,
+    backgroundColor: theme.colors.primary,
+    borderRadius: theme.radius.full,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+  },
+  pickerBadgeText: { color: theme.colors.onPrimary, fontSize: 10, fontWeight: "800" },
+  mergeButtons: {
+    flexDirection: "row",
+    gap: theme.spacing.sm,
+    marginTop: theme.spacing.lg,
+  },
+  mergeBtn: {
+    flex: 1,
+    alignItems: "center",
+    paddingVertical: 13,
+    borderRadius: theme.radius.full,
+    backgroundColor: theme.colors.surfaceContainer,
+  },
+  mergeBtnDanger: {
+    flex: 2,
+    alignItems: "center",
+    paddingVertical: 13,
+    borderRadius: theme.radius.full,
+    backgroundColor: theme.colors.error,
+  },
+  mergeBtnDisabled: { opacity: 0.5 },
+  mergeBtnText: { color: theme.colors.onSurface, fontSize: 14, fontWeight: "600" },
+  mergeBtnDangerText: { color: theme.colors.onPrimary, fontSize: 14, fontWeight: "700" },
 });

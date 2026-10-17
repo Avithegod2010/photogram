@@ -73,11 +73,15 @@ then
 `node .expo/review-probe/probe.cjs` + `node .expo/review-probe/static-checks.cjs` + `npx tsc
 --noEmit` — all must be green before reporting done. Extend the probe when you add data/ML code.
 
-**Pending owner-side steps (not agent work):** ONE combined gradle rebuild
-(`E:\Dev\run-photogram-build.ps1` — unlocks v0.16 notifications + v0.17 caption wrapper +
-v0.23 labels + v0.34 face-detection + fast-tflite/nitro + allowBackup hardening) → device
-verification per CHANGELOG checklists (v0.12 → v0.34.1) → resume bulk backup (~8 GB, currently
-NOT uploading) → Play Store track (privacy email + Pages, signing, closed testing).
+**Pending owner-side steps (not agent work):** COMMITTED & BUILT — the ONE combined gradle
+rebuild ran 2026-10-17 as a COMPILE-ONLY build (no device attached; assemble-only runner
+`E:\Dev\run-photogram-gradle-assemble.ps1` with the same env; log `E:\Dev\photogram-build.log`,
+`GRADLE-EXITCODE=0`, APK ~174 MB with libNitroTflite/libNitroModules/libface_detector_v2_jni/
+libtdjni confirmed inside). REMAINING: plug the phone in via USB →
+`adb install -r android\app\build\outputs\apk\debug\app-debug.apk` (install kills the app
+process — never mid-upload) → device verification per CHANGELOG checklists (v0.12 → v0.36)
+→ resume bulk backup (~8 GB, NOT uploading) → Play Store track (privacy email + Pages,
+signing, closed testing).
 
 ## Future planning
 

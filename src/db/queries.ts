@@ -1145,6 +1145,44 @@ export async function searchByDateRange(fromMs: number, toMs: number): Promise<M
   );
 }
 
+// --- v0.36 scene auto-albums -----------------------------------------------------
+
+// Scenes are curated label sets rendered as auto-updating albums, built on the
+// SAME on-device ML labels vibe search already stored (ml_labels: lowercased,
+// space-joined). The match is boundary-safe: the label string is padded with
+// spaces on both sides, so "sea" can never partially hit "seashore" or land
+// inside another token. The row universe matches search/smart albums exactly.
+const sceneFilterFragment = (labels: string[]): string =>
+  labels.map(() => `(' ' || COALESCE(ml_labels, '') || ' ') LIKE ?`).join(" OR ");
+
+const sceneParams = (labels: string[]): string[] => labels.map((l) => `% ${l} %`);
+
+export async function listScenePhotos(labels: string[], limit = 500): Promise<MediaRow[]> {
+  if (labels.length === 0) return [];
+  const db = await getDb();
+  return db.getAllAsync<MediaRow>(
+    `SELECT * FROM media
+     WHERE visibility = 'visible' AND edited_from IS NULL
+       AND (${sceneFilterFragment(labels)})
+     ${EXCLUDE_ALL_SHARED}
+     ORDER BY taken_at DESC LIMIT ?`,
+    [...sceneParams(labels), limit]
+  );
+}
+
+export async function countScenePhotos(labels: string[]): Promise<number> {
+  if (labels.length === 0) return 0;
+  const db = await getDb();
+  const row = await db.getFirstAsync<{ n: number }>(
+    `SELECT COUNT(*) AS n FROM media
+     WHERE visibility = 'visible' AND edited_from IS NULL
+       AND (${sceneFilterFragment(labels)})
+     ${EXCLUDE_ALL_SHARED}`,
+    sceneParams(labels)
+  );
+  return row?.n ?? 0;
+}
+
 // --- v0.24 "Find similar" / duplicates ----------------------------------------
 // Same media universe as the junk sweep (not trashed, not shared-album, no
 // edited copies); similarity itself is computed in JS over Hamming distance.
