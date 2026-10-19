@@ -53,7 +53,7 @@ export function AlbumScreen({
   navigation,
   route,
 }: {
-  navigation: NativeStackNavigationProp<{ Viewer: { ids: number[]; index: number } }>;
+  navigation: NativeStackNavigationProp<{ Viewer: { ids: number[]; index: number }; Slideshow: { ids: number[]; index: number } }>;
   route: { params: { key: string; label: string; sharedAlbumId?: number } };
 }) {
   const insets = useSafeAreaInsets();
@@ -261,6 +261,15 @@ export function AlbumScreen({
         </Pressable>
         <Text style={styles.title}>{label}</Text>
         <Text style={styles.count}>{rows.length > 0 ? `${rows.length}` : ""}</Text>
+        {rows.length >= 2 ? (
+          <Pressable
+            style={styles.shareBtn}
+            hitSlop={8}
+            onPress={() => navigation.navigate("Slideshow", { ids: rows.map((r) => r.id), index: 0 })}
+          >
+            <Text style={styles.shareBtnText}>▶ Play</Text>
+          </Pressable>
+        ) : null}
         {rows.some((r) => r.local_uri) ? (
           <Pressable
             style={styles.shareBtn}

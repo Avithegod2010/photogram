@@ -28,6 +28,8 @@ import { PeopleSetupScreen } from "../screens/PeopleSetupScreen";
 import { PeopleScreen } from "../screens/PeopleScreen";
 import { ExportScreen } from "../screens/ExportScreen";
 import { DocAlbumScreen } from "../screens/DocAlbumScreen";
+import { FaceCorrectionsScreen } from "../screens/FaceCorrectionsScreen";
+import { ThenNowScreen } from "../screens/ThenNowScreen";
 
 export type RootStackParamList = {
   Tabs: undefined;
@@ -58,6 +60,8 @@ export type RootStackParamList = {
   People: undefined;
   Export: undefined;
   DocAlbum: { key: "receipts" | "documents" };
+  Corrections: undefined;
+  ThenNow: undefined;
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -100,6 +104,8 @@ export function RootNavigator() {
       <Stack.Screen name="People" component={PeopleScreen} />
       <Stack.Screen name="Export" component={ExportScreen} />
       <Stack.Screen name="DocAlbum" component={DocAlbumScreen} />
+      <Stack.Screen name="Corrections" component={FaceCorrectionsScreen} />
+      <Stack.Screen name="ThenNow" component={ThenNowScreen} />
       <Stack.Screen
         name="Slideshow"
         component={SlideshowScreen}

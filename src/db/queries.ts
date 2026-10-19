@@ -2066,3 +2066,147 @@ export async function getDigestStats(): Promise<DigestStats> {
   }
   return stats;
 }
+
+// --- v0.40 People v2 follow-ups + "then & now" ----------------------------------
+
+// Review-corrections list: every blocked ("not X" / split-off) pair with
+// display context. Person name is provenance from dismiss time — a pair keeps
+// blocking after merges/splits/deletions, but the name makes the list
+// readable; personStillExists tells the UI whether re-grouping is worth it.
+export interface RejectionDetail {
+  sampleId: number;
+  blockedSampleId: number;
+  createdAt: number;
+  personName: string | null;
+  personStillExists: boolean;
+  mediaIdA: number;
+  mediaIdB: number;
+  thumbA: string | null;
+  thumbB: string | null;
+  dateA: number | null;
+  dateB: number | null;
+}
+
+export async function listRejectionDetails(limit = 200): Promise<RejectionDetail[]> {
+  const db = await getDb();
+  const rows = await db.getAllAsync<{
+    sampleId: number;
+    blockedSampleId: number;
+    createdAt: number;
+    personName: string | null;
+    personStillExists: number;
+    mediaIdA: number | null;
+    mediaIdB: number | null;
+    thumbA: string | null;
+    thumbB: string | null;
+    dateA: number | null;
+    dateB: number | null;
+  }>(
+    `SELECT
+      r.sample_id AS sampleId,
+      r.blocked_sample_id AS blockedSampleId,
+      r.created_at AS createdAt,
+      p.name AS personName,
+      CASE WHEN p.id IS NOT NULL THEN 1 ELSE 0 END AS personStillExists,
+      m1.id AS mediaIdA,
+      m2.id AS mediaIdB,
+      m1.thumb_uri AS thumbA,
+      m2.thumb_uri AS thumbB,
+      m1.taken_at AS dateA,
+      m2.taken_at AS dateB
+     FROM face_rejections r
+     LEFT JOIN people p ON p.id = r.person_id
+     LEFT JOIN face_samples f1 ON f1.id = r.sample_id
+     LEFT JOIN media m1 ON m1.id = f1.media_id
+     LEFT JOIN face_samples f2 ON f2.id = r.blocked_sample_id
+     LEFT JOIN media m2 ON m2.id = f2.media_id
+     ORDER BY r.created_at DESC, r.sample_id
+     LIMIT ?`,
+    [limit]
+  );
+  return rows.map((r) => ({
+    sampleId: r.sampleId,
+    blockedSampleId: r.blockedSampleId,
+    createdAt: r.createdAt,
+    personName: r.personName,
+    personStillExists: r.personStillExists === 1,
+    mediaIdA: r.mediaIdA ?? 0,
+    mediaIdB: r.mediaIdB ?? 0,
+    thumbA: r.thumbA,
+    thumbB: r.thumbB,
+    dateA: r.dateA,
+    dateB: r.dateB,
+  }));
+}
+
+// Undo a correction: delete the canonical pair (keys are stored ascending).
+// Returns true when a row was actually removed. The samples stay unassigned;
+// the next "Group faces" run may pair them again if cosine says so.
+export async function unblockRejection(sampleId: number, blockedSampleId: number): Promise<boolean> {
+  const db = await getDb();
+  const [a, b] = sampleId < blockedSampleId ? [sampleId, blockedSampleId] : [blockedSampleId, sampleId];
+  const result = await db.runAsync(
+    "DELETE FROM face_rejections WHERE sample_id = ? AND blocked_sample_id = ?",
+    [a, b]
+  );
+  return result.changes > 0;
+}
+
+export interface CandidateFace {
+  sampleId: number;
+  mediaId: number;
+  embedding: Uint8Array;
+}
+
+// Ungrouped faces WITH media context — the inputs for a person-candidates
+// cosine ranking in people.ts (same universe as listUngroupedEmbeddings).
+export async function listCandidateSourceFaces(): Promise<CandidateFace[]> {
+  const db = await getDb();
+  return db.getAllAsync<CandidateFace>(
+    `SELECT fs.id AS sampleId, fs.media_id AS mediaId, fs.embedding
+     FROM media
+     JOIN face_samples fs ON fs.media_id = media.id
+     WHERE fs.embedding IS NOT NULL AND fs.person_id IS NULL
+       AND media.visibility != 'trashed' AND media.edited_from IS NULL
+     ${EXCLUDE_ALL_SHARED}`
+  );
+}
+
+// Member faces of one person WITH media context (the other input).
+export async function listPersonFacesForCandidates(personId: number): Promise<CandidateFace[]> {
+  const db = await getDb();
+  return db.getAllAsync<CandidateFace>(
+    `SELECT fs.id AS sampleId, fs.media_id AS mediaId, fs.embedding
+     FROM media
+     JOIN face_samples fs ON fs.media_id = media.id
+     WHERE fs.embedding IS NOT NULL AND fs.person_id = ?
+       AND media.visibility != 'trashed' AND media.edited_from IS NULL
+     ${EXCLUDE_ALL_SHARED}`,
+    [personId]
+  );
+}
+
+// "On this day" across years (v0.40 Then-&-Now cards): photos whose taken_at
+// month-day falls within ±daysBack of today, any year, present tense only.
+// IN-list of the 7 mm-dd strings — handles the Dec→Jan wrap naturally.
+export async function listOnThisDay(daysBack = 3, limit = 400): Promise<MediaRow[]> {
+  const db = await getDb();
+  const now = new Date();
+  const msd = new Set<string>();
+  for (let d = -daysBack; d <= daysBack; d++) {
+    const dt = new Date(now.getFullYear(), now.getMonth(), now.getDate() + d);
+    const m = String(dt.getMonth() + 1).padStart(2, "0");
+    const day = String(dt.getDate()).padStart(2, "0");
+    msd.add(`${m}-${day}`);
+  }
+  const keys = [...msd];
+  const clauses = keys.map(() => "strftime('%m-%d', datetime(taken_at / 1000, 'unixepoch'), 'localtime') = ?").join(" OR ");
+  return db.getAllAsync<MediaRow>(
+    `SELECT media.* FROM media
+     WHERE taken_at IS NOT NULL AND visibility = 'visible' AND edited_from IS NULL
+       ${EXCLUDE_ALL_SHARED}
+       AND (${clauses})
+     ORDER BY taken_at DESC, id DESC LIMIT ?`,
+    [...keys, limit]
+  );
+}

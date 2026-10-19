@@ -325,6 +325,35 @@ export function GalleryScreen() {
     [selectedRows, exitSelection]
   );
 
+  const bulkFavorite = useCallback(() => {
+    if (selectedRows.length === 0) return;
+    const favCount = selectedRows.filter((r) => r.is_favorite === 1).length;
+    Alert.alert(
+      "Add to Favorites",
+      `Mark ${selectedRows.length - favCount} item${selectedRows.length - favCount === 1 ? "" : "s"} as favorite? (already-favorited items are untouched)`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Favorite",
+          onPress: () => {
+            void (async () => {
+              for (const r of selectedRows) {
+                if (r.is_favorite !== 1) {
+                  try {
+                    await setMediaFavorite(r.id, true);
+                  } catch {}
+                }
+              }
+              const ids = new Set(selectedRows.map((r) => r.id));
+              setRows((prev) => prev.map((r) => (ids.has(r.id) ? { ...r, is_favorite: 1 } : r)));
+              exitSelection();
+            })();
+          },
+        },
+      ]
+    );
+  }, [selectedRows, exitSelection]);
+
   const bulkDelete = useCallback(() => {
     if (selectedRows.length === 0) return;
     Alert.alert(
@@ -907,6 +936,14 @@ export function GalleryScreen() {
           >
             <Ionicons name="archive-outline" size={20} color={theme.colors.onSurface} />
             <Text style={styles.selActionLabel}>Archive</Text>
+          </Pressable>
+          <Pressable
+            style={[styles.selAction, selectedRows.length === 0 && styles.selActionDisabled]}
+            onPress={bulkFavorite}
+            disabled={selectedRows.length === 0}
+          >
+            <Ionicons name="heart-outline" size={20} color={theme.colors.onSurface} />
+            <Text style={styles.selActionLabel}>Favorite</Text>
           </Pressable>
           <Pressable
             style={[styles.selAction, selectedRows.length === 0 && styles.selActionDisabled]}

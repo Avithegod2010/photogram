@@ -15,6 +15,7 @@ import {
   type ParsedManifest,
 } from "../lib/importManifest";
 import { runOfflineExportPass, loadOfflineProgress, OfflineExportProgress } from "../lib/offlineExport";
+import { runSnapshotNow, lastSnapshotAt, listSnapshots } from "../lib/snapshotExport";
 import { formatBytes } from "../lib/stats";
 import { theme } from "../theme";
 
@@ -39,6 +40,35 @@ export function ExportScreen(_props: { navigation: NativeStackNavigationProp<{ T
   const [curated, setCurated] = useState<ImportDryRunResult | null>(null);
   const [manifest, setManifest] = useState<ParsedManifest | null>(null);
   const [importName, setImportName] = useState<string | null>(null);
+  const snapshotExport = useSettingsStore((s) => s.snapshotExport);
+  const setSnapshotExport = useSettingsStore((s) => s.setSnapshotExport);
+  const [snappedLast, setSnappedLast] = useState(0);
+  const [snappedCount, setSnappedCount] = useState(0);
+  const [snapshotRunning, setSnapshotRunning] = useState(false);
+
+  const refreshSnapshotInfo = useCallback(() => {
+    setSnappedLast(lastSnapshotAt());
+    setSnappedCount(listSnapshots().length);
+  }, []);
+
+  useEffect(() => {
+    refreshSnapshotInfo();
+  }, [refreshSnapshotInfo]);
+
+  const runSnapshot = useCallback(() => {
+    if (snapshotRunning) return;
+    setSnapshotRunning(true);
+    void runSnapshotNow()
+      .then((r) => {
+        refreshSnapshotInfo();
+        if (r.ran && r.result) {
+          Alert.alert("Snapshot saved", `${r.result.fileName} · ${formatBytes(r.result.byteCount)}`);
+        } else if (!r.ran) {
+          Alert.alert("Snapshot", `Not written: ${r.reason}`);
+        }
+      })
+      .finally(() => setSnapshotRunning(false));
+  }, [snapshotRunning, refreshSnapshotInfo]);
 
   useEffect(() => {
     void loadOfflineProgress().then(setOffline);
@@ -220,6 +250,40 @@ export function ExportScreen(_props: { navigation: NativeStackNavigationProp<{ T
             <Text style={styles.offlineCancelText}>Stop after this file</Text>
           </Pressable>
         </View>
+      ) : null}
+
+      <Text style={styles.section}>Weekly snapshot (safety net)</Text>
+      <View style={styles.toggleRow}>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.rowLabel}>Keep a fresh manifest on this phone</Text>
+          <Text style={styles.rowSub}>
+            Once a week (while the app is open) the full index is written into
+            documents/export/snapshots/. Only the newest 8 are kept. Purely local.
+          </Text>
+        </View>
+        <Switch value={snapshotExport} onValueChange={setSnapshotExport} />
+      </View>
+      {snapshotExport ? (
+        <>
+          <ExportRow
+            title={snapshotRunning ? "Writing snapshot…" : "Write a snapshot now"}
+            sub={
+              snappedLast > 0
+                ? `Last: ${new Date(snappedLast).toLocaleString()} · ${snappedCount} file${snappedCount === 1 ? "" : "s"} kept`
+                : "No snapshot yet — the first one is written the first time the app is open for a while."
+            }
+            busy={snapshotRunning}
+            onPress={runSnapshot}
+            disabled={snapshotRunning || busy !== null || offlineRunning}
+          />
+          {snappedCount > 0 ? (
+            <Text style={styles.note}>
+              Snapshots live under the app's own files. On a lost phone, copy the folder off with a
+              PC (USB), or share a snapshot like any export file — pick it in "Import a manifest"
+              on the new phone.
+            </Text>
+          ) : null}
+        </>
       ) : null}
 
       <Text style={styles.section}>Restore on a new phone</Text>

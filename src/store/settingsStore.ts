@@ -64,6 +64,10 @@ interface SettingsState {
   // v0.39: monthly "Wrapped-style" backup-health notification (notify master gates it).
   notifyHealthDigest: boolean;
   setNotifyHealthDigest: (v: boolean) => void;
+  // v0.40: weekly automatic manifest snapshot in documents/export/snapshots/
+  // (local files only; the newest 8 are kept). Default ON — pure safety net.
+  snapshotExport: boolean;
+  setSnapshotExport: (v: boolean) => void;
   setExifPreserve: (v: boolean) => void;
   setHiddenLockEnabled: (v: boolean) => void;
   setWifiOnlyUpload: (v: boolean) => void;
@@ -119,6 +123,8 @@ export const useSettingsStore = create<SettingsState>()(
       setExportMinifyJson: (v) => set({ exportMinifyJson: v }),
   notifyHealthDigest: false,
   setNotifyHealthDigest: (v) => set({ notifyHealthDigest: v }),
+  snapshotExport: true,
+  setSnapshotExport: (v) => set({ snapshotExport: v }),
       setExifPreserve: (v) => set({ exifPreserve: v }),
       setHiddenLockEnabled: (v) => set({ hiddenLockEnabled: v }),
       setWifiOnlyUpload: (v) => set({ wifiOnlyUpload: v }),

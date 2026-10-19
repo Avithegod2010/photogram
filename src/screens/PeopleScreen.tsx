@@ -5,6 +5,7 @@ import {
   FlatList,
   Modal,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -15,6 +16,8 @@ import { Image } from "expo-image";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import {
+  assignFacesToPerson,
+  getMediaByIds,
   listFacesForPerson,
   listPeople,
   listPeopleFull,
@@ -25,7 +28,14 @@ import {
   type PersonFull,
   type PeopleRow,
 } from "../db/queries";
-import { runClustering, mergePeople, splitOffFaces, dismissFacesFromPerson } from "../lib/people";
+import {
+  runClustering,
+  mergePeople,
+  splitOffFaces,
+  dismissFacesFromPerson,
+  listPersonCandidates,
+  type PersonCandidate,
+} from "../lib/people";
 import { theme } from "../theme";
 
 const SENS_CHIPS: { label: string; value: number }[] = [
@@ -39,6 +49,13 @@ interface PersonViewState {
   photos: MediaRow[];
   selecting: boolean;
   selected: Set<number>;
+  candidates: CandidateRow[];
+}
+
+interface CandidateRow {
+  media: MediaRow;
+  sampleId: number;
+  score: number;
 }
 
 // v0.39 People & Pets v2: list → person's photos. List row long-press starts
@@ -50,7 +67,7 @@ interface PersonViewState {
 export function PeopleScreen({
   navigation,
 }: {
-  navigation: NativeStackNavigationProp<{ Viewer: { ids: number[]; index: number } }>;
+  navigation: NativeStackNavigationProp<{ Viewer: { ids: number[]; index: number }; Corrections: undefined; Slideshow: { ids: number[]; index: number } }>;
 }) {
   const insets = useSafeAreaInsets();
   const [people, setPeople] = useState<PersonFull[]>([]);
@@ -94,7 +111,30 @@ export function PeopleScreen({
 
   const openTheirs = useCallback(async (person: PersonFull) => {
     const rows = await listFacesForPerson(person.id).catch(() => [] as MediaRow[]);
-    setView({ person, photos: rows, selecting: false, selected: new Set() });
+    const cands = await listPersonCandidates(person.id, person.sensitivity).catch(
+      () => [] as PersonCandidate[]
+    );
+    const candidateRows: CandidateRow[] = [];
+    if (cands.length > 0) {
+      const mediaRows = await getMediaByIds(cands.map((c) => c.mediaId)).catch(() => [] as MediaRow[]);
+      const byId = new Map(mediaRows.map((m) => [m.id, m]));
+      const bestPerMedia = new Map<number, PersonCandidate>();
+      for (const c of cands) {
+        const prev = bestPerMedia.get(c.mediaId);
+        if (!prev || prev.score < c.score) bestPerMedia.set(c.mediaId, c);
+      }
+      for (const c of bestPerMedia.values()) {
+        const media = byId.get(c.mediaId);
+        if (media) candidateRows.push({ media, sampleId: c.sampleId, score: c.score });
+      }
+    }
+    setView({
+      person,
+      photos: rows,
+      selecting: false,
+      selected: new Set(),
+      candidates: candidateRows,
+    });
   }, []);
 
   const saveRename = useCallback(async () => {
@@ -181,19 +221,31 @@ export function PeopleScreen({
             void (async () => {
               const samples = await listSampleIdsForMediaInPerson(mediaId, person.id);
               await dismissFacesFromPerson(samples, person.id);
-              const rows = await listFacesForPerson(person.id).catch(() => [] as MediaRow[]);
-              setView({ person, photos: rows, selecting: false, selected: new Set() });
+              await openTheirs(person);
               void reload();
             })();
           },
         },
       ]
     );
-  }, [reload]);
+  }, [reload, openTheirs]);
 
   const setSensitivity = useCallback((person: PersonFull, value: number | null) => {
     void setPersonSensitivity(person.id, value).then(() => reload());
   }, [reload]);
+
+  const attachCandidate = useCallback(
+    (row: CandidateRow) => {
+      const person = view?.person;
+      if (!person) return;
+      void (async () => {
+        await assignFacesToPerson([row.sampleId], person.id);
+        await openTheirs(person);
+        void reload();
+      })();
+    },
+    [view, reload, openTheirs]
+  );
 
   const isChipOn = (sens: number | null, value: number) => Math.abs((sens ?? 0.6) - value) < 0.01;
 
@@ -225,6 +277,18 @@ export function PeopleScreen({
         </View>
         {view ? (
           <>
+            <Pressable
+              style={[styles.groupBtn, view.photos.length < 2 && styles.btnDisabled]}
+              disabled={view.photos.length < 2}
+              onPress={() =>
+                navigation.navigate("Slideshow", {
+                  ids: view.photos.map((r) => r.id),
+                  index: 0,
+                })
+              }
+            >
+              <Text style={styles.groupBtnText}>▶ Play</Text>
+            </Pressable>
             <Pressable style={styles.groupBtn} onPress={() => setRenaming(view.person)}>
               <Text style={styles.groupBtnText}>✎ Name</Text>
             </Pressable>
@@ -236,9 +300,14 @@ export function PeopleScreen({
             </Pressable>
           </>
         ) : (
-          <Pressable style={[styles.groupBtn, grouping && styles.btnDisabled]} onPress={() => void groupFaces()}>
-            <Text style={styles.groupBtnText}>{grouping ? "Grouping…" : "Group faces"}</Text>
-          </Pressable>
+          <>
+            <Pressable style={styles.groupBtn} onPress={() => navigation.navigate("Corrections")}>
+              <Text style={styles.groupBtnText}>Review</Text>
+            </Pressable>
+            <Pressable style={[styles.groupBtn, grouping && styles.btnDisabled]} onPress={() => void groupFaces()}>
+              <Text style={styles.groupBtnText}>{grouping ? "Grouping…" : "Group faces"}</Text>
+            </Pressable>
+          </>
         )}
       </View>
       {groupedNote && view === null && merging === null ? <Text style={styles.note}>{groupedNote}</Text> : null}
@@ -265,6 +334,28 @@ export function PeopleScreen({
             data={view.photos}
             numColumns={3}
             keyExtractor={(r) => String(r.id)}
+            ListHeaderComponent={
+              view.candidates.length > 0 && !view.selecting ? (
+                <View style={styles.candBlock}>
+                  <Text style={styles.candTitle}>
+                    Possible more of {view.person.name ?? "this person"} — tap to attach:
+                  </Text>
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.candStrip}>
+                    {view.candidates.map((c) => (
+                      <Pressable key={c.sampleId} style={styles.candTile} onPress={() => attachCandidate(c)}>
+                        <Image
+                          source={{ uri: c.media.thumb_uri }}
+                          style={styles.candImg}
+                          contentFit="cover"
+                          transition={120}
+                        />
+                        <Text style={styles.candScore}>{Math.round(c.score * 100)}%</Text>
+                      </Pressable>
+                    ))}
+                  </ScrollView>
+                </View>
+              ) : null
+            }
             renderItem={({ item }) => {
               const selected = view.selected.has(item.id);
               return (
@@ -512,4 +603,28 @@ const styles = StyleSheet.create({
     padding: theme.spacing.md,
   },
   mergeBannerText: { color: theme.colors.onSecondaryContainer, fontSize: 12.5, textAlign: "center" },
+  candBlock: { paddingHorizontal: theme.spacing.lg, paddingBottom: theme.spacing.sm },
+  candTitle: { color: theme.colors.onSurfaceVariant, fontSize: 11.5, marginBottom: 6 },
+  candStrip: { gap: 8 },
+  candTile: {
+    width: 72,
+    height: 72,
+    borderRadius: theme.radius.md,
+    overflow: "hidden",
+    backgroundColor: theme.colors.surfaceContainer,
+  },
+  candImg: { width: "100%", height: "100%" },
+  candScore: {
+    position: "absolute",
+    bottom: 4,
+    right: 4,
+    color: theme.colors.onSurface,
+    fontSize: 9.5,
+    fontWeight: "700",
+    backgroundColor: "#00000099",
+    borderRadius: 8,
+    paddingHorizontal: 4,
+    paddingVertical: 1,
+    overflow: "hidden",
+  },
 });

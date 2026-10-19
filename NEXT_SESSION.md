@@ -1,11 +1,37 @@
 # PHOTOGRAM — MASTER HANDOFF (read this fully before coding)
 
 _This file is the single source of truth for any AI agent or developer picking up this project cold.
-Last updated: 2026-10-19 (§0). Read §0, then §1–§17. CHANGELOG.md has per-version notes._
+Last updated: 2026-10-19 (§0, v0.40). Read §0, then §1–§17. CHANGELOG.md has per-version notes._
 
 ---
 
-## 0. CURRENT STATE — 2026-10-19 · v0.39 COMMITTED & PUSHED (`ec43c27` = origin/master) · DEVICE VERIFY PAUSED (PHONE STILL UNDER ANOTHER CHATBOT'S CONTROL)
+## 0. CURRENT STATE — 2026-10-19 (LATER) · v0.40 COMMITTED & PUSHED · DEVICE VERIFY STILL PAUSED (PHONE UNDER ANOTHER CHATBOT'S CONTROL)
+
+**2026-10-19 afternoon session (v0.40, owner ordered: all Phase 3 housekeeping + all six Phase-4
+candidates in one go):**
+- **Probe: 207/207 + 48/48 static + tsc 0.** (Up from 189 — new checks: corrections list/undo,
+  person candidates math, on-this-day, snapshot pipeline end-to-end.)
+- Phase 3: dependabot `overrides` (brace-expansion ^5.0.12, shell-quote ^1.12.0 CRITICAL,
+  compression ^1.8.2, source-map-js ^1.2.2, @react-navigation/core ^7.22.1; audit total 35→28,
+  critical 0, remaining 28 = engine-downgrade-only class NEVER touched), git tags push (v0.36.0/
+  v0.38.0/v0.39.0), `app.config.ts` version **0.40.0** + versionCode **2** (installed debug APK is
+  code 1 — future install -r always newer), README "For users" section.
+- Phase 4: speed pass (App.tsx defers junk/integrity/snapshot/groupSync/notify/notes 10 s after
+  login), weekly snapshot (snapshotExport.ts, default ON, docs/export/snapshots/, one-per-day ✓
+  same-day overwrite, newest 8 kept, Export-screen toggle + "write now" row), People → "Review"
+  corrections screen (listRejectionDetails + unblockRejection), person-view "Possible more of X"
+  candidates strip (listPersonCandidates, floor = sensitivity/2, blocked pairs filtered),
+  ▶ Play on people person view + AlbumScreen, bulk Favorite in the multi-select bar, Then & now
+  screen (listOnThisDay, ±3-day window, year grouping; taken_at is MILLISECONDS — always
+  `datetime(taken_at / 1000, 'unixepoch')` in NEW SQL).
+- **PENDING OWNER DEVICE STEP (from the plan):** after v0.39 device verify, Export → JSON → copy
+  to PC = the first real-data out-of-app index backup.
+- **expo-document-picker gradle rebuild is STILL pending** (installed v0.39).
+- Older 2026-10-19 v0.39 notes (kept for context): People v2 merge/split/dismiss/sensitivity,
+  undo-merge banner, offline originals, manifest import+export fingerprint, scheduled junk sweep,
+  monthly digest, doc albums, share-to-chat. Schema v19 additive (people.sensitivity,
+  face_rejections pairs, media.trash_reason).
+
 
 **2026-10-19 session (v0.39, owner-ordered batch: People & Pets v2, export follow-ups, scheduled
 deep maintenance, smarter albums — all five groups coded in one go at the owner's explicit

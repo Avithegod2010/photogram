@@ -13,7 +13,7 @@ export function WrappedScreen({
   navigation,
   route,
 }: {
-  navigation: NativeStackNavigationProp<Record<string, undefined>>;
+  navigation: NativeStackNavigationProp<{ ThenNow: undefined }>;
   route: { params?: { year?: number } };
 }) {
   const insets = useSafeAreaInsets();
@@ -100,6 +100,9 @@ export function WrappedScreen({
       </View>
       {years.length > 0 ? (
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.yearRow}>
+            <Pressable style={[styles.yearChip, styles.thenChip]} onPress={() => navigation.navigate("ThenNow")}>
+            <Text style={[styles.yearChipText, styles.thenChipText]}>Then & now</Text>
+          </Pressable>
           {years.map((y) => (
             <Pressable key={y} style={[styles.yearChip, y === year && styles.yearChipOn]} onPress={() => setYear(y)}>
               <Text style={[styles.yearChipText, y === year && styles.yearChipTextOn]}>{y}</Text>
@@ -147,6 +150,8 @@ const styles = StyleSheet.create({
   yearChipOn: { backgroundColor: theme.colors.primaryContainer },
   yearChipText: { color: theme.colors.onSurfaceVariant, fontSize: 13, fontWeight: "600" },
   yearChipTextOn: { color: theme.colors.onPrimaryContainer },
+  thenChip: { backgroundColor: theme.colors.primary },
+  thenChipText: { color: theme.colors.onPrimary, fontWeight: "700" },
   content: { padding: theme.spacing.md, paddingBottom: 48, gap: theme.spacing.md },
   card: {
     backgroundColor: theme.colors.surfaceContainer,

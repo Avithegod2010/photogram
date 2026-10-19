@@ -7,6 +7,8 @@ import {
   listAllEmbeddingsForClustering,
   listMediaMissingFaces,
   listPeopleFull,
+  listCandidateSourceFaces,
+  listPersonFacesForCandidates,
   replaceFaceSamples,
   setFaceEmbedding,
   setMeta,
@@ -280,4 +282,65 @@ export async function dismissFacesFromPerson(sampleIds: number[], personId: numb
   const left = await countFacesOfPerson(personId);
   if (left === 0) await deletePerson(personId);
   return { mergedInto: null, leftCount: sampleIds.length, deletedSource: left === 0 };
+}
+
+// --- v0.40: "Possible more of X" candidates -------------------------------------
+
+export interface PersonCandidate {
+  sampleId: number;
+  mediaId: number;
+  score: number;
+}
+
+// Ranks every UNASSIGNED face by its best cosine against any face already in
+// the person. The person's own sensitivity sets the suggestion floor
+// (threshold / 2) so Strict people still get a wide enough net to pick from;
+// nothing is attached automatically — attaching here is always a tap. Blocked
+// pairs never appear, whatever their cosine.
+export async function listPersonCandidates(
+  personId: number,
+  sensitivity: number | null = null
+): Promise<PersonCandidate[]> {
+  const [members, sources, rejections] = await Promise.all([
+    listPersonFacesForCandidates(personId),
+    listCandidateSourceFaces(),
+    listFaceRejections(),
+  ]);
+  const floor = (sensitivity ?? FACE_COSINE_THRESHOLD) / 2;
+  if (members.length === 0 || sources.length === 0) return [];
+  const blocked = new Set(rejections.map((r) => pairKey(r.sample_id, r.blocked_sample_id)));
+
+  const memberVecs: { sampleId: number; vec: Float32Array; norm: number }[] = [];
+  for (const m of members) {
+    if (m.embedding.byteLength === 0) continue;
+    const vec = bytesToF32(m.embedding);
+    let norm = 0;
+    for (let i = 0; i < vec.length; i++) norm += vec[i] * vec[i];
+    norm = Math.sqrt(norm);
+    if (norm > 0) memberVecs.push({ sampleId: m.sampleId, vec, norm });
+  }
+  if (memberVecs.length === 0) return [];
+
+  const best = new Map<number, PersonCandidate>();
+  for (const s of sources) {
+    if (s.embedding.byteLength === 0) continue;
+    const sv = bytesToF32(s.embedding);
+    let snorm = 0;
+    for (let i = 0; i < sv.length; i++) snorm += sv[i] * sv[i];
+    snorm = Math.sqrt(snorm);
+    if (snorm === 0) continue;
+    let top = 0;
+    for (const mv of memberVecs) {
+      if (blocked.has(pairKey(s.sampleId, mv.sampleId))) continue;
+      let dot = 0;
+      const dim = Math.min(sv.length, mv.vec.length);
+      for (let k = 0; k < dim; k++) dot += sv[k] * mv.vec[k];
+      const score = dot / (snorm * mv.norm);
+      if (score > top) top = score;
+    }
+    if (top < floor) continue;
+    const prev = best.get(s.sampleId);
+    if (!prev || prev.score < top) best.set(s.sampleId, { sampleId: s.sampleId, mediaId: s.mediaId, score: top });
+  }
+  return [...best.values()].sort((a, b) => b.score - a.score).slice(0, 20);
 }

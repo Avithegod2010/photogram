@@ -4,6 +4,59 @@ Each entry below documents what a commit adds and what comes next. Newest first.
 
 ---
 
+## v0.40 — People v2 follow-ups, slideshow everywhere, bulk favorite, Then-&-Now, weekly snapshot, cold-start pass + housekeeping (COMMITTED — owner-ordered: all of Phase 3 + all six Phase-4 candidates)
+
+- **Housekeeping (Phase 3):**
+  - **Dependabot**: `overrides` block in package.json patches the auto-fixable set — brace-expansion
+    ^5.0.12 (high), shell-quote ^1.12.0 (critical), compression ^1.8.2 (high), source-map-js ^1.2.2
+    (high), and @react-navigation/core ^7.22.1 (moderate; dropping its query-string/decode-uri-component
+    chain clears two more). `npm audit` re-run: critical count 0, total 35 → 28. The remaining 28 are
+    the previously documented "fix = downgrade expo→44 / RN→0.72 / maps 1.20" advisory class — NOT
+    touchable without breaking the engine; re-checked every batch (added this year: reanimated
+    4.x-nightly ranges + worklets + metro anchors, all unfixable on SDK 57).
+  - **Release hygiene**: retro git tags `v0.36.0`/`v0.38.0`/`v0.39.0` pushed; `app.config.ts`
+    `version` 0.1.0 → **0.40.0**, android `versionCode` 1 → 2 (the installed debug APK is code 1;
+    every future `install -r` is now strictly newer).
+  - **README "For users"** section: one-paragraph pitch + privacy policy link (PRIVACY.md) +
+    migration story.
+  - **Safety net (owner device step, pending):** after v0.39 restore/import is device-verified, run
+    Export → JSON once and copy the file to a PC — the first out-of-app index backup on real data.
+- **Speed pass:** `App.tsx` defers every non-critical loop (junk sweep, integrity schedule, group
+  sync, notify, snapshot, notes sync) by 10 s after login — the first frame now only runs the
+  trash purge + backup loop. All deferred loops are idempotent gates, so an early kill just means
+  they run next launch.
+- **Weekly snapshot (safety net, default ON):** `snapshotExport.ts` mirrors the junk auto-sweep
+  pattern — an in-app interval checks a MMKV key; once ≥7 days passed it writes a fresh MINIFIED
+  full manifest into `documents/export/snapshots/photogram-snapshot-YYYY-MM-DD.json` (one per day,
+  newest 8 kept, same-day overwrite). Export → "Weekly snapshot (safety net)" toggle +
+  "Write a snapshot now" row with last-run info. Probe: gate math, file naming,
+  retention pruning, content as a real parseable manifest.
+- **People v2 leftovers:**
+  - **Review corrections** (`FaceCorrectionsScreen`, People → "Review"): every blocked pair as two
+    photo thumbs + provenance name + date; Undo (confirm) deletes the canonical pair so the next
+    "Group faces" can reconsider. Queries `listRejectionDetails` (joined, newest-first, limit 200)
+    + `unblockRejection` (canonical-keyed DELETE, boolean).
+  - **"Possible more of {name}"** strip on the person view: `listPersonCandidates` ranks every
+    UNASSIGNED face by best cosine against the person's members; floor = per-person
+    sensitivity/2 (so Strict 0.99 still shows 0.5+ candidates), blocked pairs never appear,
+    best-per-media deduped via `getMediaByIds`, tap → attach → strip refreshes + photos reload.
+    The v0.39 probe vectors (p1–p4) proved the math end-to-end.
+- **Slideshow everywhere:** Favorites (v0.39) + now **People person view** ("▶ Play" when ≥2
+  photos) and **AlbumScreen** ("▶ Play" header chip when ≥2 rows). Route unchanged
+  (Slideshow {ids, index}).
+- **Bulk favorite (timeline)**: gallery multi-select bottom bar gains the heart — marks every
+  un-favorited selected row; already-favorited untouched; grid hearts update live.
+- **Then & now** (`ThenNowScreen`, entry chip in WrappedScreen): "on this day" for EVERY past year
+  at once (±3-day window; new `listOnThisDay` query with `strftime('%m-%d', datetime(taken_at /
+  1000, 'unixepoch'), 'localtime')` — taken_at is canonical milliseconds); rows group by year,
+  horizontal strip per year, trashed/edited copies excluded.
+- **Probe: 207/207** (up from 189) + 48/48 static. tsc clean. Probe additions ran against the
+  real MMKV + node:sqlite stack: corrections create/list/undo (canonical pairs, global list
+  untouched), candidate ranking floor/blocked/assigned semantics, on-this-day window, and the
+  snapshot pipeline end-to-end against the REAL export listers (gate, stamped key, retention).
+
+---
+
 ## v0.39 — People & Pets v2, undo-merge, offline originals + manifest import, scheduled junk sweep, doc albums & smarter albums (COMMITTED — owner-ordered batch: People v2, export follow-ups, deep maintenance, smarter albums)
 
 - **Schema v19 (additive, all three pieces in `schema.ts`):** `people.sensitivity` REAL
