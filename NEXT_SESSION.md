@@ -5,7 +5,20 @@ Last updated: 2026-10-19 (§0, v0.40). Read §0, then §1–§17. CHANGELOG.md h
 
 ---
 
-## 0. CURRENT STATE — 2026-10-19 (LATER) · v0.40 COMMITTED & PUSHED · DEVICE VERIFY STILL PAUSED (PHONE UNDER ANOTHER CHATBOT'S CONTROL)
+## 0. CURRENT STATE — 2026-10-19 (EVENING) · v0.40.1 COMMITTED & PUSHED (`dbd6b17`) · DEVICE VERIFY STILL PAUSED (PHONE UNDER ANOTHER CHATBOT'S CONTROL)
+
+**2026-10-19 evening (v0.40.1, review + housekeeping):**
+- **Review pass over v0.39+v0.40: no real findings.** The ordered `bugbot` subagent degenerated
+  into garbage output (model loop — unusable, listed in CHANGELOG for honesty); the review was
+  redone as targeted re-verification: listOnThisDay ms→s + Dec→Jan wrap, listPersonCandidates
+  guards (zero-length blobs / zero norms / per-member blocked pairs / single-embedding-column ⇒
+  no mixed-model comparison possible), canonical ascending pair-key deletes, snapshotExport
+  same-day overwrite + never-throws + stamp-after-success, bulkFavorite un-favorited-only +
+  local state merge, App.tsx deferral cleanup. Probe 207/207 + static 48/48 + tsc 0 all still green.
+- `.github/dependabot.yml` committed (npm weekly, limit 5, ignores majors/minors on engine
+  packages). **GitHub push banner now reports only 3 Dependabot vulns on default branch
+  (2 high, 1 moderate)** — the engine-class remainder GitHub tracks; local npm audit still says
+  28 (different advisory scope — both fine, both NOT actionable without downgrades).
 
 **2026-10-19 afternoon session (v0.40, owner ordered: all Phase 3 housekeeping + all six Phase-4
 candidates in one go):**
