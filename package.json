@@ -25,7 +25,7 @@
     "expo-network": "~57.0.1",
     "expo-notifications": "~57.0.21",
     "expo-sharing": "~57.0.16",
-    "expo-sqlite": "~57.0.2",
+    "expo-sqlite": "~58.0.13",
     "expo-status-bar": "~57.0.1",
     "expo-system-ui": "~57.0.3",
     "expo-video": "~57.0.3",
