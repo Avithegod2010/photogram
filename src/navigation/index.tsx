@@ -57,7 +57,7 @@ export type RootStackParamList = {
   Journal: undefined;
   Highlights: undefined;
   PeopleSetup: undefined;
-  People: undefined;
+  People: { openPerson?: number };
   Export: undefined;
   DocAlbum: { key: "receipts" | "documents" };
   Corrections: undefined;

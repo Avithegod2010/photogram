@@ -4,6 +4,21 @@ Each entry below documents what a commit adds and what comes next. Newest first.
 
 ---
 
+## v0.42 — People-aware search + pinned albums (Phase C2, owner-ordered "do phase C and D")
+
+- **People-aware search**: gallery search now also surfaces named people as a "People" chip
+  strip above the results grid (`searchPeopleForQuery` — case-insensitive name match on named
+  people with faces, ordered by face count). Tapping a chip opens the People screen straight
+  into that person's photo view (new optional `People: { openPerson }` route param).
+  **Scene auto-albums were already shipped** (six curated scenes since v0.25–v0.28, probe-
+  tested), so this batch's second slot went to a Phase-D idea instead (below).
+- **Pinned albums**: pin/unpin albums on the Albums grid (pin icon next to the label) —
+  pinned albums jump to the top, "Pinned ·" marks the row. `pinnedAlbumKeys` in the settings
+  store (MMKV, local-only). Cover-picker postponed until after the Play launch.
+- **Probe: 227/227** (new: people-search matching, pinned-store logic) + static 48/48 +
+  `tsc --noEmit` clean.
+- Device note: JS-only — Metro refresh, no gradle rebuild needed.
+
 ## v0.41 — Smart-album rule builder + anniversary reminders (Phase C1, owner-ordered "do phase C and D")
 
 - **Smart-album rules v2 (schema v20)**: `saved_searches.rules` TEXT column (NULL = classic

@@ -66,8 +66,10 @@ interface CandidateRow {
 // pairs).
 export function PeopleScreen({
   navigation,
+  route,
 }: {
   navigation: NativeStackNavigationProp<{ Viewer: { ids: number[]; index: number }; Corrections: undefined; Slideshow: { ids: number[]; index: number } }>;
+  route?: { params?: { openPerson?: number } };
 }) {
   const insets = useSafeAreaInsets();
   const [people, setPeople] = useState<PersonFull[]>([]);
@@ -136,6 +138,18 @@ export function PeopleScreen({
       candidates: candidateRows,
     });
   }, []);
+
+  // v0.42: opened directly from a gallery-search person chip — auto-open the
+  // matched person's photo view.
+  const openPerson = route?.params?.openPerson;
+  useEffect(() => {
+    if (!openPerson) return;
+    void (async () => {
+      const full = await listPeopleFull().catch(() => [] as PersonFull[]);
+      const match = full.find((p) => p.id === openPerson);
+      if (match) await openTheirs(match);
+    })();
+  }, [openPerson, openTheirs]);
 
   const saveRename = useCallback(async () => {
     if (!renaming) return;

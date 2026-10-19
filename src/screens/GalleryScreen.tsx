@@ -5,6 +5,7 @@ import {
   BackHandler,
   Pressable,
   RefreshControl,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -17,7 +18,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
-import { pageVisibleMedia, getRandomMedia, setMediaFavorite, setMediaVisibility, getTimelineRange, saveSearch, MediaRow } from "../db/queries";
+import { pageVisibleMedia, getRandomMedia, setMediaFavorite, setMediaVisibility, getTimelineRange, saveSearch, searchPeopleForQuery, type PersonHit, MediaRow } from "../db/queries";
 import { getBackupHeartbeat, BackupHeartbeat } from "../lib/stats";
 import { formatBytes } from "../lib/stats";
 import { runSearch } from "../lib/search";
@@ -32,6 +33,7 @@ type StackNav = NativeStackNavigationProp<{
   Viewer: { ids: number[]; index: number };
   Story: { ids: number[]; title: string };
   Migrate: undefined;
+  People: { openPerson?: number };
 }>;
 
 export type ZoomLevel = "days" | "months" | "years";
@@ -113,6 +115,7 @@ export function GalleryScreen() {
   const [searchOpen, setSearchOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<MediaRow[] | null>(null);
+  const [peopleHits, setPeopleHits] = useState<PersonHit[]>([]);
   // F1: one-time "Restore your backup" banner on a fresh install — shown only
   // when the library is empty AND Saved Messages actually holds Photogram
   // uploads, then never again (MMKV-persisted flag).
@@ -491,17 +494,22 @@ export function GalleryScreen() {
   useEffect(() => {
     if (!searchOpen) {
       setResults(null);
+      setPeopleHits([]);
       return;
     }
     if (searchTimer.current) clearTimeout(searchTimer.current);
     if (query.trim().length === 0) {
       setResults(null);
+      setPeopleHits([]);
       return;
     }
     searchTimer.current = setTimeout(() => {
       void runSearch(query.trim())
         .then(setResults)
         .catch(() => setResults([]));
+      void searchPeopleForQuery(query.trim())
+        .then(setPeopleHits)
+        .catch(() => setPeopleHits([]));
     }, 250);
     return () => {
       if (searchTimer.current) clearTimeout(searchTimer.current);
@@ -863,7 +871,27 @@ export function GalleryScreen() {
               contentContainerStyle={styles.listContent}
               extraData={[zoomLevel, favTick, selectionMode, selTick]}
               ListHeaderComponent={
-                !searching && zoomLevel === "days" ? (
+                searching && peopleHits.length > 0 ? (
+                  <View style={styles.peopleStrip}>
+                    <Text style={styles.peopleStripLabel}>People</Text>
+                    <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                      {peopleHits.map((p) => (
+                        <Pressable
+                          key={p.id}
+                          style={styles.peopleChip}
+                          onPress={() => navigation.navigate("People", { openPerson: p.id })}
+                        >
+                          <Text style={styles.peopleChipText} numberOfLines={1}>
+                            {p.name}
+                          </Text>
+                          <Text style={styles.peopleChipCount}>
+                            {p.faceCount} face{p.faceCount === 1 ? "" : "s"}
+                          </Text>
+                        </Pressable>
+                      ))}
+                    </ScrollView>
+                  </View>
+                ) : !searching && zoomLevel === "days" ? (
                   <MemoriesCarousel
                     onOpen={(ids, title) =>
                       navigation.navigate("Story", { ids, title })
@@ -1012,6 +1040,24 @@ const styles = StyleSheet.create({
     paddingVertical: 9,
   },
   searchCancel: { color: theme.colors.primary, fontWeight: "600", fontSize: 13.5 },
+  peopleStrip: { marginTop: 6, marginBottom: 2, gap: 4 },
+  peopleStripLabel: {
+    color: theme.colors.onSurfaceVariant,
+    fontSize: 11.5,
+    fontWeight: "700",
+    marginLeft: 4,
+  },
+  peopleChip: {
+    backgroundColor: theme.colors.surfaceContainer,
+    borderRadius: theme.radius.full,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: theme.colors.outlineVariant,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    marginRight: 8,
+  },
+  peopleChipText: { color: theme.colors.onSurface, fontSize: 13, fontWeight: "600", maxWidth: 140 },
+  peopleChipCount: { color: theme.colors.onSurfaceVariant, fontSize: 10.5, marginTop: 1 },
   listContent: { paddingBottom: 96 },
   heartbeat: {
     color: theme.colors.onSurfaceVariant,

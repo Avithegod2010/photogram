@@ -1416,11 +1416,35 @@ export async function runRulesSearch(rules: SavedRules, limit = 1200): Promise<M
 // Favorites-only "years ago today" count for the notify loop. One prior year
 // minimum, favorite set by the owner, ending at any-of-today. Done here so the
 // probe can test the SQL with the notifications module stubbed away.
+// --- v0.42 people-aware search ---------------------------------------------------
+// Gallery search also surfaces named people whose name matches the query —
+// a chip that opens the person's full photo view in the People screen.
+export interface PersonHit {
+  id: number;
+  name: string;
+  faceCount: number;
+}
+
+export async function searchPeopleForQuery(query: string, limit = 12): Promise<PersonHit[]> {
+  const q = query.trim().toLowerCase();
+  if (q.length === 0) return [];
+  const db = await getDb();
+  const rows = await db.getAllAsync<{ id: number; name: string; c: number }>(
+    `SELECT p.id AS id, p.name AS name,
+       (SELECT COUNT(*) FROM face_samples fs WHERE fs.person_id = p.id) AS c
+     FROM people p WHERE p.name IS NOT NULL`
+  );
+  return rows
+    .filter((r) => r.name.toLowerCase().includes(q) && r.c > 0)
+    .sort((a, b) => b.c - a.c)
+    .slice(0, limit)
+    .map((r) => ({ id: r.id, name: r.name, faceCount: r.c }));
+}
+
 export async function countFavoriteAnniversaries(): Promise<{
   count: number;
   eldestYear: number | null;
-}> {
-  const db = await getDb();
+}> {  const db = await getDb();
   const row = await db.getFirstAsync<{ c: number; y: number | null }>(
     `SELECT COUNT(*) AS c, MIN(CAST(strftime('%Y', taken_at / 1000, 'unixepoch') AS INTEGER)) AS y
      FROM media

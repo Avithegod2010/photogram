@@ -32,6 +32,9 @@ interface SettingsState {
   // v0.28 Album locks: album route keys ("camera", "shared-3", …) that demand
   // a biometric check before AlbumScreen shows any content. Local-only.
   lockedAlbumKeys: string[];
+  // v0.42 pinned albums: album route keys shown first (with a pin) on the
+  // Albums grid. Local-only.
+  pinnedAlbumKeys: string[];
   // F2 Junk Sweeper: opt-in. When on, a weekly in-app sweep analyzes thumbnails
   // and suggests junk in the review screen; nothing is ever auto-deleted.
   junkSweeperEnabled: boolean;
@@ -80,7 +83,8 @@ interface SettingsState {
   setSmartTagsEnabled: (v: boolean) => void;
   setPeopleTagsEnabled: (v: boolean) => void;
   setFaceModelId: (id: string | null) => void;
-  setAlbumLocked: (key: string, locked: boolean) => void;
+      setAlbumLocked: (key: string, locked: boolean) => void;
+      setAlbumPinned: (key: string, pinned: boolean) => void;
   setAutoBackupEnabled: (v: boolean) => void;
   setAutoBackupFolders: (v: string[]) => void;
   setMigrationBannerShown: (v: boolean) => void;
@@ -109,6 +113,7 @@ export const useSettingsStore = create<SettingsState>()(
       peopleTagsEnabled: false,
       faceModelId: null,
       lockedAlbumKeys: [],
+      pinnedAlbumKeys: [],
       junkSweeperEnabled: false,
       autoBackupEnabled: false,
       autoBackupFolders: [],
@@ -146,6 +151,14 @@ export const useSettingsStore = create<SettingsState>()(
               ? s.lockedAlbumKeys
               : [...s.lockedAlbumKeys, key]
             : s.lockedAlbumKeys.filter((k) => k !== key),
+        })),
+      setAlbumPinned: (key, pinned) =>
+        set((s) => ({
+          pinnedAlbumKeys: pinned
+            ? s.pinnedAlbumKeys.includes(key)
+              ? s.pinnedAlbumKeys
+              : [...s.pinnedAlbumKeys, key]
+            : s.pinnedAlbumKeys.filter((k) => k !== key),
         })),
       setAutoBackupEnabled: (v) => set({ autoBackupEnabled: v }),
       setAutoBackupFolders: (v) => set({ autoBackupFolders: v }),

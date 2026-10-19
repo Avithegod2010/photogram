@@ -23,6 +23,8 @@ export function AlbumsScreen({
   // a lock asks for biometrics so a peeker can't just switch it off.
   const lockedKeys = useSettingsStore((s) => s.lockedAlbumKeys);
   const setAlbumLocked = useSettingsStore((s) => s.setAlbumLocked);
+  const pinnedKeys = useSettingsStore((s) => s.pinnedAlbumKeys);
+  const setAlbumPinned = useSettingsStore((s) => s.setAlbumPinned);
   const [bioReady, setBioReady] = useState(false);
 
   useEffect(() => {
@@ -61,7 +63,10 @@ export function AlbumsScreen({
       <Text style={styles.note}>Auto-grouped from your library — updated on every scan.</Text>
       {albums === null ? null : (
         <FlashList
-          data={albums}
+          data={[...albums].sort(
+            (a, b) =>
+              (pinnedKeys.includes(b.key) ? 1 : 0) - (pinnedKeys.includes(a.key) ? 1 : 0)
+          )}
           numColumns={2}
           keyExtractor={(a) => a.key}
           renderItem={({ item }) => (
@@ -92,10 +97,23 @@ export function AlbumsScreen({
                   />
                 </Pressable>
               </View>
-              <Text style={styles.cardLabel} numberOfLines={1}>
-                {item.label}
-              </Text>
+              <View style={styles.labelRow}>
+                <Text style={styles.cardLabel} numberOfLines={1}>
+                  {item.label}
+                </Text>
+                <Pressable
+                  hitSlop={8}
+                  onPress={() => setAlbumPinned(item.key, !pinnedKeys.includes(item.key))}
+                >
+                  <Ionicons
+                    name={pinnedKeys.includes(item.key) ? "pin" : "pin-outline"}
+                    size={15}
+                    color={pinnedKeys.includes(item.key) ? theme.colors.primary : theme.colors.onSurfaceVariant}
+                  />
+                </Pressable>
+              </View>
               <Text style={styles.cardCount}>
+                {pinnedKeys.includes(item.key) ? "Pinned · " : ""}
                 {item.count} item{item.count === 1 ? "" : "s"}
               </Text>
             </Pressable>
@@ -147,8 +165,9 @@ const styles = StyleSheet.create({
     color: theme.colors.onSurface,
     fontSize: 15,
     fontWeight: "600",
-    marginTop: theme.spacing.sm,
+    flex: 1,
   },
+  labelRow: { flexDirection: "row", alignItems: "center", gap: 6, marginTop: theme.spacing.sm },
   cardCount: { color: theme.colors.onSurfaceVariant, fontSize: 12.5, marginTop: 2 },
   empty: { color: theme.colors.onSurfaceVariant, textAlign: "center", marginTop: 60 },
 });
