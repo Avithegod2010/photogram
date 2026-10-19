@@ -1263,6 +1263,9 @@ export interface SavedSearchRow {
   name: string;
   query: string;
   created_at: number;
+  // v0.41 rules: JSON of a SavedRules object when created by the rule builder,
+  // null for classic text searches.
+  rules: string | null;
 }
 
 // One tap from the gallery search row: the query itself becomes the name.
@@ -1291,7 +1294,7 @@ export async function listSavedSearches(): Promise<SavedSearchRow[]> {
   const db = await getDb();
   // id DESC breaks same-millisecond created_at ties (later save wins).
   return db.getAllAsync<SavedSearchRow>(
-    "SELECT id, name, query, created_at FROM saved_searches ORDER BY created_at DESC, id DESC"
+    "SELECT id, name, query, created_at, rules FROM saved_searches ORDER BY created_at DESC, id DESC"
   );
 }
 
@@ -1299,7 +1302,7 @@ export async function getSavedSearch(id: number): Promise<SavedSearchRow | null>
   const db = await getDb();
   return (
     (await db.getFirstAsync<SavedSearchRow>(
-      "SELECT id, name, query, created_at FROM saved_searches WHERE id = ?",
+      "SELECT id, name, query, created_at, rules FROM saved_searches WHERE id = ?",
       [id]
     )) ?? null
   );
@@ -1308,6 +1311,128 @@ export async function getSavedSearch(id: number): Promise<SavedSearchRow | null>
 export async function deleteSavedSearch(id: number): Promise<void> {
   const db = await getDb();
   await db.runAsync("DELETE FROM saved_searches WHERE id = ?", [id]);
+}
+
+// --- v0.41 Smart-album rules v2 -------------------------------------------------
+// Combined filters for a saved search, chosen in the rule-builder screen and
+// stored as JSON in saved_searches.rules. Every field is optional; the SQL
+// below is fully parameterized — rule values are never string-spliced.
+
+export interface SavedRules {
+  /** Free text like the classic search — LIKE across names, tags, OCR, places. */
+  text: string | null;
+  /** is_favorite = 1 only. */
+  favorites: boolean;
+  /** Manual tags from the tag editor (tags / user_tags / ml_labels columns). */
+  tags: string[];
+  /** Inclusive taken_at window in milliseconds (null = no bound). */
+  fromMs: number | null;
+  toMs: number | null;
+}
+
+export function parseRules(raw: string | null | undefined): SavedRules | null {
+  if (!raw) return null;
+  try {
+    const json = JSON.parse(raw) as SavedRules | null;
+    if (!json || typeof json !== "object") return null;
+    return {
+      text: typeof json.text === "string" && json.text.trim().length > 0 ? json.text : null,
+      favorites: json.favorites === true,
+      tags: Array.isArray(json.tags) ? json.tags.filter((t) => t && t.trim().length > 0).map((t) => t.trim()) : [],
+      fromMs: typeof json.fromMs === "number" && Number.isFinite(json.fromMs) ? json.fromMs : null,
+      toMs: typeof json.toMs === "number" && Number.isFinite(json.toMs) ? json.toMs : null,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function serializeRules(rules: SavedRules): string {
+  const clean: SavedRules = {
+    text: typeof rules.text === "string" && rules.text.trim().length > 0 ? rules.text.trim() : null,
+    favorites: rules.favorites === true,
+    tags: Array.isArray(rules.tags) ? rules.tags.map((t) => t.trim()).filter((t) => t.length > 0) : [],
+    fromMs: typeof rules.fromMs === "number" && Number.isFinite(rules.fromMs) ? rules.fromMs : null,
+    toMs: typeof rules.toMs === "number" && Number.isFinite(rules.toMs) ? rules.toMs : null,
+  };
+  return JSON.stringify(clean);
+}
+
+// Rule-builder save path: rules carry the whole album definition, the legacy
+// query column stays empty. Returns the new row id.
+export async function saveSmartRules(name: string, rules: SavedRules): Promise<number> {
+  const db = await getDb();
+  const rulesJson = serializeRules(rules);
+  const result = await db.runAsync(
+    "INSERT INTO saved_searches (name, query, created_at, rules) VALUES (?, ?, ?, ?)",
+    [name.trim().length > 0 ? name.trim() : "Smart album", "", Date.now(), rulesJson]
+  );
+  return result.lastInsertRowId ?? 0;
+}
+
+// Re-runs a saved rules album. Same visible/unshared universe as every other
+// search; filters AND together; multiple tags AND too (a tagged "beach
+// favorite" album uses two rules). Soft LIMIT keeps huge libraries responsive.
+export async function runRulesSearch(rules: SavedRules, limit = 1200): Promise<MediaRow[]> {
+  const db = await getDb();
+  const clauses: string[] = ["visibility = 'visible'", "edited_from IS NULL"];
+  const params: (string | number)[] = [];
+  if (rules.favorites) clauses.push("is_favorite = 1");
+  for (const tag of rules.tags) {
+    const like = `%${tag.replace(/[%_]/g, "")}%`;
+    clauses.push("(tags LIKE ? OR user_tags LIKE ? OR ml_labels LIKE ?)");
+    params.push(like, like, like);
+  }
+  if (rules.fromMs !== null || rules.toMs !== null) {
+    if (rules.fromMs !== null) {
+      clauses.push("taken_at >= ?");
+      params.push(rules.fromMs);
+    }
+    if (rules.toMs !== null) {
+      clauses.push("taken_at < ?");
+      params.push(rules.toMs);
+    }
+  } else {
+    clauses.push("taken_at IS NOT NULL");
+  }
+  if (rules.text) {
+    const like = `%${rules.text.replace(/[%_]/g, "")}%`;
+    clauses.push(
+      "(file_name LIKE ? OR tags LIKE ? OR ocr_text LIKE ? OR place_name LIKE ? OR ml_labels LIKE ? OR user_tags LIKE ?)"
+    );
+    params.push(like, like, like, like, like, like);
+  }
+  params.push(limit);
+  return db.getAllAsync<MediaRow>(
+    `SELECT * FROM media
+     WHERE ${clauses.join(" AND ")}
+       ${EXCLUDE_ALL_SHARED}
+     ORDER BY taken_at DESC, id DESC LIMIT ?`,
+    params
+  );
+}
+
+// --- v0.41 anniversary reminders -------------------------------------------------
+// Favorites-only "years ago today" count for the notify loop. One prior year
+// minimum, favorite set by the owner, ending at any-of-today. Done here so the
+// probe can test the SQL with the notifications module stubbed away.
+export async function countFavoriteAnniversaries(): Promise<{
+  count: number;
+  eldestYear: number | null;
+}> {
+  const db = await getDb();
+  const row = await db.getFirstAsync<{ c: number; y: number | null }>(
+    `SELECT COUNT(*) AS c, MIN(CAST(strftime('%Y', taken_at / 1000, 'unixepoch') AS INTEGER)) AS y
+     FROM media
+     WHERE visibility = 'visible' AND edited_from IS NULL AND is_favorite = 1
+       AND taken_at IS NOT NULL
+       AND CAST(strftime('%Y', taken_at / 1000, 'unixepoch') AS INTEGER) < ?
+       AND CAST(strftime('%m', taken_at / 1000, 'unixepoch') AS INTEGER) = ?
+       AND CAST(strftime('%d', taken_at / 1000, 'unixepoch') AS INTEGER) = ?
+       ${EXCLUDE_ALL_SHARED}`,
+    [new Date().getFullYear(), new Date().getMonth() + 1, new Date().getDate()]
+  );
+  return { count: row?.c ?? 0, eldestYear: row?.y ?? null };
 }
 
 // --- v0.30 backup integrity ----------------------------------------------------

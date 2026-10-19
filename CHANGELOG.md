@@ -4,6 +4,26 @@ Each entry below documents what a commit adds and what comes next. Newest first.
 
 ---
 
+## v0.41 — Smart-album rule builder + anniversary reminders (Phase C1, owner-ordered "do phase C and D")
+
+- **Smart-album rules v2 (schema v20)**: `saved_searches.rules` TEXT column (NULL = classic
+  text search, old rows untouched). New `AlbumRulesScreen` ("Build a smart album" row on
+  Collections → modal sheet): stack filters — album name, favorites-only switch, up to six
+  tags (matches manual tags + scene labels), free-text across names/notes/OCR/places, an
+  optional taken_at from/to date range. Stored as sanitized JSON via `saveSmartRules`, re-run
+  through `runRulesSearch` on every open (same visible/unshared universe as every other
+  search, fully parameterized SQL, 1200 cap). `SavedSearchScreen` renders rules albums; legacy
+  text albums unchanged. Editing = delete + rebuild (same as classic).
+- **Anniversary reminders**: `notifyAnniversaries` setting (default on; the master
+  notifications toggle still gates everything) fires at most once a day after 09:00 when
+  favorites from this day exist in prior years (one-year minimum) —
+  `countFavoriteAnniversaries()` runs 55 s behind the on-this-day check on the same hourly
+  tick. Settings screen gained the toggle row.
+- **Probe: 220/220** (up from 207 — rules parsing/persistence/filter-combination/
+  trashed-exclusion tests, legacy compat, corrupted-JSON fallback, anniversary year math) +
+  static 48/48 + `tsc --noEmit` clean. Expected-version assertions bumped 19 → 20.
+- Device note: JS-only — Metro refresh, no gradle rebuild needed.
+
 ## v0.40.1 — Bugbot-style review pass + dependabot config (COMMITTED)
 
 - **Review pass over v0.39 + v0.40**: code re-verified against the risk classes the review

@@ -1,6 +1,4 @@
-import { searchByDateRange, searchMediaRaw, MediaRow } from "../db/queries";
-
-const MONTHS = [
+import { searchByDateRange, searchMediaRaw, MediaRow } from "../db/queries";const MONTHS = [
   "january", "february", "march", "april", "may", "june",
   "july", "august", "september", "october", "november", "december",
 ];
@@ -68,3 +66,8 @@ export async function runSearch(query: string): Promise<MediaRow[]> {
   if (dateRange) return searchByDateRange(dateRange.fromMs, dateRange.toMs);
   return searchMediaRaw(query);
 }
+
+// Rules albums (schema v20) live in queries.ts; re-exported here so screens
+// can treat everything search-shaped as one module.
+export { runRulesSearch, parseRules } from "../db/queries";
+export type { SavedRules } from "../db/queries";

@@ -19,7 +19,7 @@ import { JunkSweeperScreen } from "../screens/JunkSweeperScreen";
 import { SimilarScreen } from "../screens/SimilarScreen";
 import { SlideshowScreen } from "../screens/SlideshowScreen";
 import { SavedSearchScreen } from "../screens/SavedSearchScreen";
-import { ScenesScreen } from "../screens/ScenesScreen";
+import { AlbumRulesScreen } from "../screens/AlbumRulesScreen";import { ScenesScreen } from "../screens/ScenesScreen";
 import { StorageScreen } from "../screens/StorageScreen";
 import { DiagnosticsScreen } from "../screens/DiagnosticsScreen";
 import { JournalScreen } from "../screens/JournalScreen";
@@ -62,6 +62,7 @@ export type RootStackParamList = {
   DocAlbum: { key: "receipts" | "documents" };
   Corrections: undefined;
   ThenNow: undefined;
+  AlbumRules: undefined;
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -106,6 +107,11 @@ export function RootNavigator() {
       <Stack.Screen name="DocAlbum" component={DocAlbumScreen} />
       <Stack.Screen name="Corrections" component={FaceCorrectionsScreen} />
       <Stack.Screen name="ThenNow" component={ThenNowScreen} />
+      <Stack.Screen
+        name="AlbumRules"
+        component={AlbumRulesScreen}
+        options={{ presentation: "modal", animation: "slide_from_bottom" }}
+      />
       <Stack.Screen
         name="Slideshow"
         component={SlideshowScreen}

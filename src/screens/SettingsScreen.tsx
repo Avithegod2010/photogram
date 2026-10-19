@@ -88,6 +88,8 @@ export function SettingsScreen() {
   const setNotifyBackupFinished = useSettingsStore((s) => s.setNotifyBackupFinished);
   const notifyOnThisDay = useSettingsStore((s) => s.notifyOnThisDay);
   const setNotifyOnThisDay = useSettingsStore((s) => s.setNotifyOnThisDay);
+  const notifyAnniversaries = useSettingsStore((s) => s.notifyAnniversaries);
+  const setNotifyAnniversaries = useSettingsStore((s) => s.setNotifyAnniversaries);
 
   // Turning the master on asks the OS for the Android 13+ notification
   // permission (channels are created first inside enableNotifications);
@@ -393,6 +395,12 @@ export function SettingsScreen() {
                 sub="Once a day, if photos from this day exist in past years. Fires when the app is open after 09:00."
                 value={notifyOnThisDay}
                 onChange={setNotifyOnThisDay}
+              />
+              <ToggleRow
+                label="Favorite anniversaries"
+                sub="Once a day, favorites from this day in past years (one year minimum)."
+                value={notifyAnniversaries}
+                onChange={setNotifyAnniversaries}
               />
             </>
           ) : null}

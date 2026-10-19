@@ -279,6 +279,15 @@ export interface Migration {
   up: string;
 }
 
+//  20. saved_searches.rules — v0.41 Smart-album rules v2. NULL = the classic
+//     saved search (a plain text query, opening re-runs it through the search
+//     pipeline). Non-NULL = a rules JSON built by the rule-builder screen
+//     (combined filters: text, favorite, tags, taken_at range) re-run through
+//     runRulesSearch. Append-only: old rows keep working untouched.
+const SCHEMA_V20 = `
+ALTER TABLE saved_searches ADD COLUMN rules TEXT;
+`;
+
 export const MIGRATIONS: Migration[] = [
   { version: 1, up: SCHEMA_V1 },
   { version: 2, up: SCHEMA_V2 },
@@ -299,6 +308,7 @@ export const MIGRATIONS: Migration[] = [
   { version: 17, up: SCHEMA_V17 },
   { version: 18, up: SCHEMA_V18 },
   { version: 19, up: SCHEMA_V19 },
+  { version: 20, up: SCHEMA_V20 },
 ];
 
 export function migrationsAfter(version: number): Migration[] {

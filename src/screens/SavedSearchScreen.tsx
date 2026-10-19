@@ -4,8 +4,8 @@ import { StatusBar } from "expo-status-bar";
 import { Image } from "expo-image";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
-import { deleteSavedSearch, getSavedSearch, MediaRow } from "../db/queries";
-import { runSearch } from "../lib/search";
+import { deleteSavedSearch, getSavedSearch, MediaRow, parseRules } from "../db/queries";
+import { runSearch, runRulesSearch } from "../lib/search";
 import { theme } from "../theme";
 
 // v0.27 Smart albums: a saved search rendered as an auto-updating collection.
@@ -21,6 +21,7 @@ export function SavedSearchScreen({
   const insets = useSafeAreaInsets();
   const [name, setName] = useState("");
   const [query, setQuery] = useState("");
+  const [isRules, setIsRules] = useState(false);
   const [rows, setRows] = useState<MediaRow[] | null>(null);
 
   useEffect(() => {
@@ -32,8 +33,14 @@ export function SavedSearchScreen({
         return;
       }
       setName(saved.name);
-      setQuery(saved.query);
-      setRows(await runSearch(saved.query).catch(() => []));
+      setIsRules(saved.rules != null);
+      const rules = parseRules(saved.rules);
+      if (rules) {
+        setRows(await runRulesSearch(rules).catch(() => []));
+      } else {
+        setQuery(saved.query);
+        setRows(await runSearch(saved.query).catch(() => []));
+      }
     })();
   }, [route.params.id, navigation]);
 
@@ -65,7 +72,7 @@ export function SavedSearchScreen({
           <Text style={styles.title} numberOfLines={1}>
             {name || "Smart album"}
           </Text>
-          <Text style={styles.sub}>Auto-updating · search "{query}"</Text>
+          <Text style={styles.sub}>{isRules ? "Rules album · auto-updating" : `Auto-updating · search "${query}"`}</Text>
         </View>
         <Pressable onPress={confirmDelete} hitSlop={10}>
           <Text style={styles.trash}>🗑</Text>

@@ -1,5 +1,6 @@
 import type * as NotificationsModule from "expo-notifications";
 import { getDb } from "../db";
+import { countFavoriteAnniversaries } from "../db/queries";
 import { uploadsMmkv, useUploadStore } from "../store/uploadStore";
 import { useSettingsStore } from "../store/settingsStore";
 import { maybeRunMonthlyDigest, setDigestPoster } from "./digest";
@@ -169,6 +170,33 @@ async function runOnThisDayCheck(): Promise<void> {
   } catch {}
 }
 
+// --- Anniversaries (v0.41) ------------------------------------------------------
+
+// Same once-per-day shape as on-this-day, but favorites-only with a one-year
+// minimum. Fires shortly after the on-this-day check in the same hourly tick.
+async function runAnniversaryCheck(): Promise<void> {
+  const { notificationsEnabled, notifyAnniversaries } = useSettingsStore.getState();
+  if (!notificationsEnabled || !notifyAnniversaries) return;
+  if (new Date().getHours() < 9) return;
+  try {
+    if (uploadsMmkv.getString("notify_anniv_day") === dayKey()) return;
+  } catch {}
+  try {
+    const { count, eldestYear } = await countFavoriteAnniversaries();
+    if (count > 0 && eldestYear) {
+      const years = new Date().getFullYear() - eldestYear;
+      await post(
+        "memories",
+        "Years ago today",
+        `${count} favorite photo${count === 1 ? "" : "s"} from this day — first one ${years} year${years === 1 ? "" : "s"} ago.`
+      );
+    }
+    try {
+      uploadsMmkv.set("notify_anniv_day", dayKey());
+    } catch {}
+  } catch {}
+}
+
 // Called once from App.tsx when auth reaches "ready". Idempotent.
 export function startNotifyLoop(): void {
   if (loopStarted) return;
@@ -176,6 +204,9 @@ export function startNotifyLoop(): void {
   watchBackupFinished();
   setTimeout(() => void runOnThisDayCheck(), 20_000);
   setInterval(() => void runOnThisDayCheck(), CHECK_INTERVAL_MS);
+  // Anniversaries ride the same hourly tick, offset so both never collide.
+  setTimeout(() => void runAnniversaryCheck(), 55_000);
+  setInterval(() => void runAnniversaryCheck(), CHECK_INTERVAL_MS);
   // v0.39 monthly health digest: once per month on the first in-app check.
   setDigestPoster(async (body) => {
     if (!useSettingsStore.getState().notifyHealthDigest) return;

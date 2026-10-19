@@ -24,6 +24,7 @@ type CollectionsNav = NativeStackNavigationProp<{
   Scenes: undefined;
   PeopleSetup: undefined;
   DocAlbum: { key: "receipts" | "documents" };
+  AlbumRules: undefined;
 }>;
 
 const SECTIONS = [
@@ -89,7 +90,9 @@ export function CollectionsScreen({ navigation }: { navigation: CollectionsNav }
                 <Text style={styles.rowLabel} numberOfLines={1}>
                   {s.name}
                 </Text>
-                <Text style={styles.rowSub}>Search "{s.query}"</Text>
+                <Text style={styles.rowSub} numberOfLines={1}>
+                  {s.rules ? "Rules album" : `Search "${s.query}"`}
+                </Text>
               </View>
               <Text style={styles.chevron}>›</Text>
             </Pressable>
@@ -103,6 +106,18 @@ export function CollectionsScreen({ navigation }: { navigation: CollectionsNav }
               </View>
             </View>
           ) : null}
+          <Pressable
+            style={styles.row}
+            android_ripple={{ color: theme.colors.outlineVariant }}
+            onPress={() => navigation.navigate("AlbumRules")}
+          >
+            <Text style={styles.plus}>＋</Text>
+            <View style={styles.rowText}>
+              <Text style={styles.rowLabel}>Build a smart album</Text>
+              <Text style={styles.rowSub}>Stack filters: favorites, tags, dates, words</Text>
+            </View>
+            <Text style={styles.chevron}>›</Text>
+          </Pressable>
         </View>
         {docs !== null && docs.some((d) => d.count > 0) ? (
           <View style={[styles.card, { marginTop: theme.spacing.md }]}>
@@ -201,4 +216,5 @@ const styles = StyleSheet.create({
   rowLabel: { color: theme.colors.onSurface, fontSize: 15.5, fontWeight: "600" },
   rowSub: { color: theme.colors.onSurfaceVariant, fontSize: 12.5, marginTop: 2 },
   chevron: { color: theme.colors.onSurfaceVariant, fontSize: 22 },
+  plus: { color: theme.colors.primary, fontSize: 20, fontWeight: "700", width: 10 },
 });

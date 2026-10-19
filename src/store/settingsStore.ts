@@ -53,6 +53,7 @@ interface SettingsState {
   notificationsEnabled: boolean;
   notifyBackupFinished: boolean;
   notifyOnThisDay: boolean;
+  notifyAnniversaries: boolean;
   // v0.37: how often the app auto-walks the library and verifies every
   // "synced" item against Telegram ("backup integrity"). An in-app loop
   // checks a few times a day; the interval gate decides when a pass runs.
@@ -90,6 +91,7 @@ interface SettingsState {
   setNotificationsEnabled: (v: boolean) => void;
   setNotifyBackupFinished: (v: boolean) => void;
   setNotifyOnThisDay: (v: boolean) => void;
+  setNotifyAnniversaries: (v: boolean) => void;
 }
 
 export const useSettingsStore = create<SettingsState>()(
@@ -117,6 +119,7 @@ export const useSettingsStore = create<SettingsState>()(
       notificationsEnabled: false,
       notifyBackupFinished: true,
       notifyOnThisDay: true,
+      notifyAnniversaries: true,
       integritySchedule: "off",
       setIntegritySchedule: (v) => set({ integritySchedule: v }),
       exportMinifyJson: false,
@@ -154,6 +157,7 @@ export const useSettingsStore = create<SettingsState>()(
       setNotificationsEnabled: (v) => set({ notificationsEnabled: v }),
       setNotifyBackupFinished: (v) => set({ notifyBackupFinished: v }),
       setNotifyOnThisDay: (v) => set({ notifyOnThisDay: v }),
+      setNotifyAnniversaries: (v) => set({ notifyAnniversaries: v }),
     }),
     {
       name: "photogram-settings",
