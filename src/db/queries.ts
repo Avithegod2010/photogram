@@ -574,6 +574,8 @@ export async function listAlbumTopics(albumId: number): Promise<AlbumTopicRow[]>
 // the sender recorded at claim time. Optional so local-album paths compile.
 export interface AlbumMediaRow extends MediaRow {
   sender_id?: string | null;
+  // v0.44 activity feed: when the group-sync claim inserted the link.
+  added_at?: number | null;
 }
 
 export async function listAlbumMedia(
@@ -584,12 +586,37 @@ export async function listAlbumMedia(
   const db = await getDb();
   const topicFilter = topicId ? "AND am.forum_topic_id = ?" : "";
   return db.getAllAsync<AlbumMediaRow>(
-    `SELECT m.*, am.sender_id AS sender_id FROM media m
+    `SELECT m.*, am.sender_id AS sender_id, am.added_at AS added_at FROM media m
      JOIN album_media am ON am.media_id = m.id
      WHERE am.album_id = ?
      ${topicFilter}
      ORDER BY m.taken_at DESC, m.id DESC LIMIT ?`,
     topicId ? [albumId, topicId, limit] : [albumId, limit]
+  );
+}
+
+// v0.44 per-album activity feed (shared albums): what the family added,
+// newest claim first. A row appears with its claim time, sender and the
+// caption the sender attached (stored on the media row), capped at `limit`
+// so a 10k-photo family album still renders fast.
+export interface AlbumActivityEntry {
+  mediaId: number;
+  senderId: string | null;
+  addedAt: number;
+  caption: string | null;
+  thumb: string | null;
+}
+
+export async function listAlbumActivity(albumId: number, limit = 30): Promise<AlbumActivityEntry[]> {
+  const db = await getDb();
+  return db.getAllAsync<AlbumActivityEntry>(
+    `SELECT am.media_id AS mediaId, am.sender_id AS senderId, am.added_at AS addedAt,
+            m.file_name AS caption, m.thumb_uri AS thumb
+     FROM album_media am
+     JOIN media m ON m.id = am.media_id
+     WHERE am.album_id = ? AND am.sender_id IS NOT NULL AND am.sender_id != ''
+     ORDER BY am.added_at DESC, am.media_id DESC LIMIT ?`,
+    [albumId, limit]
   );
 }
 

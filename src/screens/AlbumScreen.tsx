@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { Alert, Modal, Pressable, ScrollView, StyleSheet, Switch, Text, View } from "react-native";
+import { Alert, Modal, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from "react-native";
 import { StatusBar } from "expo-status-bar";
 import { Image } from "expo-image";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -7,6 +7,8 @@ import { FlashList } from "@shopify/flash-list";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { getAlbumMedia } from "../lib/albums";
 import { listMyGroups, resolveSenderNames, TelegramGroup } from "../lib/chats";
+import { sendPhotoRequest } from "../lib/photoRequest";
+import { listAlbumActivity } from "../db/queries";
 import { shareAlbumToChat } from "../lib/shareToChat";
 import { authenticateLocal } from "../lib/biometrics";
 import { useSettingsStore } from "../store/settingsStore";
@@ -19,6 +21,7 @@ import {
   AlbumMediaRow,
   AlbumTopicRow,
   MediaRow,
+  type AlbumActivityEntry,
 } from "../db/queries";
 import { theme } from "../theme";
 
@@ -49,6 +52,19 @@ function monthKeyOf(ts: number): { key: string; label: string } {
   };
 }
 
+function timeAgoOf(ts: number): string {
+  if (!ts) return "";
+  const diff = Math.max(0, Date.now() - ts);
+  const m = Math.floor(diff / 60_000);
+  if (m < 1) return "just now";
+  if (m < 60) return `${m} min ago`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h ago`;
+  const d = Math.floor(h / 24);
+  if (d < 30) return `${d}d ago`;
+  return new Date(ts).toLocaleDateString();
+}
+
 export function AlbumScreen({
   navigation,
   route,
@@ -69,6 +85,13 @@ export function AlbumScreen({
   // Album organizer (shared mode only): chips All / By sender / By month.
   const [groupMode, setGroupMode] = useState<AlbumGroupMode>("all");
   const [senderNames, setSenderNames] = useState<Map<string, string>>(new Map());
+  // v0.44 activity feed: claims made by the family, newest first.
+  const [activity, setActivity] = useState<AlbumActivityEntry[] | null>(null);
+  // v0.44 photo requests: a plain prompt into the family chat; replies with
+  // media land here via the normal claim engine.
+  const [requestOpen, setRequestOpen] = useState(false);
+  const [requestSubject, setRequestSubject] = useState("");
+  const [requestBusy, setRequestBusy] = useState(false);
   const [ownUserId, setOwnUserId] = useState<string | null>(null);
   // v0.39 "Share album": pick a Telegram group, then queue every local copy
   // in the album for upload to that chat (normal queue, side-effect-free).
@@ -147,6 +170,26 @@ export function AlbumScreen({
       .then(setSenderNames)
       .catch(() => setSenderNames(new Map()));
   }, [sharedAlbumId, groupMode, rows]);
+
+  // v0.44 activity feed — refresh on entry and on every rows refresh.
+  useEffect(() => {
+    if (sharedAlbumId === undefined) return;
+    void listAlbumActivity(sharedAlbumId)
+      .then((entries) => {
+        setActivity(entries);
+        return resolveSenderNames(entries.map((e) => e.senderId));
+      })
+      .then((names) => {
+        if (names && names.size > 0) {
+          setSenderNames((prev) => {
+            const merged = new Map(prev);
+            names.forEach((v, k) => merged.set(k, v));
+            return merged;
+          });
+        }
+      })
+      .catch(() => setActivity([]));
+  }, [sharedAlbumId, rows.length]);
 
   // Grid data with optional full-width section headers (GalleryScreen's day
   // header pattern: header items + overrideItemLayout span). rows arrive
@@ -270,6 +313,18 @@ export function AlbumScreen({
             <Text style={styles.shareBtnText}>▶ Play</Text>
           </Pressable>
         ) : null}
+        {sharedAlbumId !== undefined ? (
+          <Pressable
+            style={styles.shareBtn}
+            hitSlop={8}
+            onPress={() => {
+              setRequestSubject("");
+              setRequestOpen(true);
+            }}
+          >
+            <Text style={styles.shareBtnText}>📷 Ask</Text>
+          </Pressable>
+        ) : null}
         {rows.some((r) => r.local_uri) ? (
           <Pressable
             style={styles.shareBtn}
@@ -349,6 +404,57 @@ export function AlbumScreen({
           })}
         </ScrollView>
       ) : null}
+      {sharedAlbumId !== undefined && activity !== null && activity.length > 0 ? (
+        <View style={styles.activityWrap}>
+          <Text style={styles.activityTitle}>Recent activity</Text>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.activityRow}
+          >
+            {activity.map((entry) => {
+              const senderName =
+                entry.senderId && entry.senderId === ownUserId
+                  ? "You"
+                  : (senderNames.get(entry.senderId ?? "") ?? "Someone");
+              return (
+                <Pressable
+                  key={`${entry.mediaId}-${entry.addedAt}`}
+                  style={styles.activityCard}
+                  onPress={() =>
+                    navigation.navigate("Viewer", {
+                      ids: activity.map((a) => a.mediaId),
+                      index: activity.findIndex((a) => a.mediaId === entry.mediaId),
+                    })
+                  }
+                >
+                  {entry.thumb ? (
+                    <Image
+                      source={{ uri: entry.thumb }}
+                      style={styles.activityThumb}
+                      contentFit="cover"
+                      transition={120}
+                    />
+                  ) : (
+                    <View style={[styles.activityThumb, styles.activityThumbEmpty]} />
+                  )}
+                  <Text style={styles.activityWho} numberOfLines={1}>
+                    {senderName}
+                  </Text>
+                  <Text style={styles.activityWhen} numberOfLines={1}>
+                    {timeAgoOf(entry.addedAt)}
+                  </Text>
+                  {entry.caption && entry.caption.length > 0 ? (
+                    <Text style={styles.activityCaption} numberOfLines={1}>
+                      "{entry.caption}"
+                    </Text>
+                  ) : null}
+                </Pressable>
+              );
+            })}
+          </ScrollView>
+        </View>
+      ) : null}
       <FlashList
         data={data}
         numColumns={3}
@@ -370,6 +476,62 @@ export function AlbumScreen({
           loaded ? <Text style={styles.empty}>No items in this album yet.</Text> : null
         }
       />
+
+      {/* v0.44 photo request */}
+      <Modal visible={requestOpen} transparent animationType="fade" onRequestClose={() => setRequestOpen(false)}>
+        <Pressable style={styles.shareBackdrop} onPress={() => setRequestOpen(false)}>
+          <Pressable style={styles.shareCard} onPress={(e) => e.stopPropagation()}>
+            <Text style={styles.shareTitle}>Ask the family for photos</Text>
+            <Text style={styles.shareHint}>
+              A short request goes into this album's chat. Photos posted as replies will be saved
+              into the album automatically.
+            </Text>
+            <View style={styles.requestInputWrap}>
+              <TextInput
+                style={styles.requestInput}
+                value={requestSubject}
+                onChangeText={setRequestSubject}
+                placeholder="e.g. Diwali, Goa trip, grandma's birthday"
+                placeholderTextColor={theme.colors.onSurfaceVariant + "88"}
+                maxLength={120}
+              />
+            </View>
+            {requestBusy ? (
+              <Text style={styles.shareHint}>Sending…</Text>
+            ) : (
+              <View style={styles.requestActions}>
+                <Pressable style={styles.requestCancel} onPress={() => setRequestOpen(false)}>
+                  <Text style={styles.shareHint}>Cancel</Text>
+                </Pressable>
+                <Pressable
+                  style={styles.requestSend}
+                  onPress={() => {
+                    if (sharedAlbumId === undefined) return;
+                    setRequestBusy(true);
+                    void (async () => {
+                      try {
+                        const album = await getSharedAlbum(sharedAlbumId);
+                        const chatId = album?.chat_id ?? "";
+                        await sendPhotoRequest(chatId, requestSubject);
+                        setRequestOpen(false);
+                      } catch {
+                        Alert.alert(
+                          "Could not send",
+                          "The message did not go out — the album may not be linked to its chat yet. Try again after the next sync."
+                        );
+                      } finally {
+                        setRequestBusy(false);
+                      }
+                    })();
+                  }}
+                >
+                  <Text style={styles.requestSendText}>Send request</Text>
+                </Pressable>
+              </View>
+            )}
+          </Pressable>
+        </Pressable>
+      </Modal>
 
       {/* v0.39 share-to-group picker */}
       <Modal visible={shareModal} transparent animationType="fade" onRequestClose={() => setShareModal(false)}>
@@ -496,6 +658,58 @@ const styles = StyleSheet.create({
     paddingVertical: 5,
   },
   chipText: { color: theme.colors.onSurface, fontSize: 12, fontWeight: "600" },
+  activityWrap: { paddingHorizontal: theme.spacing.md, paddingTop: theme.spacing.xs },
+  activityTitle: {
+    color: theme.colors.onSurfaceVariant,
+    fontSize: 11.5,
+    fontWeight: "700",
+    marginBottom: theme.spacing.xs,
+  },
+  activityRow: { flexDirection: "row", gap: theme.spacing.sm, paddingBottom: 6 },
+  activityCard: {
+    width: 96,
+    backgroundColor: theme.colors.surfaceContainer,
+    borderRadius: theme.radius.lg,
+    padding: 6,
+    gap: 2,
+  },
+  activityThumb: {
+    width: "100%",
+    height: 60,
+    borderRadius: theme.radius.md,
+    backgroundColor: theme.colors.surfaceHighest,
+  },
+  activityThumbEmpty: { height: 60 },
+  activityWho: { color: theme.colors.onSurface, fontSize: 11.5, fontWeight: "600" },
+  activityWhen: { color: theme.colors.onSurfaceVariant, fontSize: 10 },
+  activityCaption: { color: theme.colors.onSurfaceVariant, fontSize: 10, marginTop: 1 },
+  requestInputWrap: {
+    marginTop: theme.spacing.md,
+    backgroundColor: theme.colors.surfaceHighest,
+    borderRadius: theme.radius.lg,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: theme.colors.outlineVariant,
+  },
+  requestInput: {
+    color: theme.colors.onSurface,
+    paddingHorizontal: theme.spacing.md,
+    paddingVertical: 10,
+    fontSize: 14,
+  },
+  requestActions: { flexDirection: "row", gap: theme.spacing.md, marginTop: theme.spacing.md },
+  requestCancel: {
+    paddingVertical: 9,
+    paddingHorizontal: 14,
+    borderRadius: theme.radius.full,
+    backgroundColor: theme.colors.surfaceHighest,
+  },
+  requestSend: {
+    paddingVertical: 9,
+    paddingHorizontal: 14,
+    borderRadius: theme.radius.full,
+    backgroundColor: theme.colors.primary,
+  },
+  requestSendText: { color: theme.colors.onPrimary, fontWeight: "700", fontSize: 13 },
   chipOn: { backgroundColor: theme.colors.primaryContainer },
   chipTextOn: { color: theme.colors.onPrimaryContainer },
   listContent: { paddingBottom: 40, paddingTop: theme.spacing.sm },

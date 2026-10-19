@@ -4,6 +4,20 @@ Each entry below documents what a commit adds and what comes next. Newest first.
 
 ---
 
+## v0.44 — Album activity feed + photo requests (Phase C4, owner-ordered "do phase C and D")
+
+- **Activity feed**: "Recent activity" strip on shared album screens — what the family added,
+  newest claim first (thumb + sender name + when + the sender's caption). `listAlbumActivity`
+  reads album_media.added_at/sender_id joined to media (cap 30, own rows without a sender
+  hidden); sender names resolve through the existing cached `resolveSenderNames`.
+- **Photo requests**: "📷 Ask" chip on shared albums → modal → a text request goes into the
+  album's Telegram group chat via the raw TDLib `sendMessage` path. Replies containing media
+  land in the album automatically (the normal claim engine needs no new matching).
+  Unlinked album → fast, honest failure.
+- **Probe: 244/244** (new: activity ordering/hidden rows/caption/limit, added_at propagation,
+  request compose + fast-fail) + static 48/48 + tsc clean.
+- Device note: JS-only — Metro refresh, no gradle rebuild needed.
+
 ## v0.43 — Upload time window (Phase C3, owner-ordered "do phase C and D")
 
 - **Time-window uploading**: "upload in a time window only" in Settings → Auto-backup.
