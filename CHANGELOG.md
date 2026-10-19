@@ -4,6 +4,26 @@ Each entry below documents what a commit adds and what comes next. Newest first.
 
 ---
 
+## v0.43 — Upload time window (Phase C3, owner-ordered "do phase C and D")
+
+- **Time-window uploading**: "upload in a time window only" in Settings → Auto-backup.
+  Outside the window (e.g. 22:00 → 07:00, overnight wrap supported) uploads pause via the
+  uploader's existing `pauseUploads()`/`resumeUploads()` exports — **uploader.ts untouched**
+  (protected FLOOD_WAIT file). The window remembers its own pause, so it never overrides a
+  rate-limit pause or manual pause mid-flight, and disabling the window always auto-resumes.
+  Same start/end hours = always inside (whole-day). Checked once a minute by a new
+  `startUploadWindowLoop` (deferred 10 s in App.tsx like the other loops).
+- **Folder rules**: the per-folder include switches already shipped in Settings (device-album
+  list) — verified present, no new code needed; this batch's second slot folded into the
+  window feature (window + Wi-Fi + charging now cover the rules trio).
+- **Probe: 238/238** (new: window boundary math incl. overnight wrap + whole-day, pause/resume
+  state machine with injectable now, disabled-window recovery) + static 48/48 + tsc clean.
+  Probe infra: stubs for `expo-network` (uploader reachability now bundled), `react-native`
+  Alert, MMKV getNumber; bundle command gained `--define:__DEV__=true`; probe exits explicitly
+  because the real worker loop is started by the test. Bundle command is 13 aliases + define —
+  see NEXT_SESSION §0.
+- Device note: JS-only — Metro refresh, no gradle rebuild needed.
+
 ## v0.42 — People-aware search + pinned albums (Phase C2, owner-ordered "do phase C and D")
 
 - **People-aware search**: gallery search now also surfaces named people as a "People" chip

@@ -9,6 +9,7 @@ import {
   StyleSheet,
   Switch,
   Text,
+  TextInput,
   View,
 } from "react-native";
 import { StatusBar } from "expo-status-bar";
@@ -72,6 +73,12 @@ export function SettingsScreen() {
   const junkSweeperEnabled = useSettingsStore((s) => s.junkSweeperEnabled);
   const setJunkSweeperEnabled = useSettingsStore((s) => s.setJunkSweeperEnabled);
   const autoBackupEnabled = useSettingsStore((s) => s.autoBackupEnabled);
+  const uploadWindowEnabled = useSettingsStore((s) => s.uploadWindowEnabled);
+  const setUploadWindowEnabled = useSettingsStore((s) => s.setUploadWindowEnabled);
+  const uploadWindowStart = useSettingsStore((s) => s.uploadWindowStart);
+  const setUploadWindowStart = useSettingsStore((s) => s.setUploadWindowStart);
+  const uploadWindowEnd = useSettingsStore((s) => s.uploadWindowEnd);
+  const setUploadWindowEnd = useSettingsStore((s) => s.setUploadWindowEnd);
   const setAutoBackupEnabled = useSettingsStore((s) => s.setAutoBackupEnabled);
   const autoBackupFolders = useSettingsStore((s) => s.autoBackupFolders);
   const setAutoBackupFolders = useSettingsStore((s) => s.setAutoBackupFolders);
@@ -352,6 +359,42 @@ export function SettingsScreen() {
             value={autoBackupEnabled}
             onChange={setAutoBackupEnabled}
           />
+          <ToggleRow
+            label="Upload in a time window only"
+            sub={`Upload only between ${fmtHour(uploadWindowStart)} and ${fmtHour(uploadWindowEnd)}. Outside the window uploads pause and auto-resume.${uploadWindowStart === uploadWindowEnd ? " Same start and end = always inside." : ""}`}
+            value={uploadWindowEnabled}
+            onChange={setUploadWindowEnabled}
+          />
+          {uploadWindowEnabled ? (
+            <View style={styles.windowRow}>
+              <View style={styles.windowField}>
+                <Text style={styles.folderName}>From</Text>
+                <TextInput
+                  style={styles.windowInput}
+                  value={String(uploadWindowStart)}
+                  onChangeText={(t) => {
+                    const n = parseInt(t, 10);
+                    if (Number.isFinite(n)) setUploadWindowStart(n);
+                  }}
+                  keyboardType="number-pad"
+                  maxLength={2}
+                />
+              </View>
+              <View style={styles.windowField}>
+                <Text style={styles.folderName}>To</Text>
+                <TextInput
+                  style={styles.windowInput}
+                  value={String(uploadWindowEnd)}
+                  onChangeText={(t) => {
+                    const n = parseInt(t, 10);
+                    if (Number.isFinite(n)) setUploadWindowEnd(n);
+                  }}
+                  keyboardType="number-pad"
+                  maxLength={2}
+                />
+              </View>
+            </View>
+          ) : null}
           {autoBackupEnabled ? (
             <>
               <Text style={styles.rowSub}>
@@ -777,6 +820,10 @@ export function SettingsScreen() {
   );
 }
 
+function fmtHour(h: number): string {
+  return `${String(h).padStart(2, "0")}:00`;
+}
+
 function Section({
   title,
   children,
@@ -950,6 +997,19 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
   },
   folderName: { color: theme.colors.onSurface, fontSize: 13.5, flex: 1, marginRight: 12 },
+  windowRow: { flexDirection: "row", gap: 12, paddingHorizontal: theme.spacing.md, paddingVertical: 6 },
+  windowField: { flex: 1 },
+  windowInput: {
+    color: theme.colors.onSurface,
+    backgroundColor: theme.colors.surfaceContainer,
+    borderRadius: theme.radius.lg,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: theme.colors.outlineVariant,
+    paddingHorizontal: 14,
+    paddingVertical: 9,
+    fontSize: 15,
+    marginTop: 4,
+  },
   statGrid: { flexDirection: "row", gap: theme.spacing.sm, padding: theme.spacing.md, paddingBottom: 0 },
   gridSecond: { paddingBottom: theme.spacing.md, paddingTop: theme.spacing.sm },
   statCard: {

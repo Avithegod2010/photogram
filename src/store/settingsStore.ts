@@ -7,6 +7,12 @@ export type { IntegritySchedule };
 
 export const mmkv = createMMKV({ id: "photogram-settings" });
 
+function clampHour(v: number): number {
+  if (!Number.isFinite(v)) return 0;
+  const i = Math.floor(v);
+  return i < 0 ? 0 : i > 23 ? 23 : i;
+}
+
 export type UploadQuality = "original" | "storage_saver";
 
 interface SettingsState {
@@ -57,6 +63,11 @@ interface SettingsState {
   notifyBackupFinished: boolean;
   notifyOnThisDay: boolean;
   notifyAnniversaries: boolean;
+  // v0.43 time-window uploading: only upload inside [start, end) hours
+  // (start > end wraps overnight; start === end = whole day).
+  uploadWindowEnabled: boolean;
+  uploadWindowStart: number;
+  uploadWindowEnd: number;
   // v0.37: how often the app auto-walks the library and verifies every
   // "synced" item against Telegram ("backup integrity"). An in-app loop
   // checks a few times a day; the interval gate decides when a pass runs.
@@ -96,6 +107,9 @@ interface SettingsState {
   setNotifyBackupFinished: (v: boolean) => void;
   setNotifyOnThisDay: (v: boolean) => void;
   setNotifyAnniversaries: (v: boolean) => void;
+  setUploadWindowEnabled: (v: boolean) => void;
+  setUploadWindowStart: (v: number) => void;
+  setUploadWindowEnd: (v: number) => void;
 }
 
 export const useSettingsStore = create<SettingsState>()(
@@ -125,6 +139,9 @@ export const useSettingsStore = create<SettingsState>()(
       notifyBackupFinished: true,
       notifyOnThisDay: true,
       notifyAnniversaries: true,
+      uploadWindowEnabled: false,
+      uploadWindowStart: 22,
+      uploadWindowEnd: 7,
       integritySchedule: "off",
       setIntegritySchedule: (v) => set({ integritySchedule: v }),
       exportMinifyJson: false,
@@ -171,6 +188,9 @@ export const useSettingsStore = create<SettingsState>()(
       setNotifyBackupFinished: (v) => set({ notifyBackupFinished: v }),
       setNotifyOnThisDay: (v) => set({ notifyOnThisDay: v }),
       setNotifyAnniversaries: (v) => set({ notifyAnniversaries: v }),
+      setUploadWindowEnabled: (v) => set({ uploadWindowEnabled: v }),
+      setUploadWindowStart: (v) => set({ uploadWindowStart: clampHour(v) }),
+      setUploadWindowEnd: (v) => set({ uploadWindowEnd: clampHour(v) }),
     }),
     {
       name: "photogram-settings",
