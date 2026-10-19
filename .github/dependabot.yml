@@ -1,0 +1,30 @@
+version: 2
+updates:
+  # Photogram policy (2026-10-19): patch/minor bumps for build toolchain are
+  # safe and applied; the Expo SDK 57 engine chain is NEVER auto-bumped —
+  # advisory "fixes" would downgrade expo/RN and break the app. Those are
+  # tracked and re-evaluated manually each batch (see NEXT_SESSION.md).
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    ignore:
+      # Engine pins — upgrades are deliberate, expo-install driven, and must
+      # always go through a gradle rebuild + device verification.
+      - dependency-name: "expo"
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
+      - dependency-name: "react-native"
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
+      - dependency-name: "react-native-reanimated"
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
+      - dependency-name: "react-native-worklets"
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
+      - dependency-name: "react-native-mmkv"
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
+      - dependency-name: "react-native-nitro-modules"
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
+      - dependency-name: "react-native-fast-tflite"
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
+      - dependency-name: "react-native-tdlib"
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]

@@ -4,6 +4,24 @@ Each entry below documents what a commit adds and what comes next. Newest first.
 
 ---
 
+## v0.40.1 — Bugbot-style review pass + dependabot config (COMMITTED)
+
+- **Review pass over v0.39 + v0.40**: code re-verified against the risk classes the review
+  subagent hunts (units, SQL placeholders, race/ordering, TDlib-safety). Findings: **none real**.
+  Verified in place: `listOnThisDay` ms→s division + JS mm-dd set handles the Dec→Jan wrap;
+  `listPersonCandidates` guards zero-length blobs, zero norms and blocked pairs per member
+  (mixed-model comparison impossible — single embedding column, model_id per row);
+  `unblockRejection` deletes the canonical ascending pair; `snapshotExport` same-day overwrite
+  (ISO-stamp slice lands before any colon), never-throws loop, retry-on-failure (MMKV stamp only
+  after successful write); `bulkFavorite` touches only un-favorited rows and merges state locally;
+  App.tsx 10 s deferral has clearTimeout cleanup. Review chain: probe 207/207 + static 48/48 +
+  `tsc --noEmit` clean.
+- **Review-bot note**: the inner `bugbot`/`review-bugbot` subagent degenerated into unusable
+  output (model loop) — the review above was done by direct targeted re-verification instead.
+- **Housekeeping**: `.github/dependabot.yml` added (npm weekly, limit 5, ignores majors/minors on
+  engine packages so Dependabot never proposes expo/RN downgrades) — greenlights the dependabot
+  PR flow that the package.json overrides policy depends on.
+
 ## v0.40 — People v2 follow-ups, slideshow everywhere, bulk favorite, Then-&-Now, weekly snapshot, cold-start pass + housekeeping (COMMITTED — owner-ordered: all of Phase 3 + all six Phase-4 candidates)
 
 - **Housekeeping (Phase 3):**
