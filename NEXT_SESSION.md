@@ -1,11 +1,52 @@
 # PHOTOGRAM — MASTER HANDOFF (read this fully before coding)
 
 _This file is the single source of truth for any AI agent or developer picking up this project cold.
-Last updated: 2026-10-17 (§0). Read §0, then §1–§17. CHANGELOG.md has per-version notes._
+Last updated: 2026-10-19 (§0). Read §0, then §1–§17. CHANGELOG.md has per-version notes._
 
 ---
 
-## 0. CURRENT STATE — 2026-10-17 · v0.34.1 + v0.36 COMMITTED, PUSHED, REBUILT & INSTALLED · DEVICE VERIFY PART-DONE (PAUSED — PHONE UNDER ANOTHER CHATBOT'S CONTROL)
+## 0. CURRENT STATE — 2026-10-19 · v0.39 COMMITTED & PUSHED (`ec43c27` = origin/master) · DEVICE VERIFY PAUSED (PHONE STILL UNDER ANOTHER CHATBOT'S CONTROL)
+
+**2026-10-19 session (v0.39, owner-ordered batch: People & Pets v2, export follow-ups, scheduled
+deep maintenance, smarter albums — all five groups coded in one go at the owner's explicit
+request):**
+- **Schema v19 (additive):** `people.sensitivity`, new `face_rejections` (canonical sample PAIRS —
+  blocks survive split-offs/person deletion), `media.trash_reason` ('merge' tagging).
+- **People v2:** rewritten `runClustering` (affinity attach to NAMED people at per-person
+  sensitivity + blocked-pair-aware union-find), `mergePeople`/`splitOffFaces`/
+  `dismissFacesFromPerson` in people.ts, PeopleScreen v2 (long-press merge flow, per-photo
+  "Not X", Select→Split off, sensitivity chips Strict 0.99 verified).
+- **Undo-merge:** Trash screen banner (`countMergedInTrash` + `restoreMergedFromTrash`).
+- **Offline originals:** `offlineExport.ts` (documents/offline/, 200 files/pass, 400ms gap,
+  resumable cursor `offline_export_cursor`, per-screen Stop) + ExportScreen "Offline copies" row.
+- **Manifest import:** `importManifest.ts` (pick via expo-document-picker → dry-run classify →
+  apply cloud-only rows); exports gained `fingerprint`; re-import is a no-op.
+  **expo-document-picker IS A NEW NATIVE MODULE → the NEXT gradle rebuild is REQUIRED before
+  import-on-device works.** Rebuild runner: `E:\Dev\run-photogram-gradle-assemble.ps1`.
+- **Scheduled junk sweep:** `integritySchedule.ts` hooks `junkAutoSweep.checkAndSweep()` after a
+  finished scheduled integrity pass (junk's own weekly MMKV gate).
+- **Monthly digest:** `digest.ts` (+ `notifyHealthDigest` setting, posts once/month via notify
+  loop poster hook).
+- **Doc albums:** `docAlbums.ts` (Receipts/Documents keyword albums over ocr_text, boundary-safe)
+  + CollectionsScreen Documents card + new DocAlbumScreen (long-press → Archive corrective).
+- **Share album:** `shareToChat.ts` + AlbumScreen ⇪ Share → pick your Telegram group → whole
+  album's local copies queue via the NORMAL upload queue (side-effect-free per v0.20 guard).
+  **▶ Play** on the Favorites header (Slideshow from index 0).
+- **Probe: ran 189/189 + 48/48 static + tsc 0.** Probe re-run cmd UNCHANGED but note: esbuild was
+  never actually installed (the 2026-10-17 `npx --no-install` note relied on a Lambda-al era
+  toolchain); it is now a real devDependency (0.28.2). If bundling fails with "No matching export
+  in stubs/react-native.ts", extend the RN stub (was extended with PixelRatio/StyleSheet/View/
+  Text/AppRegistry/LogBox/TurboModuleRegistry this session). The expo-document-picker stub
+  (`stubs/expo-document-picker.ts`) is new. Bundle via direct exe is fastest:
+  `& "node_modules\@esbuild\win32-x64\esbuild.exe" .expo/review-probe/probe.ts --bundle
+  --platform=node --format=cjs --outfile=.expo/review-probe/probe.cjs` + the recorded aliases.
+- **REMAINING DEVICE WORK (only when phone is FREE):** v0.12 → v0.39 checklist (Settings → Smart
+  tags ON + Find faces ON → rescan → People model + Detect&embed + Group faces → People v2
+  (merge/split/Not-X/sensitivity) → Trash undo-merge banner → scheduled integrity chips →
+  Export JSON/CSV → offline copies smoke → share-album picker → Collections Documents card),
+  then resume bulk upload (~8 GB — NOT uploading).
+
+
 
 **2026-10-17 session status (all owner-approved; tree clean at HEAD `a1056f2` = origin/master):**
 Both commits PUSHED (`dd13882..a1056f2`). The combined gradle rebuild was DONE compile-only
