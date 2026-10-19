@@ -14,7 +14,8 @@ type TdAny = Record<string, any>;
 
 let historyLengthCache = 0;
 
-function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+// Exported for offlineExport.ts (v0.39).
+export function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
   return new Promise<T>((resolve, reject) => {
     const timer = setTimeout(() => reject(new Error(`${label} timed out`)), ms);
     promise.then(
@@ -41,7 +42,8 @@ function firstDefined(...values: Array<unknown>): unknown {
   return undefined;
 }
 
-function extractRemoteFile(message: TdAny): { remoteId: string; expected: number } | null {
+// Exported for offlineExport.ts (v0.39).
+export function extractRemoteFile(message: TdAny): { remoteId: string; expected: number } | null {
   const content: TdAny = message?.content ?? {};
   const byType = typeof content["@type"] === "string" ? content["@type"] : "";
 
@@ -107,7 +109,10 @@ function messageContentFileName(message: TdAny): string {
   );
 }
 
-async function fetchMessage(
+// Exported for src/lib/offlineExport.ts (v0.39) — the same proven lookup
+// (history scan + filename fallback + preview-caption skip) backs the
+// offline-copies export.
+export async function fetchMessage(
   chatId: string,
   messageId: string,
   fileName: string | null
@@ -148,7 +153,8 @@ async function fetchMessage(
   return null;
 }
 
-function trackDownload(
+// Exported for offlineExport.ts (v0.39).
+export function trackDownload(
   remoteId: string,
   onProgress?: (p: RestoreProgress) => void
 ): () => void {

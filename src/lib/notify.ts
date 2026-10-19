@@ -2,6 +2,7 @@ import type * as NotificationsModule from "expo-notifications";
 import { getDb } from "../db";
 import { uploadsMmkv, useUploadStore } from "../store/uploadStore";
 import { useSettingsStore } from "../store/settingsStore";
+import { maybeRunMonthlyDigest, setDigestPoster } from "./digest";
 
 // v0.16 Notifications (strictly opt-in). Two local notification types:
 //  - "Backup finished" when the upload queue drains with new completions.
@@ -175,4 +176,11 @@ export function startNotifyLoop(): void {
   watchBackupFinished();
   setTimeout(() => void runOnThisDayCheck(), 20_000);
   setInterval(() => void runOnThisDayCheck(), CHECK_INTERVAL_MS);
+  // v0.39 monthly health digest: once per month on the first in-app check.
+  setDigestPoster(async (body) => {
+    if (!useSettingsStore.getState().notifyHealthDigest) return;
+    await post("backup", body.title, body.lines.join("\n"));
+  });
+  setTimeout(() => void maybeRunMonthlyDigest().catch(() => {}), 45_000);
+  setInterval(() => void maybeRunMonthlyDigest().catch(() => {}), CHECK_INTERVAL_MS);
 }

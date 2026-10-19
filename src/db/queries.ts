@@ -25,6 +25,8 @@ export interface MediaRow {
   trashed_at: number | null;
   media_library_id: string | null;
   is_favorite: number;
+  // v0.39: 'merge' rows support the one-tap "restore merged duplicates" flow.
+  trash_reason?: string | null;
   // F3 journaling (schema v9): optional so pre-migration consumers compile.
   note_text?: string | null;
   note_synced?: number | null;
@@ -874,14 +876,25 @@ export async function setMediaRemote(
   );
 }
 
-export async function setMediaVisibility(id: number, visibility: MediaVisibility): Promise<void> {
+// v0.39: trash_reason tags merge-produced trash rows ('merge'), so Trash can
+// offer a one-tap "restore merged duplicates". Any move OUT of the trash
+// clears the reason — a restored row is a plain visible row again.
+export async function setMediaVisibility(
+  id: number,
+  visibility: MediaVisibility,
+  trashReason: "merge" | "user" | null = null
+): Promise<void> {
   const db = await getDb();
-  await db.runAsync("UPDATE media SET visibility = ?, trashed_at = ?, updated_at = ? WHERE id = ?", [
-    visibility,
-    visibility === "trashed" ? Date.now() : null,
-    Date.now(),
-    id,
-  ]);
+  await db.runAsync(
+    "UPDATE media SET visibility = ?, trashed_at = ?, trash_reason = ?, updated_at = ? WHERE id = ?",
+    [
+      visibility,
+      visibility === "trashed" ? Date.now() : null,
+      visibility === "trashed" ? trashReason : null,
+      Date.now(),
+      id,
+    ]
+  );
 }
 
 export async function enqueueUpload(
@@ -1747,4 +1760,309 @@ export async function listFacesForExport(): Promise<ExportFaceRow[]> {
   return db.getAllAsync<ExportFaceRow>(
     "SELECT id, media_id, box_x, box_y, box_w, box_h, quality, model_id, person_id, created_at, embedding FROM face_samples ORDER BY id"
   );
+}
+
+// --- v0.39 People & Pets v2 -----------------------------------------------------
+
+// Full embedding pool for clustering: assigned AND unassigned samples (the
+// person_id rides along so rejection edges and the named-affinity pass can
+// use it). Same universe as listUngroupedEmbeddings otherwise.
+export interface ClusterableEmbedding {
+  sample_id: number;
+  person_id: number | null;
+  embedding: Uint8Array;
+}
+
+export async function listAllEmbeddingsForClustering(): Promise<ClusterableEmbedding[]> {
+  const db = await getDb();
+  return db.getAllAsync<ClusterableEmbedding>(
+    `SELECT fs.id AS sample_id, fs.person_id, fs.embedding
+     FROM media
+     JOIN face_samples fs ON fs.media_id = media.id
+     WHERE fs.embedding IS NOT NULL
+       AND media.visibility != 'trashed' AND media.edited_from IS NULL
+     ${EXCLUDE_ALL_SHARED}`
+  );
+}
+
+export interface RejectedPair {
+  sample_id: number;
+  blocked_sample_id: number;
+}
+
+export async function listFaceRejections(): Promise<RejectedPair[]> {
+  const db = await getDb();
+  return db.getAllAsync<RejectedPair>(
+    "SELECT sample_id, blocked_sample_id FROM face_rejections"
+  );
+}
+
+// "Not person X": unassign the samples and record them as canonical BLOCKED
+// PAIRS with every OTHER sample of X (dismiss-time provenance). A pair is a
+// hard non-edge for clustering and affinity-attaching forever.
+export async function rejectSamplesFromPerson(
+  sampleIds: number[],
+  personId: number
+): Promise<void> {
+  if (sampleIds.length === 0) return;
+  const db = await getDb();
+  await db.withTransactionAsync(async () => {
+    const allInX = await db.getAllAsync<{ id: number }>(
+      "SELECT id FROM face_samples WHERE person_id = ? AND box_x >= 0",
+      [personId]
+    );
+    const members = new Set(allInX.map((r) => r.id));
+    for (const sampleId of sampleIds) members.delete(sampleId);
+    await unassignFaceSamplesInternal(db, sampleIds);
+    for (const sampleId of sampleIds) {
+      for (const otherId of members) {
+        const [a, b] = sampleId < otherId ? [sampleId, otherId] : [otherId, sampleId];
+        await db.runAsync(
+          "INSERT OR IGNORE INTO face_rejections (sample_id, blocked_sample_id, person_id, created_at) VALUES (?, ?, ?, ?)",
+          [a, b, personId, Date.now()]
+        );
+      }
+    }
+  });
+}
+
+// Split-off: detach samples from their person AND block re-grouping with what
+// stayed behind (deterministic, no person row dependency).
+export async function splitSamplesOff(
+  leaving: number[],
+  personId: number
+): Promise<void> {
+  if (leaving.length === 0) return;
+  const db = await getDb();
+  await db.withTransactionAsync(async () => {
+    const allInX = await db.getAllAsync<{ id: number }>(
+      "SELECT id FROM face_samples WHERE person_id = ? AND box_x >= 0",
+      [personId]
+    );
+    const members = new Set(allInX.map((r) => r.id));
+    for (const sampleId of leaving) members.delete(sampleId);
+    await unassignFaceSamplesInternal(db, leaving);
+    for (const sampleId of leaving) {
+      for (const otherId of members) {
+        const [a, b] = sampleId < otherId ? [sampleId, otherId] : [otherId, sampleId];
+        await db.runAsync(
+          "INSERT OR IGNORE INTO face_rejections (sample_id, blocked_sample_id, person_id, created_at) VALUES (?, ?, ?, ?)",
+          [a, b, personId, Date.now()]
+        );
+      }
+    }
+  });
+}
+
+async function unassignFaceSamplesInternal(
+  db: Awaited<ReturnType<typeof getDb>>,
+  sampleIds: number[]
+): Promise<void> {
+  const placeholders = sampleIds.map(() => "?").join(",");
+  await db.runAsync(
+    `UPDATE face_samples SET person_id = NULL WHERE id IN (${placeholders})`,
+    sampleIds
+  );
+}
+
+// Merge person B into person A: every face moves to A, B's row is deleted.
+// Blocked pairs keep blocking regardless of person rows (pair-level by design);
+// pairs that were recorded against B's provenance stay exactly as they are.
+export async function mergePeopleInto(targetId: number, sourceId: number): Promise<void> {
+  if (targetId === sourceId) return;
+  const db = await getDb();
+  await db.withTransactionAsync(async () => {
+    await db.runAsync("UPDATE face_samples SET person_id = ? WHERE person_id = ?", [
+      targetId,
+      sourceId,
+    ]);
+    await db.runAsync("DELETE FROM people WHERE id = ?", [sourceId]);
+  });
+}
+
+// Split: samples detach from their person. If the person has no faces left
+// the caller deletes the row (deletePerson).
+export async function unassignFaceSamples(sampleIds: number[]): Promise<void> {
+  if (sampleIds.length === 0) return;
+  const db = await getDb();
+  await unassignFaceSamplesInternal(db, sampleIds);
+}
+
+export async function deletePerson(personId: number): Promise<void> {
+  const db = await getDb();
+  await db.withTransactionAsync(async () => {
+    await db.runAsync("UPDATE face_samples SET person_id = NULL WHERE person_id = ?", [personId]);
+    await db.runAsync("DELETE FROM people WHERE id = ?", [personId]);
+  });
+}
+
+// Person with zero faces left after splitting → drop the row itself.
+export async function countFacesOfPerson(personId: number): Promise<number> {
+  const db = await getDb();
+  const row = await db.getFirstAsync<{ n: number }>(
+    "SELECT COUNT(*) AS n FROM face_samples WHERE person_id = ? AND box_x >= 0",
+    [personId]
+  );
+  return row?.n ?? 0;
+}
+
+export interface PersonFull {
+  id: number;
+  name: string | null;
+  sensitivity: number | null;
+}
+
+export async function listPeopleFull(): Promise<PersonFull[]> {
+  const db = await getDb();
+  return db.getAllAsync<PersonFull>(
+    "SELECT id, name, sensitivity FROM people ORDER BY id"
+  );
+}
+
+// NULL sensitivity = the global FACE_COSINE_THRESHOLD default.
+export async function setPersonSensitivity(personId: number, sensitivity: number | null): Promise<void> {
+  const db = await getDb();
+  await db.runAsync("UPDATE people SET sensitivity = ? WHERE id = ?", [sensitivity, personId]);
+}
+
+// The sample ids of a person (for split/not-this-person selection).
+export async function listSampleIdsForPerson(personId: number): Promise<number[]> {
+  const db = await getDb();
+  const rows = await db.getAllAsync<{ id: number }>(
+    "SELECT fs.id AS id FROM media JOIN face_samples fs ON fs.media_id = media.id WHERE fs.person_id = ? AND media.visibility != 'trashed'",
+    [personId]
+  );
+  return rows.map((r) => r.id);
+}
+
+// Per-photo sample ids (photos can have several faces; "Not X" applies to them all).
+export async function listSampleIdsForMediaInPerson(mediaId: number, personId: number): Promise<number[]> {
+  const db = await getDb();
+  const rows = await db.getAllAsync<{ id: number }>(
+    "SELECT id FROM face_samples WHERE media_id = ? AND person_id = ? AND box_x >= 0",
+    [mediaId, personId]
+  );
+  return rows.map((r) => r.id);
+}
+
+// --- v0.39 undo-merge (one-tap restore of merged duplicates) --------------------
+
+export async function countMergedInTrash(): Promise<number> {
+  const db = await getDb();
+  const row = await db.getFirstAsync<{ n: number }>(
+    "SELECT COUNT(*) AS n FROM media WHERE visibility = 'trashed' AND trash_reason = 'merge'"
+  );
+  return row?.n ?? 0;
+}
+
+// Restores every still-alive merge-trashed row (the keeper never carries the
+// tag, so it is untouched). Rows the 30-day purge already fully deleted are
+// simply gone; nothing here resurrects remote messages.
+export async function restoreMergedFromTrash(): Promise<number> {
+  const db = await getDb();
+  const result = await db.runAsync(
+    "UPDATE media SET visibility = 'visible', trashed_at = NULL, trash_reason = NULL, updated_at = ? WHERE visibility = 'trashed' AND trash_reason = 'merge'",
+    [Date.now()]
+  );
+  return result.changes;
+}
+
+// --- v0.39 document auto-albums (OCR phrase matches at scan time) ---------------
+
+export async function countDocPhotos(keywords: string[]): Promise<number> {
+  const db = await getDb();
+  if (keywords.length === 0) return 0;
+  const clauses = keywords.map(() => `(' ' || REPLACE(COALESCE(ocr_text, ''), CHAR(10), ' ') || ' ') LIKE ?`).join(" OR ");
+  const params = keywords.map((k) => `% ${k.toLowerCase()} %`);
+  const row = await db.getFirstAsync<{ n: number }>(
+    `SELECT COUNT(*) AS n FROM media WHERE ocr_text IS NOT NULL AND visibility != 'trashed' AND edited_from IS NULL ${EXCLUDE_ALL_SHARED} AND (${clauses})`,
+    params
+  );
+  return row?.n ?? 0;
+}
+
+export async function listDocPhotos(
+  keywords: string[],
+  limit = 600
+): Promise<MediaRow[]> {
+  const db = await getDb();
+  if (keywords.length === 0) return [];
+  const clauses = keywords.map(() => `(' ' || REPLACE(COALESCE(ocr_text, ''), CHAR(10), ' ') || ' ') LIKE ?`).join(" OR ");
+  const params = keywords.map((k) => `% ${k.toLowerCase()} %`);
+  return db.getAllAsync<MediaRow>(
+    `SELECT media.* FROM media WHERE ocr_text IS NOT NULL AND visibility != 'trashed' AND edited_from IS NULL ${EXCLUDE_ALL_SHARED} AND (${clauses})
+     ORDER BY taken_at DESC, id DESC LIMIT ?`,
+    [...params, limit]
+  );
+}
+
+// --- v0.39 monthly health-digest stats ------------------------------------------
+
+export interface DigestStats {
+  totalVisible: number;
+  syncedCount: number;
+  syncedBytes: number;
+  trashCount: number;
+  favoritesCount: number;
+  peopleCount: number;
+  junkDeleted30d: number;
+  integrityBroken: number | null;
+  integrityFinishedAt: number | null;
+}
+
+export async function getDigestStats(): Promise<DigestStats> {
+  const db = await getDb();
+  const stats: DigestStats = {
+    totalVisible: 0,
+    syncedCount: 0,
+    syncedBytes: 0,
+    trashCount: 0,
+    favoritesCount: 0,
+    peopleCount: 0,
+    junkDeleted30d: 0,
+    integrityBroken: null,
+    integrityFinishedAt: null,
+  };
+  const m = await db.getFirstAsync<{
+    visible: number;
+    synced: number;
+    bytes: number | null;
+    trashed: number;
+    favs: number;
+  }>(
+    `SELECT
+      SUM(CASE WHEN visibility = 'visible' THEN 1 ELSE 0 END) AS visible,
+      SUM(CASE WHEN visibility = 'visible' AND state = 'synced' THEN 1 ELSE 0 END) AS synced,
+      SUM(CASE WHEN visibility = 'visible' AND state = 'synced' AND edited_from IS NULL THEN byte_size ELSE 0 END) AS bytes,
+      SUM(CASE WHEN visibility = 'trashed' THEN 1 ELSE 0 END) AS trashed,
+      SUM(CASE WHEN is_favorite = 1 AND visibility != 'trashed' THEN 1 ELSE 0 END) AS favs
+     FROM media`
+  );
+  if (m) {
+    stats.totalVisible = m.visible ?? 0;
+    stats.syncedCount = m.synced ?? 0;
+    stats.syncedBytes = m.bytes ?? 0;
+    stats.trashCount = m.trashed ?? 0;
+    stats.favoritesCount = m.favs ?? 0;
+  }
+  const pc = await db.getFirstAsync<{ c: number }>(
+    "SELECT COUNT(DISTINCT person_id) AS c FROM face_samples WHERE person_id IS NOT NULL"
+  );
+  stats.peopleCount = pc?.c ?? 0;
+  const jd = await db.getFirstAsync<{ c: number }>(
+    "SELECT COUNT(*) AS c FROM junk_findings WHERE status = 'deleted' AND created_at >= ?",
+    [Date.now() - 30 * 24 * 60 * 60 * 1000]
+  );
+  stats.junkDeleted30d = jd?.c ?? 0;
+  const rep = await getMeta("integrity_report");
+  if (rep) {
+    try {
+      const parsed = JSON.parse(rep) as { checked: number; verified: number; broken: number; finishedAt: number | null };
+      if (parsed.finishedAt !== null && typeof parsed.finishedAt === "number") {
+        stats.integrityBroken = parsed.broken;
+        stats.integrityFinishedAt = parsed.finishedAt;
+      }
+    } catch {}
+  }
+  return stats;
 }

@@ -1,12 +1,13 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { Pressable, ScrollView, StyleSheet, Switch, Text, View } from "react-native";
+import { Alert, Modal, Pressable, ScrollView, StyleSheet, Switch, Text, View } from "react-native";
 import { StatusBar } from "expo-status-bar";
 import { Image } from "expo-image";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { FlashList } from "@shopify/flash-list";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { getAlbumMedia } from "../lib/albums";
-import { resolveSenderNames } from "../lib/chats";
+import { listMyGroups, resolveSenderNames, TelegramGroup } from "../lib/chats";
+import { shareAlbumToChat } from "../lib/shareToChat";
 import { authenticateLocal } from "../lib/biometrics";
 import { useSettingsStore } from "../store/settingsStore";
 import { fetchProfile } from "../lib/tdlib";
@@ -69,6 +70,11 @@ export function AlbumScreen({
   const [groupMode, setGroupMode] = useState<AlbumGroupMode>("all");
   const [senderNames, setSenderNames] = useState<Map<string, string>>(new Map());
   const [ownUserId, setOwnUserId] = useState<string | null>(null);
+  // v0.39 "Share album": pick a Telegram group, then queue every local copy
+  // in the album for upload to that chat (normal queue, side-effect-free).
+  const [shareModal, setShareModal] = useState(false);
+  const [groups, setGroups] = useState<TelegramGroup[]>([]);
+  const [sharing, setSharing] = useState(false);
 
   // v0.28 Album locks: a locked album shows nothing and loads nothing until
   // the biometric check succeeds (same fail-open semantics as Hidden — with
@@ -255,6 +261,21 @@ export function AlbumScreen({
         </Pressable>
         <Text style={styles.title}>{label}</Text>
         <Text style={styles.count}>{rows.length > 0 ? `${rows.length}` : ""}</Text>
+        {rows.some((r) => r.local_uri) ? (
+          <Pressable
+            style={styles.shareBtn}
+            hitSlop={8}
+            onPress={() => {
+              setSharing(false);
+              void listMyGroups()
+                .then(setGroups)
+                .catch(() => setGroups([]))
+                .finally(() => setShareModal(true));
+            }}
+          >
+            <Text style={styles.shareBtnText}>⇪ Share</Text>
+          </Pressable>
+        ) : null}
       </View>
       {sharedAlbumId !== undefined ? (
         <View style={styles.toggleRow}>
@@ -340,6 +361,64 @@ export function AlbumScreen({
           loaded ? <Text style={styles.empty}>No items in this album yet.</Text> : null
         }
       />
+
+      {/* v0.39 share-to-group picker */}
+      <Modal visible={shareModal} transparent animationType="fade" onRequestClose={() => setShareModal(false)}>
+        <Pressable style={styles.shareBackdrop} onPress={() => setShareModal(false)}>
+          <Pressable style={styles.shareCard} onPress={(e) => e.stopPropagation()}>
+            <Text style={styles.shareTitle}>Share "{label}" to a chat</Text>
+            <Text style={styles.shareHint}>
+              Copies each local photo/video to the picked chat — Telegram storage only, like Saved
+              Messages. Uses the normal upload queue.
+            </Text>
+            {sharing ? (
+              <Text style={styles.shareHint}>Queuing…</Text>
+            ) : groups.length === 0 ? (
+              <Text style={styles.shareHint}>No groups found — create one in Telegram first.</Text>
+            ) : (
+              groups.map((g) => (
+                <Pressable
+                  key={g.id}
+                  style={styles.shareRow}
+                  onPress={() => {
+                    Alert.alert(
+                      "Share album",
+                      `Send ${rows.filter((r) => r.local_uri).length} item${rows.filter((r) => r.local_uri).length === 1 ? "" : "s"} to "${g.title}"?`,
+                      [
+                        { text: "Cancel", style: "cancel" },
+                        {
+                          text: "Send",
+                          onPress: () => {
+                            setSharing(true);
+                            void shareAlbumToChat(rows, g.id)
+                              .then((res) => {
+                                setShareModal(false);
+                                Alert.alert(
+                                  "Queued",
+                                  `${res.queued} item${res.queued === 1 ? "" : "s"} will upload to "${g.title}"` +
+                                    (res.skipped > 0 ? ` — ${res.skipped} skipped (cloud-only).` : ".")
+                                );
+                              })
+                              .catch(() => Alert.alert("Failed", "Could not queue the share — try again."))
+                              .finally(() => setSharing(false));
+                          },
+                        },
+                      ]
+                    );
+                  }}
+                >
+                  <Text style={styles.shareRowTitle} numberOfLines={1}>
+                    {g.title}
+                  </Text>
+                  <Text style={styles.shareRowSub}>
+                    {g.memberCount !== null ? `${g.memberCount} members` : g.kind}
+                  </Text>
+                </Pressable>
+              ))
+            )}
+          </Pressable>
+        </Pressable>
+      </Modal>
     </View>
   );
 }
@@ -361,6 +440,30 @@ const styles = StyleSheet.create({
   back: { color: theme.colors.onSurface, fontSize: 24 },
   title: { color: theme.colors.onSurface, fontSize: 24, fontWeight: "700", flex: 1 },
   count: { color: theme.colors.onSurfaceVariant, fontSize: 14 },
+  // v0.39 share chip + picker modal
+  shareBtn: {
+    backgroundColor: theme.colors.primaryContainer,
+    borderRadius: theme.radius.full,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+  },
+  shareBtnText: { color: theme.colors.onPrimaryContainer, fontSize: 12, fontWeight: "700" },
+  shareBackdrop: { flex: 1, backgroundColor: "#000000AA", justifyContent: "center", padding: theme.spacing.xl },
+  shareCard: {
+    backgroundColor: theme.colors.surfaceContainer,
+    borderRadius: theme.radius.xl,
+    padding: theme.spacing.lg,
+    maxHeight: "70%",
+  },
+  shareTitle: { color: theme.colors.onSurface, fontSize: 17, fontWeight: "700" },
+  shareHint: { color: theme.colors.onSurfaceVariant, fontSize: 12.5, marginTop: 4, marginBottom: theme.spacing.sm },
+  shareRow: {
+    paddingVertical: 11,
+    borderBottomWidth: 1,
+    borderBottomColor: theme.colors.outlineVariant,
+  },
+  shareRowTitle: { color: theme.colors.onSurface, fontSize: 14.5, fontWeight: "600" },
+  shareRowSub: { color: theme.colors.onSurfaceVariant, fontSize: 11.5, marginTop: 1 },
   toggleRow: {
     flexDirection: "row",
     alignItems: "center",

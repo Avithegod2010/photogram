@@ -4,6 +4,71 @@ Each entry below documents what a commit adds and what comes next. Newest first.
 
 ---
 
+## v0.39 — People & Pets v2, undo-merge, offline originals + manifest import, scheduled junk sweep, doc albums & smarter albums (COMMITTED — owner-ordered batch: People v2, export follow-ups, deep maintenance, smarter albums)
+
+- **Schema v19 (additive, all three pieces in `schema.ts`):** `people.sensitivity` REAL
+  (per-person attach threshold; NULL = global default 0.6), new `face_rejections` table
+  (`sample_id, blocked_sample_id, person_id, created_at`) — **canonical sample PAIRS**, by design:
+  blocks survive split-offs and person deletions — and `media.trash_reason` TEXT ('merge' for
+  duplicate-merge trash rows; cleared on any move out of trash).
+- **People & Pets v2 (`runClustering` rewritten in `src/lib/people.ts`):** phase 1 now
+  AFFINITY-ATTACHES unassigned faces to NAMED people at each person's sensitivity (per-person
+  threshold; blocked pairs always win); phase 2 union-finds only unassigned pairs with blocked
+  pairs as hard non-edges. Named people stay frozen — only the attach pass feeds them. New person
+  management: **Merge** (two-tap in the People list: long-press → tap target), **Split off**
+  (multi-select in a person, faces leave + blocked pairs learn), **"Not this person"**
+  (long-press a photo: unassign + block), and **sensitivity chips** (Loose 0.5 / Normal 0.6 /
+  Strict 0.75) shown for named people (person view + rename dialog). Probe-verified: attach,
+  per-person strictness, blocked-pair defeats re-attach, pair survives person deletion, split
+  deletes empty person rows, merge/delete unit paths.
+- **Duplicate-merge undo (Trash screen):** merged duplicates carry `trash_reason='merge'`; a
+  "Restore N merged duplicates" banner (`countMergedInTrash` / `restoreMergedFromTrash`) brings
+  them all back in one tap, only ever touching merge-tagged rows (user trash untouched).
+- **Offline originals (Export screen → new "Offline copies" section):** `offlineExport.ts` walks
+  the whole index downloading each item's ORIGINAL (largest) Telegram file into the app's
+  documents/offline/ folder as real, owner-accessible files — paced (400ms gap, 200 files/pass
+  budget), resumable via a meta cursor, cheap re-runs (local copies skipped), failures never stall,
+  and an on-screen Stop that finishes the current file. Runs while the screen is foregrounded; big
+  libraries span sessions by design.
+- **Manifest import (Export screen → "Restore on a new phone"):** pick a JSON manifest exported by
+  v0.38+ (`expo-document-picker~57.0.0` — **new native module, next gradle rebuild required**),
+  a DRY-RUN classifies every row (already-here by Telegram id / by fingerprint / no Telegram copy
+  / genuinely new) before anything is written, then `applyImport` adds rows through the same
+  idempotent cloud-only shape as rehydrate (state synced, thumb '', trashed imports stay trashed
+  with `trashed_at` NULL). Exports now also carry `fingerprint` (JSON + CSV) and import prefers
+  the exported one (older files get the deterministic recompute). Re-import is a no-op.
+- **Scheduled junk sweep (deep maintenance):** after a scheduled integrity pass finishes,
+  `integritySchedule` hooks `junkAutoSweep.checkAndSweep()` (its own weekly MMKV gate decides) —
+  one scheduled deep clean alongside the verification walk. No new scheduling loop.
+- **Monthly health digest (notifications, opt-in via master):** `digest.ts` builds a monthly
+  "X/Y backed up (Z%) · integrity verified/not checked · junk removed · trash · people" digest
+  and posts it ONCE per calendar month through the notify loop's poster hook (never lies:
+  unverified integrity prints "not checked yet", empty library never posts).
+- **Doc auto-albums (smarter albums):** Collections gains a **Documents** card that appears once
+  OCR (the v0.23+ "Read text in photos" opt-in) finds matches: **Receipts** and **Documents**
+  albums from boundary-safe keyword matching over `media.ocr_text` (word-boundary `phrase`
+  matching, newline-drained — "total due" at a line start matches; "receipted" never does).
+  New `DocAlbumScreen` grid; long-press moves a wrong match to Archive (corrective loop).
+- **More smarter-album touches:** Favorites header gets **▶ Play** (slideshow from index 0);
+  Album screen gets **⇪ Share** — pick one of YOUR Telegram groups from the picker modal and the
+  whole album's local copies queue through the NORMAL upload queue with that chat as target
+  (`shareToChat.ts`; the upload-safety layer decides everything else, side-effect-free by the
+  v0.20 remote-link guard; cloud-only rows are skipped and counted).
+- **Review: probe extended to 189/189** — v19 fresh + populated-v18 upgrade paths,
+  affinity-attach (named person, default + strict per-person sensitivity), blocked-pair learning
+  (rejection pairs canonical, defeat re-attach forever, survive merge/delete), merge/split
+  person ops, undo-merge counts + restore, doc-album boundary/case/newline/exclusion semantics,
+  digest compose (verified / unknown / percentage+bytes) + monthly posting gate through the real
+  MMKV stub, and import end-to-end (parse guards, dry-run classification, apply correctness,
+  idempotent re-import). tsc clean; 48/48 static.
+- **Build note:** `expo-document-picker` is the only new native module in this batch — the NEXT
+  gradle rebuild must happen before import-on-device works. Nothing else needs a rebuild.
+- **Next steps:** device verification for v0.34.1 → v0.39, People v2 device pass (merge/split/
+  not-this-person + sensitivity chips), offline-copy smoke test (few items), scheduled integrity
+  + share-album device pass, then resume the bulk upload.
+
+---
+
 ## v0.37 + v0.38 — Scheduled integrity checks + export-everything (COMMITTED — two JS-only picks, owner-approved; plus handoff-doc refresh; no migration, no new native modules)
 
 - **v0.37 Scheduled integrity checks (Safety check screen):** the "Backup integrity" card now has

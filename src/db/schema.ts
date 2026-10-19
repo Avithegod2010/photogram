@@ -249,6 +249,31 @@ CREATE TABLE IF NOT EXISTS people (
 CREATE INDEX IF NOT EXISTS idx_face_samples_person ON face_samples (person_id) WHERE person_id IS NOT NULL;
 `;
 
+// v0.39 People & Pets v2 + undo-merge (schema v19): three additive pieces.
+//  1. people.sensitivity — per-person cosine threshold for the affinity pass
+//     (new embeddings attach to NAMED people at this threshold; NULL = the
+//     global 0.6 default). Strict people need a closer match.
+//  2. face_rejections — "this is NOT person X" learning, stored as CANONICAL
+//     sample PAIRS (sample_id = min of the two, blocked_sample_id = max;
+//     person_id = dismiss-time provenance). Pair-level on purpose: a pair
+//     survives full split-off reshuffles and re-clusters, so a dismissed
+//     face can never be glued back into the same grouping.
+//  3. media.trash_reason — distinguishes merge-produced trash rows ('merge',
+//     undoable as a one-tap "restore merged duplicates" group in Trash) from
+//     plain user trash. Cleared by any move out of the trash.
+const SCHEMA_V19 = `
+ALTER TABLE people ADD COLUMN sensitivity REAL;
+CREATE TABLE IF NOT EXISTS face_rejections (
+  sample_id INTEGER NOT NULL,
+  blocked_sample_id INTEGER NOT NULL,
+  person_id INTEGER,
+  created_at INTEGER NOT NULL,
+  PRIMARY KEY (sample_id, blocked_sample_id)
+);
+CREATE INDEX IF NOT EXISTS idx_face_rejections_sample ON face_rejections (sample_id, blocked_sample_id);
+ALTER TABLE media ADD COLUMN trash_reason TEXT;
+`;
+
 export interface Migration {
   version: number;
   up: string;
@@ -273,6 +298,7 @@ export const MIGRATIONS: Migration[] = [
   { version: 16, up: SCHEMA_V16 },
   { version: 17, up: SCHEMA_V17 },
   { version: 18, up: SCHEMA_V18 },
+  { version: 19, up: SCHEMA_V19 },
 ];
 
 export function migrationsAfter(version: number): Migration[] {

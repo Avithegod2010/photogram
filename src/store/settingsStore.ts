@@ -61,6 +61,9 @@ interface SettingsState {
   // v0.38: export the manifest as compact one-line JSON instead of indented.
   exportMinifyJson: boolean;
   setExportMinifyJson: (v: boolean) => void;
+  // v0.39: monthly "Wrapped-style" backup-health notification (notify master gates it).
+  notifyHealthDigest: boolean;
+  setNotifyHealthDigest: (v: boolean) => void;
   setExifPreserve: (v: boolean) => void;
   setHiddenLockEnabled: (v: boolean) => void;
   setWifiOnlyUpload: (v: boolean) => void;
@@ -114,6 +117,8 @@ export const useSettingsStore = create<SettingsState>()(
       setIntegritySchedule: (v) => set({ integritySchedule: v }),
       exportMinifyJson: false,
       setExportMinifyJson: (v) => set({ exportMinifyJson: v }),
+  notifyHealthDigest: false,
+  setNotifyHealthDigest: (v) => set({ notifyHealthDigest: v }),
       setExifPreserve: (v) => set({ exifPreserve: v }),
       setHiddenLockEnabled: (v) => set({ hiddenLockEnabled: v }),
       setWifiOnlyUpload: (v) => set({ wifiOnlyUpload: v }),

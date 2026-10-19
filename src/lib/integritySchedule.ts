@@ -35,6 +35,12 @@ export async function checkScheduledIntegrity(): Promise<boolean> {
     const report = await runIntegrityPass(undefined, undefined, 200);
     if (report.finishedAt !== null) {
       mmkv.set(LAST_DONE_KEY, String(Date.now()));
+      // v0.39 deep maintenance: while the prompt is here, let the junk sweep
+      // take its weekly turn too (its own gate decides whether it actually
+      // runs — "alongside" never means double-firing).
+      void import("./junkAutoSweep")
+        .then((m) => m.checkAndSweep())
+        .catch(() => {});
       return true;
     }
   } catch {

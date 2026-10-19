@@ -30,7 +30,7 @@ export async function mergeDuplicateGroup(
       outcome.skipped++;
       continue;
     }
-    await setMediaVisibility(row.id, "trashed");
+    await setMediaVisibility(row.id, "trashed", "merge");
     outcome.trashed++;
     outcome.freedBytes += row.byte_size;
     onProgress?.(outcome.trashed, others.length);

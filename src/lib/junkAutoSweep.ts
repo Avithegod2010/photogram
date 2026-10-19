@@ -12,7 +12,10 @@ const FIRST_CHECK_DELAY_MS = 60_000;
 
 let loopStarted = false;
 
-async function checkAndSweep(): Promise<void> {
+// Exported also for integritySchedule.ts (v0.39): a finished scheduled
+// integrity walk kicks this in — the weekly gate still decides if a sweep
+// actually runs, so the two auto-runs never double-fire.
+export async function checkAndSweep(): Promise<void> {
   if (!useSettingsStore.getState().junkSweeperEnabled) return;
   const last = Number(mmkv.getString(LAST_SWEEP_KEY) ?? 0);
   if (Number.isFinite(last) && Date.now() - last < SWEEP_INTERVAL_MS) return;

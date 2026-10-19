@@ -54,6 +54,7 @@ export interface ExportMediaEntry {
   note_synced: boolean;
   phash: string | null;
   sharpness: number | null;
+  fingerprint: string | null; // size+date+name key — import de-dupes on it
   edited_from: number | null;
   remote_chat_id: string | null;
   remote_message_id: string | null;
@@ -105,6 +106,7 @@ export function mediaToExport(row: MediaRow): ExportMediaEntry {
     note_synced: row.note_synced === 1,
     phash: row.phash ?? null,
     sharpness: row.sharpness ?? null,
+    fingerprint: row.fingerprint ?? null,
     edited_from: row.edited_from ?? null,
     remote_chat_id: row.remote_chat_id ?? null,
     remote_message_id: row.remote_message_id ?? null,
@@ -177,6 +179,7 @@ const CSV_COLUMNS = [
   "is_favorite",
   "phash",
   "edited_from",
+  "fingerprint",
   "remote_chat_id",
   "remote_message_id",
 ] as const;

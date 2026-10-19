@@ -4,6 +4,7 @@ import { StatusBar } from "expo-status-bar";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { listSavedSearches, SavedSearchRow } from "../db/queries";
+import { getDocOverview, DocOverviewEntry } from "../lib/docAlbums";
 import { theme } from "../theme";
 
 type CollectionsNav = NativeStackNavigationProp<{
@@ -22,6 +23,7 @@ type CollectionsNav = NativeStackNavigationProp<{
   SavedSearch: { id: number };
   Scenes: undefined;
   PeopleSetup: undefined;
+  DocAlbum: { key: "receipts" | "documents" };
 }>;
 
 const SECTIONS = [
@@ -45,12 +47,18 @@ export function CollectionsScreen({ navigation }: { navigation: CollectionsNav }
   const insets = useSafeAreaInsets();
   // v0.27 Smart albums: saved searches refresh on every visit to this tab.
   const [saved, setSaved] = useState<SavedSearchRow[] | null>(null);
+  // v0.39 Doc albums: receipt/document auto-groups found by scanning OCR text
+  // captured in v0.23–v0.28 (receipts, certificates, ids).
+  const [docs, setDocs] = useState<DocOverviewEntry[] | null>(null);
 
   useEffect(() => {
     const unsub = navigation.addListener("focus", () => {
       void listSavedSearches()
         .then(setSaved)
         .catch(() => setSaved([]));
+      void getDocOverview()
+        .then(setDocs)
+        .catch(() => setDocs([]));
     });
     return unsub;
   }, [navigation]);
@@ -96,6 +104,39 @@ export function CollectionsScreen({ navigation }: { navigation: CollectionsNav }
             </View>
           ) : null}
         </View>
+        {docs !== null && docs.some((d) => d.count > 0) ? (
+          <View style={[styles.card, { marginTop: theme.spacing.md }]}>
+            <View style={styles.row}>
+              <View style={styles.rowText}>
+                <Text style={styles.rowLabel}>Documents</Text>
+                <Text style={styles.rowSub}>
+                  Receipts and scanned papers found by on-device text recognition
+                </Text>
+              </View>
+            </View>
+            {docs
+              .filter((d) => d.count > 0)
+              .map((d) => (
+                <Pressable
+                  key={d.def.key}
+                  style={styles.row}
+                  android_ripple={{ color: theme.colors.outlineVariant }}
+                  onPress={() => navigation.navigate("DocAlbum", { key: d.def.key as "receipts" | "documents" })}
+                >
+                  <View style={styles.dot} />
+                  <View style={styles.rowText}>
+                    <Text style={styles.rowLabel} numberOfLines={1}>
+                      {d.def.label}
+                    </Text>
+                    <Text style={styles.rowSub}>
+                      {d.count} item{d.count === 1 ? "" : "s"} · tap to browse
+                    </Text>
+                  </View>
+                  <Text style={styles.chevron}>›</Text>
+                </Pressable>
+              ))}
+          </View>
+        ) : null}
         <View style={styles.card}>
           {SECTIONS.map((s) => {
             const content = (

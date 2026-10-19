@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { Alert, Pressable, StyleSheet, Switch, Text, View } from "react-native";
 import { StatusBar } from "expo-status-bar";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -6,6 +6,15 @@ import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import * as Sharing from "expo-sharing";
 import { useSettingsStore } from "../store/settingsStore";
 import { runExport, type ExportResult } from "../lib/exportManifest";
+import {
+  parseManifest,
+  pickManifestFile,
+  dryRunImport,
+  applyImport,
+  type ImportDryRunResult,
+  type ParsedManifest,
+} from "../lib/importManifest";
+import { runOfflineExportPass, loadOfflineProgress, OfflineExportProgress } from "../lib/offlineExport";
 import { formatBytes } from "../lib/stats";
 import { theme } from "../theme";
 
@@ -21,6 +30,93 @@ export function ExportScreen(_props: { navigation: NativeStackNavigationProp<{ T
   const setMinifyJson = useSettingsStore((s) => s.setExportMinifyJson);
   const [busy, setBusy] = useState<null | "json" | "csv">(null);
   const [result, setResult] = useState<ExportResult | null>(null);
+
+  // v0.39 follow-up 1: offline originals (download every Telegram original
+  // into documents/offline/ — paced, resumable, screen-driven).
+  const [offline, setOffline] = useState<OfflineExportProgress | null>(null);
+  const offlineRunningRef = useRef({ cancelled: false });
+  const [offlineRunning, setOfflineRunning] = useState(false);
+  const [curated, setCurated] = useState<ImportDryRunResult | null>(null);
+  const [manifest, setManifest] = useState<ParsedManifest | null>(null);
+  const [importName, setImportName] = useState<string | null>(null);
+
+  useEffect(() => {
+    void loadOfflineProgress().then(setOffline);
+  }, []);
+
+  const startOffline = useCallback(() => {
+    if (offlineRunning) return;
+    offlineRunningRef.current = { cancelled: false };
+    setOfflineRunning(true);
+    void runOfflineExportPass(setOffline, offlineRunningRef.current)
+      .then((final) => {
+        setOffline(final);
+        Alert.alert(
+          "Offline copies",
+          `${final.saved} original${final.saved === 1 ? "" : "s"} saved to the offline folder this pass` +
+            (final.skippedExisting > 0 ? `, ${final.skippedExisting} already on the phone` : "") +
+            (final.failed > 0 ? `, ${final.failed} could not be downloaded (they can retry later)` : "") +
+            ". Tap again to continue with the next batch."
+        );
+      })
+      .catch(() => Alert.alert("Failed", "The offline download hit an error — try again later."))
+      .finally(() => setOfflineRunning(false));
+  }, [offlineRunning]);
+
+  const stopOffline = useCallback(() => {
+    offlineRunningRef.current.cancelled = true;
+  }, []);
+
+  // v0.39 follow-up 2: manifest import (pick → dry-run → confirm → apply).
+  const doImportPick = useCallback(async () => {
+    if (offlineRunning) return;
+    try {
+      const picked = await pickManifestFile();
+      if (!picked) return;
+      const manifest = parseManifest(picked.text);
+      if (!manifest) {
+        Alert.alert("Not a Photogram export", "Pick a manifest file exported from Photogram (JSON).");
+        return;
+      }
+      const plan = await dryRunImport(manifest);
+      setManifest(manifest);
+      setImportName(picked.name);
+      setCurated(plan);
+    } catch {
+      Alert.alert("Import failed", "Could not read that file.");
+    }
+  }, [offlineRunning]);
+
+  const confirmImport = useCallback(() => {
+    if (!manifest || !curated) return;
+    Alert.alert(
+      "Import library index",
+      `Add ${curated.newRows} new item${curated.newRows === 1 ? "" : "s"} to this phone's index?\n\n` +
+        `Skipped in the file: ${curated.duplicateRemote} already here by Telegram id, ${curated.duplicateFingerprint} by fingerprint, ${curated.missingRemote} have no Telegram copy to fall back to.\n\n` +
+        `Nothing is downloaded yet — cloud-only rows load their thumbnails on scroll.`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Import",
+          onPress: () => {
+            void applyImport(manifest)
+              .then((res) => {
+                Alert.alert(
+                  "Imported",
+                  `${res.inserted} item${res.inserted === 1 ? "" : "s"} added. Open the gallery and they will appear as cloud-only places in the timeline.`
+                );
+              })
+              .catch(() => Alert.alert("Import failed", "Could not write the items."))
+              .finally(() => {
+                setManifest(null);
+                setCurated(null);
+                setImportName(null);
+              });
+          },
+        },
+      ]
+    );
+  }, [manifest, curated]);
 
   const doExport = useCallback(async (kind: "json" | "csv") => {
     if (busy) return;
@@ -100,6 +196,55 @@ export function ExportScreen(_props: { navigation: NativeStackNavigationProp<{ T
           Last export: {result.fileName} · {formatBytes(result.byteCount)} — shared via the system
           sheet. Nothing was uploaded; where it goes is entirely your choice.
         </Text>
+      ) : null}
+
+      <Text style={styles.section}>Offline copies (the photos themselves)</Text>
+      <ExportRow
+        title={offlineRunning ? "Downloading…" : offline ? "Continue offline copies" : "Download originals here"}
+        sub={
+          offline
+            ? `Offline folder: ${offline.saved} saved · ${offline.skippedExisting} already on the phone · ${offline.failed} failed. Resumes where it stopped — tap again for the next batch of 200.`
+            : "Copy every backed-up photo/video from Telegram into this phone's offline folder as real files. Paced and resumable; runs while this screen is open."
+        }
+        busy={offlineRunning}
+        onPress={startOffline}
+        disabled={offlineRunning || busy !== null}
+      />
+      {offlineRunning ? (
+        <View style={styles.offlineLive}>
+          <Text style={styles.offlineLiveText}>
+            {offline?.current ? `Now: ${offline.current}` : "Scanning the index…"}
+            {offline ? ` · ${offline.saved + offline.skippedExisting} this pass · ${Math.round(offline.processedMb)} MB` : ""}
+          </Text>
+          <Pressable style={styles.offlineCancel} onPress={stopOffline} hitSlop={8}>
+            <Text style={styles.offlineCancelText}>Stop after this file</Text>
+          </Pressable>
+        </View>
+      ) : null}
+
+      <Text style={styles.section}>Restore on a new phone</Text>
+      <ExportRow
+        title="Import a manifest (JSON)"
+        sub={
+          curated
+            ? `"${importName}": ${curated.newRows} new · ${curated.duplicateRemote} already here · ${curated.duplicateFingerprint} fingerprint dupes · ${curated.missingRemote} without copies. Tap to import.`
+            : "Pick a manifest file exported from Photogram; a dry-run shows what it would add BEFORE anything is written."
+        }
+        busy={false}
+        onPress={() => (curated ? confirmImport() : void doImportPick())}
+        disabled={offlineRunning || busy !== null}
+      />
+      {manifest !== null && curated !== null && importName !== null ? (
+        <Pressable
+          style={styles.discardPick}
+          onPress={() => {
+            setManifest(null);
+            setCurated(null);
+            setImportName(null);
+          }}
+        >
+          <Text style={styles.discardPickText}>Discard picked file</Text>
+        </Pressable>
       ) : null}
 
       <Text style={styles.note}>
@@ -191,4 +336,25 @@ const styles = StyleSheet.create({
     marginTop: theme.spacing.md,
     lineHeight: 15,
   },
+  section: {
+    color: theme.colors.onSurface,
+    fontSize: 13,
+    fontWeight: "800",
+    marginHorizontal: theme.spacing.md,
+    marginBottom: theme.spacing.sm,
+    marginTop: theme.spacing.sm,
+  },
+  offlineLive: {
+    marginHorizontal: theme.spacing.md,
+    marginBottom: theme.spacing.md,
+    backgroundColor: theme.colors.surfaceContainer,
+    borderRadius: theme.radius.md,
+    padding: theme.spacing.md,
+    gap: theme.spacing.sm,
+  },
+  offlineLiveText: { color: theme.colors.onSurfaceVariant, fontSize: 11.5 },
+  offlineCancel: { alignSelf: "flex-start" },
+  offlineCancelText: { color: theme.colors.primary, fontSize: 12.5, fontWeight: "700" },
+  discardPick: { marginHorizontal: theme.spacing.md, marginTop: 2, marginBottom: theme.spacing.sm },
+  discardPickText: { color: theme.colors.primary, fontSize: 12.5, fontWeight: "700" },
 });

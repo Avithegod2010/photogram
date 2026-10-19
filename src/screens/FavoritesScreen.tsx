@@ -12,7 +12,7 @@ import { theme } from "../theme";
 export function FavoritesScreen({
   navigation,
 }: {
-  navigation: NativeStackNavigationProp<{ Viewer: { ids: number[]; index: number } }>;
+  navigation: NativeStackNavigationProp<{ Viewer: { ids: number[]; index: number }; Slideshow: { ids: number[]; index: number } }>;
 }) {
   const insets = useSafeAreaInsets();
   const [rows, setRows] = useState<MediaRow[]>([]);
@@ -66,6 +66,20 @@ export function FavoritesScreen({
         </Pressable>
         <Text style={styles.title}>Favorites</Text>
         <Text style={styles.count}>{rows.length > 0 ? `${rows.length}` : ""}</Text>
+        {rows.length > 1 ? (
+          <Pressable
+            style={styles.playBtn}
+            hitSlop={8}
+            onPress={() =>
+              navigation.navigate("Slideshow", {
+                ids: rows.map((r) => r.id),
+                index: 0,
+              })
+            }
+          >
+            <Text style={styles.playBtnText}>▶ Play</Text>
+          </Pressable>
+        ) : null}
       </View>
       <FlashList
         data={rows}
@@ -99,6 +113,13 @@ const styles = StyleSheet.create({
   back: { color: theme.colors.onSurface, fontSize: 24 },
   title: { color: theme.colors.onSurface, fontSize: 24, fontWeight: "700", flex: 1 },
   count: { color: theme.colors.onSurfaceVariant, fontSize: 14 },
+  playBtn: {
+    backgroundColor: theme.colors.primaryContainer,
+    borderRadius: theme.radius.full,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+  },
+  playBtnText: { color: theme.colors.onPrimaryContainer, fontSize: 12, fontWeight: "700" },
   listContent: { paddingBottom: 40, paddingTop: theme.spacing.sm },
   cell: {
     flex: 1,

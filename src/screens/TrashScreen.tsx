@@ -11,7 +11,14 @@ import { Image } from "expo-image";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import TdLib from "react-native-tdlib";
-import { deleteMediaRow, listTrashed, MediaRow, setMediaVisibility } from "../db/queries";
+import {
+  countMergedInTrash,
+  deleteMediaRow,
+  listTrashed,
+  restoreMergedFromTrash,
+  setMediaVisibility,
+  MediaRow,
+} from "../db/queries";
 import { TRASH_RETENTION_DAYS } from "../lib/trash";
 import { theme } from "../theme";
 
@@ -28,15 +35,36 @@ export function TrashScreen({
 }) {
   const insets = useSafeAreaInsets();
   const [rows, setRows] = useState<MediaRow[]>([]);
+  const [mergedCount, setMergedCount] = useState(0);
   const [tick, setTick] = useState(0);
 
   const reload = useCallback(() => {
     void listTrashed().then(setRows);
+    void countMergedInTrash().then(setMergedCount);
   }, []);
 
   useEffect(() => {
     reload();
   }, [reload, tick]);
+
+  const undoMerge = useCallback(() => {
+    Alert.alert(
+      "Undo duplicate merge",
+      `Bring the ${mergedCount} merged duplicate${mergedCount === 1 ? "" : "s"} back to the gallery? Telegram keeps both copies either way.`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Restore",
+          onPress: () => {
+            void restoreMergedFromTrash().then(() => {
+              setMergedCount(0);
+              setTick((t) => t + 1);
+            });
+          },
+        },
+      ]
+    );
+  }, [mergedCount]);
 
   const restore = useCallback(async (row: MediaRow) => {
     await setMediaVisibility(row.id, "visible");
@@ -73,6 +101,15 @@ export function TrashScreen({
         <Text style={styles.title}>Trash</Text>
       </View>
       <Text style={styles.note}>Items are permanently deleted after {TRASH_RETENTION_DAYS} days.</Text>
+
+      {mergedCount > 0 ? (
+        <Pressable style={styles.undoBanner} onPress={undoMerge}>
+          <Text style={styles.undoText}>
+            {mergedCount} duplicate{mergedCount === 1 ? "" : "s"} hidden by duplicate-merge live here
+          </Text>
+          <Text style={styles.undoBtn}>Undo merge</Text>
+        </Pressable>
+      ) : null}
 
       <FlashList
         data={rows}
@@ -112,6 +149,20 @@ const styles = StyleSheet.create({
   back: { color: theme.colors.onSurface, fontSize: 24 },
   title: { color: theme.colors.onSurface, fontSize: 24, fontWeight: "700" },
   note: { color: theme.colors.onSurfaceVariant, fontSize: 12.5, paddingHorizontal: theme.spacing.md, marginBottom: theme.spacing.sm },
+  undoBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: theme.spacing.md,
+    marginHorizontal: theme.spacing.md,
+    marginBottom: theme.spacing.sm,
+    backgroundColor: theme.colors.secondaryContainer,
+    borderRadius: theme.radius.lg,
+    paddingHorizontal: theme.spacing.md,
+    paddingVertical: theme.spacing.sm,
+  },
+  undoText: { color: theme.colors.onSecondaryContainer, fontSize: 12.5, flex: 1 },
+  undoBtn: { color: theme.colors.primary, fontSize: 13, fontWeight: "700" },
   listContent: { paddingBottom: 40 },
   cell: {
     flex: 1,

@@ -2,12 +2,19 @@ import {
   assignFacesToPerson,
   createPerson,
   getMeta,
+  listFaceRejections,
   listFacesNeedingEmbedding,
+  listAllEmbeddingsForClustering,
   listMediaMissingFaces,
-  listUngroupedEmbeddings,
+  listPeopleFull,
   replaceFaceSamples,
   setFaceEmbedding,
   setMeta,
+  mergePeopleInto,
+  countFacesOfPerson,
+  deletePerson,
+  rejectSamplesFromPerson,
+  splitSamplesOff,
   DetectedFaceBox,
 } from "../db/queries";
 import { bytesToF32, detectFaces, embedFace, f32ToBytes } from "./faces";
@@ -130,17 +137,22 @@ export async function backfillFaces(
 export interface ClusterProgress {
   groupedFaces: number;
   peopleCreated: number;
+  attachedToNamed: number;
 }
 
-// Cosine similarity over L2-normalized embeddings; union-find groups samples
-// at or above FACE_COSINE_THRESHOLD. Groups of 2+ become unnamed people;
-// singles stay ungrouped (a later batch can merge them manually).
+// v2 engine: (1) AFFINITY ATTACH — unassigned embeddings are compared against
+// NAMED people's members; ≥ that person's sensitivity (NULL → global default)
+// and no blocked pair wins → the face joins that named person. This is where
+// per-person sensitivity lives. (2) UNION-FIND over unassigned pairs only,
+// with blocked pairs (the manual "Not X" / "Split off" learning) as hard
+// non-edges; groups of 2+ become NEW unnamed people. Named people are frozen —
+// only the attach step can give them faces.
 export async function runClustering(
   onProgress?: (progress: ClusterProgress) => void,
   cancelRef?: { cancelled: boolean }
 ): Promise<ClusterProgress> {
-  const rows = await listUngroupedEmbeddings();
-  const vectors: { sampleId: number; vec: Float32Array; norm: number }[] = [];
+  const rows = await listAllEmbeddingsForClustering();
+  const vectors: { sampleId: number; personId: number | null; vec: Float32Array; norm: number }[] = [];
   for (const row of rows) {
     const bytes = row.embedding ?? new Uint8Array(0);
     if (bytes.length === 0) continue; // failed-embed sentinel
@@ -149,9 +161,52 @@ export async function runClustering(
     for (let i = 0; i < vec.length; i++) norm += vec[i] * vec[i];
     norm = Math.sqrt(norm);
     if (norm === 0) continue;
-    vectors.push({ sampleId: row.sample_id, vec, norm });
+    vectors.push({ sampleId: row.sample_id, personId: row.person_id, vec, norm });
+  }
+  const blockedPairs = new Set(
+    (await listFaceRejections()).map((r) => pairKey(r.sample_id, r.blocked_sample_id))
+  );
+  const isBlocked = (aSample: number, bSample: number) =>
+    blockedPairs.has(pairKey(aSample, bSample));
+
+  function cosine(a: (typeof vectors)[number], b: (typeof vectors)[number]): number {
+    let dot = 0;
+    const dim = Math.min(a.vec.length, b.vec.length);
+    for (let k = 0; k < dim; k++) dot += a.vec[k] * b.vec[k];
+    return dot / (a.norm * b.norm);
   }
 
+  const progress: ClusterProgress = { groupedFaces: 0, peopleCreated: 0, attachedToNamed: 0 };
+
+  // --- phase 1: affinity attach to NAMED people ---
+  const people = await listPeopleFull();
+  const named = people.filter((p) => p.name !== null);
+  if (named.length > 0) {
+    const bySample = new Map(vectors.map((v) => [v.sampleId, v]));
+    for (const person of named) {
+      const reps = vectors.filter((v) => v.personId === person.id);
+      if (reps.length === 0) continue;
+      const threshold = person.sensitivity ?? FACE_COSINE_THRESHOLD;
+      for (const v of vectors) {
+        if (cancelRef?.cancelled) break;
+        if (v.personId !== null) continue;
+        if (reps.some((rep) => isBlocked(v.sampleId, rep.sampleId))) continue;
+        let best = -1;
+        for (const rep of reps) {
+          const sim = cosine(v, rep);
+          if (sim > best) best = sim;
+        }
+        if (best >= threshold) {
+          await assignFacesToPerson([v.sampleId], person.id);
+          v.personId = person.id;
+          progress.attachedToNamed++;
+        }
+      }
+    }
+    onProgress?.({ ...progress });
+  }
+
+  // --- phase 2: new clusters among still-unassigned samples ---
   const parent = vectors.map((_, i) => i);
   const find = (i: number): number => (parent[i] === i ? i : (parent[i] = find(parent[i])));
   const union = (a: number, b: number) => {
@@ -159,36 +214,70 @@ export async function runClustering(
     const rb = find(b);
     if (ra !== rb) parent[rb] = ra;
   };
-  for (let i = 0; i < vectors.length; i++) {
-    for (let j = i + 1; j < vectors.length; j++) {
+  const unassignedIdx: number[] = [];
+  for (let i = 0; i < vectors.length; i++) if (vectors[i].personId === null) unassignedIdx.push(i);
+  for (let x = 0; x < unassignedIdx.length; x++) {
+    for (let y = x + 1; y < unassignedIdx.length; y++) {
       if (cancelRef?.cancelled) break;
-      const a = vectors[i];
-      const b = vectors[j];
-      let dot = 0;
-      const dim = Math.min(a.vec.length, b.vec.length);
-      for (let k = 0; k < dim; k++) dot += a.vec[k] * b.vec[k];
-      const similarity = dot / (a.norm * b.norm);
-      if (similarity >= FACE_COSINE_THRESHOLD) union(i, j);
+      const a = vectors[unassignedIdx[x]];
+      const b = vectors[unassignedIdx[y]];
+      if (a.personId !== null || b.personId !== null) continue; // attached during phase 1
+      if (isBlocked(a.sampleId, b.sampleId)) continue;
+      if (cosine(a, b) >= FACE_COSINE_THRESHOLD) union(unassignedIdx[x], unassignedIdx[y]);
     }
   }
 
   const clusters = new Map<number, number[]>();
-  for (let i = 0; i < vectors.length; i++) {
+  for (const i of unassignedIdx) {
+    if (vectors[i].personId !== null) continue;
     const root = find(i);
     const list = clusters.get(root) ?? [];
     list.push(vectors[i].sampleId);
     clusters.set(root, list);
   }
 
-  let groupedFaces = 0;
-  let peopleCreated = 0;
   for (const sampleIds of clusters.values()) {
     if (sampleIds.length < 2) continue;
     const personId = await createPerson(null);
     await assignFacesToPerson(sampleIds, personId);
-    groupedFaces += sampleIds.length;
-    peopleCreated++;
-    onProgress?.({ groupedFaces, peopleCreated });
+    progress.groupedFaces += sampleIds.length;
+    progress.peopleCreated++;
+    onProgress?.({ ...progress });
   }
-  return { groupedFaces, peopleCreated };
+  return progress;
+}
+
+function pairKey(a: number, b: number): string {
+  return a < b ? `${a}-${b}` : `${b}-${a}`;
+}
+
+// --- v2 person management (merge/split/dismiss) ---------------------------------
+
+export interface PersonOpsResult {
+  mergedInto: number | null; // target id when a merge happened
+  leftCount: number; // faces that left the source person
+  deletedSource: boolean;
+}
+
+// Merge person B INTO person A; A keeps its name; B's row is deleted.
+export async function mergePeople(targetId: number, sourceId: number): Promise<PersonOpsResult> {
+  await mergePeopleInto(targetId, sourceId);
+  return { mergedInto: targetId, leftCount: 0, deletedSource: true };
+}
+
+// Split: the chosen faces leave their person; the person row dies only when
+// nothing is left (its samples were all split away).
+export async function splitOffFaces(sampleIds: number[], personId: number): Promise<PersonOpsResult> {
+  await splitSamplesOff(sampleIds, personId);
+  const left = await countFacesOfPerson(personId);
+  if (left === 0) await deletePerson(personId);
+  return { mergedInto: null, leftCount: sampleIds.length, deletedSource: left === 0 };
+}
+
+// "Not person X": faces leave X AND are blocked from X's remaining members.
+export async function dismissFacesFromPerson(sampleIds: number[], personId: number): Promise<PersonOpsResult> {
+  await rejectSamplesFromPerson(sampleIds, personId);
+  const left = await countFacesOfPerson(personId);
+  if (left === 0) await deletePerson(personId);
+  return { mergedInto: null, leftCount: sampleIds.length, deletedSource: left === 0 };
 }
