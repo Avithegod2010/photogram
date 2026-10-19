@@ -60,6 +60,25 @@ IPv6-only localhost binding issues on some setups).
 - Aggregate-only features (e.g. the shareable backup status card) never include file names,
   paths, or album/contact names.
 
+## For users
+
+**What Photogram does, in one paragraph.** It is a full replacement for your phone's gallery app
+that quietly copies every photo and video you take to **your own Telegram account** (the private
+"Saved Messages" chat, plus any family group you explicitly link), then gives you a fast,
+private, offline-first gallery on top: instant search across everything including text *inside*
+photos, auto-organized albums, memories, favorites, people & pets grouping — all on-device, no
+accounts to create, no photos leave without going to **your** chat.
+
+- **Your data stays yours.** Uploads go only to your own Telegram. The app has no backend server,
+  no analytics, no crash reporting. See the full [privacy policy](PRIVACY.md).
+- **Works offline.** The gallery database lives on your phone; Telegram is just the warehouse
+  where the bytes live.
+- **Migration-safe.** Set up a new phone by signing into Telegram and pointing Photogram at your
+  Saved Messages — it rebuilds your gallery index from what Telegram confirms.
+
+*Note: this is an early-stage personal project. The Play Store listing is in progress; until then
+it is Android, built from source here.*
+
 ## Project docs
 
 - [CHANGELOG.md](CHANGELOG.md) — per-version notes, newest first

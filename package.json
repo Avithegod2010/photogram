@@ -60,5 +60,12 @@
     "ios": "expo run:ios",
     "web": "expo start --web"
   },
+  "overrides": {
+    "brace-expansion": "^5.0.12",
+    "shell-quote": "^1.12.0",
+    "compression": "^1.8.2",
+    "source-map-js": "^1.2.2",
+    "@react-navigation/core": "^7.22.1"
+  },
   "private": true
 }

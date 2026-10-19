@@ -36,7 +36,7 @@ const secrets = loadTdlibSecrets();
 const config: ExpoConfig = {
   name: "Photogram",
   slug: "photogram",
-  version: "0.1.0",
+  version: "0.40.0",
   orientation: "portrait",
   icon: "./assets/icon.png",
   userInterfaceStyle: "automatic",
@@ -47,7 +47,7 @@ const config: ExpoConfig = {
   },
   android: {
     package: "com.photogram.app",
-    versionCode: 1,
+    versionCode: 2,
     // Privacy hardening: keep the local photo index (SQLite + thumbnails) out of
     // Google's device backup service.
     allowBackup: false,
