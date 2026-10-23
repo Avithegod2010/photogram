@@ -18,7 +18,9 @@ Each entry below documents what a commit adds and what comes next. Newest first.
 - **Native files added**: `PhotogramStatusWidget.kt`, `PhotogramTileService.kt`,
   `res/xml/backup_widget_info.xml`, `res/layout/widget_status.xml`, `res/drawable/widget_bg.xml`
   + manifest/strings changes. **Requires a gradle rebuild (rides the pending one) + on-device
-  verification before either surface is trusted.**
+  verification before either surface is trusted.** `android/` is gitignored CNG, so the
+  re-apply checklist now lives at `docs/NATIVE-REAPPLY.md` §1 (must be re-applied after any
+  future prebuild).
 - **Probe: 253/253** (widget state build/write/tile-pause tests on the real module in Node)
   + static 48/48 + tsc clean.
 
