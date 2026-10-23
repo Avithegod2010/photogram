@@ -4,6 +4,22 @@ Each entry below documents what a commit adds and what comes next. Newest first.
 
 ---
 
+## v0.45 — Story upgrade + Wrapped v2 (Phase C5, owner-ordered "do phase C and D")
+
+- **Story "on this day" upgrade**: Ken Burns drift on every photo slide (reanimated — scale
+  1→1.08 with an alternating sideways drift, timed to the slide), and native video playback —
+  video slides now play via expo-video and hold their slide for the clip length (clamped
+  4–30 s) instead of the 3.2 s photo cut. Background music postponed: it needs a
+  license-clean bundled audio track (an owner pick), noted here instead of faking it.
+- **Wrapped v2 superlatives**: "Most-snapshotted person" (named people ranked by faces on
+  this year's own media — photos/videos, excludes trash/edits/shared claims, same universe as
+  every stats surface) and "Where the camera went" (top GPS place rows). Cards appear only
+  when data exists.
+- **Probe: 247/247** (new: person superlative rank/count/thumbs, place ranking) + static
+  48/48 + tsc clean.
+- Device note: JS-only except the Ken Burns/video code paths (already-installed libraries) —
+  Metro refresh, no gradle rebuild needed.
+
 ## v0.44 — Album activity feed + photo requests (Phase C4, owner-ordered "do phase C and D")
 
 - **Activity feed**: "Recent activity" strip on shared album screens — what the family added,

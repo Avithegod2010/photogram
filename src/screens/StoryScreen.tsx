@@ -2,16 +2,31 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { StatusBar } from "expo-status-bar";
 import { Image } from "expo-image";
+import Animated, { Easing, useAnimatedStyle, useSharedValue, withTiming } from "react-native-reanimated";
+import { useVideoPlayer, VideoView } from "expo-video";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
-import { MediaRow } from "../db/queries";
+import { MediaRow, getMediaByIds } from "../db/queries";
 import { theme } from "../theme";
 
 const SLIDE_MS = 3200;
 const TICK_MS = 320;
-const TICKS_PER_SLIDE = SLIDE_MS / TICK_MS;
+
+function isVideoRow(row: MediaRow): boolean {
+  return row.mime_type.startsWith("video/");
+}
+
+function slideMsFor(row: MediaRow | undefined): number {
+  // v0.45 story upgrade: videos hold their slide for the clip length instead
+  // of the default 3.2 s (clamped so a stuck duration can't freeze the story).
+  if (row && isVideoRow(row) && row.duration_ms && row.duration_ms > 0) {
+    return Math.min(Math.max(row.duration_ms + 500, 4000), 30_000);
+  }
+  return SLIDE_MS;
+}
 
 // Instagram-style "on this day" story: auto-advancing, tap right/left to step,
-// back to close. Progress bar ticks 10× per slide.
+// back to close. Progress bar ticks 10× per slide. v0.45: subtle Ken Burns
+// drift on every photo slide and native video playback for video slides.
 export function StoryScreen({
   navigation,
   route,
@@ -25,6 +40,8 @@ export function StoryScreen({
   const [tick, setTick] = useState(0);
   const itemsRef = useRef<MediaRow[]>([]);
   itemsRef.current = items;
+  const slideMsRef = useRef<number>(SLIDE_MS);
+  slideMsRef.current = slideMsFor(itemsRef.current[index]);
 
   useEffect(() => {
     void getMediaByIds(ids).then(setItems);
@@ -32,10 +49,10 @@ export function StoryScreen({
 
   useEffect(() => {
     if (items.length === 0) return;
-    setTick(0);
+    const ticksForSlide = () => Math.max(1, Math.round(slideMsRef.current / TICK_MS));
     const timer = setInterval(() => {
       setTick((t) => {
-        if (t + 1 >= TICKS_PER_SLIDE) {
+        if (t + 1 >= ticksForSlide()) {
           setIndex((i) => {
             if (i + 1 >= itemsRef.current.length) {
               navigation.goBack();
@@ -65,20 +82,51 @@ export function StoryScreen({
     });
   }, [navigation]);
 
+  // Ken Burns: every slide starts at scale 1 and drifts to 1.08 with a small
+  // sideways drift, alternating direction per slide so cuts don't hurt.
+  const scale = useSharedValue(1);
+  const tx = useSharedValue(0);
+  useEffect(() => {
+    if (index >= items.length) return;
+    const row = itemsRef.current[index];
+    if (row && isVideoRow(row)) return; // videos live, no ken burns
+    scale.value = 1;
+    tx.value = index % 2 === 0 ? 8 : -8;
+    scale.value = withTiming(1.08, { duration: slideMsFor(row), easing: Easing.inOut(Easing.quad) });
+    tx.value = withTiming(index % 2 === 0 ? -8 : 8, {
+      duration: slideMsFor(row),
+      easing: Easing.inOut(Easing.quad),
+    });
+  }, [index, items.length, scale, tx]);
+  const kenStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: scale.value }, { translateX: tx.value }],
+  }));
+
   const current = items[index];
+  const currentIsVideo = current ? isVideoRow(current) : false;
+
+  const onVideoEnded = useCallback(() => {
+    goNextNow();
+  }, [goNextNow]);
 
   return (
     <View style={styles.root}>
       <StatusBar style="light" />
       {current ? (
-        <Image
-          key={String(current.id)}
-          source={{ uri: current.local_uri ?? current.thumb_uri }}
-          style={StyleSheet.absoluteFill}
-          contentFit="contain"
-          transition={180}
-          recyclingKey={`story-${current.id}`}
-        />
+        currentIsVideo ? (
+          <StoryVideoSlide item={current} onEnded={onVideoEnded} paused={false} />
+        ) : (
+          <Animated.View style={[StyleSheet.absoluteFill, kenStyle]}>
+            <Image
+              key={String(current.id)}
+              source={{ uri: current.local_uri ?? current.thumb_uri }}
+              style={StyleSheet.absoluteFill}
+              contentFit="contain"
+              transition={180}
+              recyclingKey={`story-${current.id}`}
+            />
+          </Animated.View>
+        )
       ) : (
         <View style={[StyleSheet.absoluteFill, styles.loading]}>
           <Text style={styles.loadingText}>Loading…</Text>
@@ -94,7 +142,11 @@ export function StoryScreen({
                 styles.barFill,
                 {
                   flex:
-                    i < index ? 1 : i === index ? Math.min(1, tick / TICKS_PER_SLIDE) : 0,
+                    i < index
+                      ? 1
+                      : i === index
+                        ? Math.min(1, tick * TICK_MS / slideMsFor(itemsRef.current[index]))
+                        : 0,
                 },
               ]}
             />
@@ -123,7 +175,28 @@ export function StoryScreen({
   );
 }
 
-import { getMediaByIds } from "../db/queries";
+function StoryVideoSlide({
+  item,
+  paused,
+  onEnded,
+}: {
+  item: MediaRow;
+  paused: boolean;
+  onEnded: () => void;
+}) {
+  const player = useVideoPlayer(item.local_uri ? { uri: item.local_uri } : null);
+  useEffect(() => {
+    const sub = player.addListener("playToEnd", onEnded);
+    return () => sub.remove();
+  }, [player, onEnded]);
+  useEffect(() => {
+    if (paused) player.pause();
+    else void player.play();
+  }, [paused, player]);
+  return (
+    <VideoView player={player} style={StyleSheet.absoluteFill} contentFit="contain" nativeControls={false} />
+  );
+}
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: "#000000" },

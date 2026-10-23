@@ -20,6 +20,10 @@ export interface WrappedStats {
   topDays: WrappedTopDay[];
   daysCaptured: number;
   favorites: number;
+  // v0.45 Wrapped v2 superlatives (people need the P&P library; places the
+  // GPS/place tags). Empty arrays when there is nothing to show.
+  topPeople: Array<{ id: number; name: string; count: number; thumbs: string[] }>;
+  topPlaces: Array<{ place: string; count: number; thumbs: string[] }>;
 }
 
 const OWN_MEDIA = `visibility != 'trashed' AND edited_from IS NULL
@@ -75,6 +79,30 @@ export async function getWrapped(year: number): Promise<WrappedStats> {
   const monthNames = ["January", "February", "March", "April", "May", "June",
     "July", "August", "September", "October", "November", "December"];
 
+  // v0.45: named people with the most of their faces on this year's own media.
+  const peopleRows = await db.getAllAsync<{ id: number; name: string; c: number; t: string | null }>(`
+    SELECT p.id AS id, p.name AS name, COUNT(*) AS c, GROUP_CONCAT(m.thumb_uri) AS t
+    FROM people p
+    JOIN face_samples fs ON fs.person_id = p.id
+    JOIN media m ON m.id = fs.media_id
+    WHERE p.name IS NOT NULL AND m.visibility != 'trashed' AND m.edited_from IS NULL
+      AND NOT EXISTS (SELECT 1 FROM album_media am WHERE am.media_id = m.id)
+      AND ${yWhere}
+    GROUP BY p.id
+    ORDER BY c DESC
+    LIMIT 2
+  `);
+
+  // v0.45: places the owner appears to visit most this year (GPS place rows).
+  const placeRows = await db.getAllAsync<{ place: string; c: number; t: string | null }>(`
+    SELECT place_name AS place, COUNT(*) AS c, GROUP_CONCAT(thumb_uri) AS t
+    FROM media
+    WHERE place_name IS NOT NULL AND place_name != '' AND ${OWN_MEDIA} AND ${yWhere}
+    GROUP BY place_name
+    ORDER BY c DESC
+    LIMIT 2
+  `);
+
   return {
     year,
     photos: totals?.photos ?? 0,
@@ -88,5 +116,16 @@ export async function getWrapped(year: number): Promise<WrappedStats> {
     })),
     daysCaptured: totals?.days ?? 0,
     favorites: totals?.favorites ?? 0,
+    topPeople: peopleRows.map((r) => ({
+      id: r.id,
+      name: r.name,
+      count: r.c,
+      thumbs: (r.t ?? "").split(",").slice(0, 3).filter(Boolean),
+    })),
+    topPlaces: placeRows.map((r) => ({
+      place: r.place,
+      count: r.c,
+      thumbs: (r.t ?? "").split(",").slice(0, 3).filter(Boolean),
+    })),
   };
 }

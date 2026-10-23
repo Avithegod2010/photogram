@@ -86,6 +86,25 @@ export function WrappedScreen({
       big: `${stats.favorites.toLocaleString()} ♥`,
       sub: "Marked with a heart this year",
     });
+    // v0.45 Wrapped v2 superlatives — people (P&P library) + places (place tags).
+    for (const [i, person] of stats.topPeople.entries()) {
+      c.push({
+        key: `person${i}`,
+        title: i === 0 ? "Most-snapshotted person" : `#${i + 1} person`,
+        big: person.name,
+        sub: `${person.count.toLocaleString()} photo${person.count === 1 ? "" : "s"} this year`,
+        thumbs: person.thumbs,
+      });
+    }
+    for (const [i, place] of stats.topPlaces.entries()) {
+      c.push({
+        key: `place${i}`,
+        title: i === 0 ? "Where the camera went" : `#${i + 1} place`,
+        big: place.place,
+        sub: `${place.count.toLocaleString()} photo${place.count === 1 ? "" : "s"} this year`,
+        thumbs: place.thumbs,
+      });
+    }
     return c;
   }, [stats]);
 
