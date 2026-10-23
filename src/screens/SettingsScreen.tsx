@@ -84,6 +84,8 @@ export function SettingsScreen() {
   const setAutoBackupFolders = useSettingsStore((s) => s.setAutoBackupFolders);
   const showDateOnPhotos = useSettingsStore((s) => s.showDateOnPhotos);
   const setShowDateOnPhotos = useSettingsStore((s) => s.setShowDateOnPhotos);
+  const storyMusic = useSettingsStore((s) => s.storyMusic);
+  const setStoryMusic = useSettingsStore((s) => s.setStoryMusic);
   const uploadGapSeconds = useSettingsStore((s) => s.uploadGapSeconds);
   const setUploadGapSeconds = useSettingsStore((s) => s.setUploadGapSeconds);
   const dailyBudgetGb = useSettingsStore((s) => s.dailyBudgetGb);
@@ -349,6 +351,12 @@ export function SettingsScreen() {
             sub="Show the capture date on every photo tile in the gallery. Turn off for a cleaner grid."
             value={showDateOnPhotos}
             onChange={setShowDateOnPhotos}
+          />
+          <ToggleRow
+            label="Story background music"
+            sub="A quiet, self-made ambient loop plays while photos play as a story. No third-party audio."
+            value={storyMusic}
+            onChange={setStoryMusic}
           />
         </Section>
 

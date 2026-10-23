@@ -4,6 +4,19 @@ Each entry below documents what a commit adds and what comes next. Newest first.
 
 ---
 
+## v0.48 — Story background music (homemade, zero license risk) — NEEDS REBUILD (expo-audio)
+
+- The story "on this day" player now has a quiet ambient background loop while photos play.
+- **The track is 100% our own synthesis** (`scripts/gen-story-music.mjs` →
+  `assets/audio/story-ambient.wav`, 16 s, 22.05 kHz mono, 689 KB: Am7→Fmaj7→Cmaj7→Gsus4 pad
+  + a sparse bell) — no third-party audio, no licensing risk in the public repo. Rerun the
+  script to regenerate.
+- Playback via the new `expo-audio` dependency (native module → **rides the pending gradle
+  rebuild**; JS-only would have been impossible). Create-pause-release is fully try/caught:
+  a music failure can never break the story itself. Settings → "Story background music"
+  toggle (default ON).
+- Probe 261/261 + static 48/48 + tsc 0 (unchanged surface, screens are device-only).
+
 ## v0.47 — First-run checklist + album cover picker (Phase D, owner: "code non-stop")
 
 - **First-run checklist**: a small card on the gallery (only when photos exist but NOTHING is

@@ -4,9 +4,15 @@ import { StatusBar } from "expo-status-bar";
 import { Image } from "expo-image";
 import Animated, { Easing, useAnimatedStyle, useSharedValue, withTiming } from "react-native-reanimated";
 import { useVideoPlayer, VideoView } from "expo-video";
+import { createAudioPlayer } from "expo-audio";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { MediaRow, getMediaByIds } from "../db/queries";
+import { useSettingsStore } from "../store/settingsStore";
 import { theme } from "../theme";
+
+// v0.48 story background music: a self-generated ambient loop (see
+// scripts/gen-story-music.mjs — synthesized here, no third-party samples).
+const STORY_MUSIC = require("../../assets/audio/story-ambient.wav");
 
 const SLIDE_MS = 3200;
 const TICK_MS = 320;
@@ -67,6 +73,30 @@ export function StoryScreen({
     }, TICK_MS);
     return () => clearInterval(timer);
   }, [items.length, index, navigation]);
+
+  // v0.48 background music: the ambient loop plays while the story shows,
+  // honest-off whenever the setting is off. createAudioPlayer is native-only —
+  // guard everything so the story must never crash on music.
+  const storyMusic = useSettingsStore((s) => s.storyMusic);
+  useEffect(() => {
+    if (items.length === 0 || !storyMusic) return;
+    let player: { play(): void; pause(): void; release(): void; loop: boolean; volume: number } | null = null;
+    try {
+      const p = createAudioPlayer(STORY_MUSIC, {});
+      p.loop = true;
+      p.volume = 0.55;
+      p.play();
+      player = p;
+    } catch {
+      player = null;
+    }
+    return () => {
+      try {
+        player?.pause();
+        player?.release();
+      } catch {}
+    };
+  }, [items.length, storyMusic]);
 
   const goPrev = useCallback(() => {
     setIndex((i) => Math.max(0, i - 1));
