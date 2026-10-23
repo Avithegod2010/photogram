@@ -13,6 +13,7 @@ import { startJunkAutoSweepLoop } from "./src/lib/junkAutoSweep";
 import { startScheduledIntegrityLoop } from "./src/lib/integritySchedule";
 import { startSnapshotLoop } from "./src/lib/snapshotExport";
 import { startUploadWindowLoop } from "./src/lib/uploadWindow";
+import { startWidgetStateLoop } from "./src/lib/widgetState";
 import { startGroupSync } from "./src/lib/groupSync";
 import { startNotifyLoop } from "./src/lib/notify";
 import { syncPendingNotes } from "./src/lib/notes";
@@ -35,6 +36,7 @@ export default function App() {
       startScheduledIntegrityLoop();
       startSnapshotLoop();
       startUploadWindowLoop();
+      startWidgetStateLoop();
       startGroupSync();
       startNotifyLoop();
       void syncPendingNotes().catch(() => {});

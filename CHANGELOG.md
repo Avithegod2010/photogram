@@ -4,6 +4,24 @@ Each entry below documents what a commit adds and what comes next. Newest first.
 
 ---
 
+## v0.46 — Home-screen backup widget + quick-settings pause tile (Phase C6, native, needs rebuild)
+
+- **Widget**: Android home-screen widget shows the backup heartbeat — bytes safe,
+  "X of Y backed up", time since the last upload, and pending count. Numbers only (same
+  privacy hard rule as the family heartbeat card: no file names, paths, album or contact
+  names). JS writes `files/widget_state.json` every 15 min; the Kotlin widget reads it
+  (same sandbox) and refreshes on Android's schedule (min 30 min) — tap opens Photogram.
+- **Quick-settings tile**: "Pause Photogram backup" — tap pauses NEW queuing from the shade,
+  tap again to resume. It writes a marker file the auto-backup loop gates on; the worker
+  (uploader.ts) is untouched, so active uploads finish and the tile never affects rate-limit
+  pausing. The widget shows "queuing paused" while the marker is on.
+- **Native files added**: `PhotogramStatusWidget.kt`, `PhotogramTileService.kt`,
+  `res/xml/backup_widget_info.xml`, `res/layout/widget_status.xml`, `res/drawable/widget_bg.xml`
+  + manifest/strings changes. **Requires a gradle rebuild (rides the pending one) + on-device
+  verification before either surface is trusted.**
+- **Probe: 253/253** (widget state build/write/tile-pause tests on the real module in Node)
+  + static 48/48 + tsc clean.
+
 ## v0.45 — Story upgrade + Wrapped v2 (Phase C5, owner-ordered "do phase C and D")
 
 - **Story "on this day" upgrade**: Ken Burns drift on every photo slide (reanimated — scale

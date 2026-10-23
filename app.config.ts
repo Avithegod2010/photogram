@@ -36,7 +36,7 @@ const secrets = loadTdlibSecrets();
 const config: ExpoConfig = {
   name: "Photogram",
   slug: "photogram",
-  version: "0.45.0",
+  version: "0.46.0",
   orientation: "portrait",
   icon: "./assets/icon.png",
   userInterfaceStyle: "automatic",

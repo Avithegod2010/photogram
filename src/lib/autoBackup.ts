@@ -2,6 +2,7 @@ import { scanDeviceLibrary, ScanProgress } from "./scanner";
 import { enqueueForUpload } from "./uploader";
 import { getMediaByIds } from "../db/queries";
 import { useSettingsStore } from "../store/settingsStore";
+import { syncWidgetState, tilePauseActive } from "./widgetState";
 
 // Idea 6: auto-backup. When enabled, Photogram periodically rescans the device
 // library and queues any NEW photos/videos for upload — backup becomes
@@ -24,6 +25,13 @@ function folderAllows(localUri: string | null, folders: string[]): boolean {
 export async function runAutoBackupPass(): Promise<{ added: number; queued: number } | null> {
   const { autoBackupEnabled, autoBackupFolders } = useSettingsStore.getState();
   if (!autoBackupEnabled || running) return null;
+  // v0.46: the quick-settings tile can pause NEW queuing from the shade
+  // (files/tile_pause marker). Active uploads continue — uploader.ts is
+  // protected and the tile must never touch the worker.
+  if (tilePauseActive()) {
+    void syncWidgetState();
+    return { added: 0, queued: 0 };
+  }
   running = true;
   try {
     const progress: ScanProgress = await scanDeviceLibrary();
@@ -43,6 +51,9 @@ export async function runAutoBackupPass(): Promise<{ added: number; queued: numb
     return null;
   } finally {
     running = false;
+    // Keep the home-screen widget honest after every pass (also refreshes the
+    // "queuing paused" label when the tile marker was added/removed).
+    void syncWidgetState();
   }
 }
 
