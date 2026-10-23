@@ -5,7 +5,55 @@ Last updated: 2026-10-19 (§0, v0.40). Read §0, then §1–§17. CHANGELOG.md h
 
 ---
 
-## 0. CURRENT STATE — 2026-10-19 (EVENING) · v0.40.1 COMMITTED & PUSHED (`dbd6b17`) · DEVICE VERIFY STILL PAUSED (PHONE UNDER ANOTHER CHATBOT'S CONTROL)
+## 0. CURRENT STATE — 2026-10-24 · PHASE C + D STARTED: v0.41–v0.46 ALL COMMITTED & PUSHED (HEAD `ba970f6`) · DEVICE VERIFY STILL PAUSED (PHONE UNDER ANOTHER CHATBOT'S CONTROL)
+
+**2026-10-24 (owner ordered "do phase C and D" from docs/PLAN-ROADMAP.md) — all six Phase-C
+batches shipped in one session, probe/static/tsc green per batch, each committed + pushed with
+a CHANGELOG entry:**
+- **v0.41 (`e5d526a`) C1:** schema v20 (`saved_searches.rules` JSON text; v0.30 smart albums now
+  rule-based) + smart-rule builder screen (AlbumRulesScreen → SavedSearch) + favorite
+  anniversaries ("a year ago you favorited…", offset 55 s in the hourly notify loop, MMKV
+  daily key, Settings toggle default ON). Probe 220 + extra: native `native` check.
+- **v0.42 (`833bf26`) C2:** people-aware search (searchPeopleForQuery top people chips on the
+  gallery search header → deep-open the person) + pinned albums (settings store pin set,
+  pinned-first order, pin toggle). NOTE: scene auto-albums + inline per-album switches already
+  shipped (v0.25–0.28), so C2's second slot swapped "folder rules" experimental scoping for
+  pinned albums — a Phase-D idea substitution documented in the CHANGELOG. Probe 227.
+- **v0.43 (`545d4e4`) C3:** upload time window (Settings: "Upload in a time window only",
+  From/To hour, overnight wrap OK; pure `windowOpenFor` + `checkUploadWindow` + 1-min loop in
+  NEW `src/lib/uploadWindow.ts` DRIVING the existing pauseUploads/resumeUploads exports —
+  uploader.ts untouched per AGENTS rule #6). Probe infra: new `expo-network` stub + `--define:
+  __DEV__=true` + explicit process.exit probe tail (window test starts the REAL upload worker).
+  Probe 238.
+- **v0.44 (`7ead060`) C4:** album activity feed (AlbumMediaRow.added_at, "Recent activity"
+  strip in shared album screens — who added what, newest first) + photo REQUEST prompts
+  (composeRequestText/sendPhotoRequest in NEW `src/lib/photoRequest.ts`, "📷 Ask" chip in the
+  album header; prefers getSharedAlbum chat_id, errors are honest). Probe 244.
+- **v0.45 (`cfc0664`) C5a+C5b:** story upgrade (Ken Burns drift + REAL video playback with
+  proportional progress bars, per-slide ms clamped 4–30 s) + Wrapped v2 superlatives
+  (topPeople = named people ranked by faces on this year's own media; topPlaces = GPS place
+  rows; cards appear only when data exists). Music in stories DEFERRED — needs an
+  owner-picked license-clean audio track. Probe 247.
+- **v0.46 (`11a0fe4` + `ba970f6` re-apply doc) C6 — FIRST NATIVE BATCH:** Android home-screen
+  backup widget (numbers only — same privacy rule as the heartbeat card; JS writes
+  `widget_state.json` every 15 min via `src/lib/widgetState.ts`, Kotlin PhotogramStatusWidget
+  reads it, refresh ≤30 min, tap opens app) + quick-settings pause tile
+  (PhotogramTileService ↔ `files/tile_pause`; auto-backup gates NEW queuing on it; uploader.ts
+  untouched). Probe 253. **`android/` is gitignored CNG — full native re-apply checklist at
+  `docs/NATIVE-REAPPLY.md` §1; the widget+tile MUST be re-applied after any future
+  `expo prebuild --clean`.**
+- **Pending Phase-D agent items (from the roadmap):** free-up-space mode (LAST, ships only
+  after phone verify of this batch + the older native stack), Hindi localization, app
+  shortcuts, album cover picker, first-run checklist. Music track for stories = owner pick.
+- **Bundle command now has 13 aliases + `--define:__DEV__=true`** (see .expo/review-probe
+  notes; aliases are absolute paths). Probe now ends with explicit
+  `process.exit(process.exitCode === 1 ? 1 : 0)`.
+- **All device work remains blocked** (phone under another chatbot): gradle rebuild now also
+  bundles v0.46 Kotlin; on-device verifications for v0.34.1 → v0.46; the ~8 GB bulk backup
+  stays paused until the phone frees up.
+
+**Older state (2026-10-19 v0.40.1 etc.) is summarized below this block — read it for
+context on People-corrections, snapshots, dependabot, exporter, and more.**
 
 **2026-10-19 evening (v0.40.1, review + housekeeping):**
 - **Review pass over v0.39+v0.40: no real findings.** The ordered `bugbot` subagent degenerated
