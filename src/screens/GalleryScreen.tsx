@@ -26,6 +26,7 @@ import { scanDeviceLibrary, ScanProgress } from "../lib/scanner";
 import { enqueueForUpload, startWorker } from "../lib/uploader";
 import { hasSavedMessagesMedia } from "../lib/rehydrate";
 import { MemoriesCarousel } from "../components/MemoriesCarousel";
+import { collectOnboardingFacts, dismissOnboarding, isOnboardingDismissed, listPendingOnboardingSteps, shouldShowChecklist, OnboardingStep } from "../lib/onboarding";
 import { useSettingsStore } from "../store/settingsStore";
 import { theme } from "../theme";
 
@@ -451,6 +452,26 @@ export function GalleryScreen() {
     void getBackupHeartbeat().then(setHeartbeat);
   }, [rows.length]);
 
+  // v0.47 first-run checklist: only while the owner has photos but NOTHING is
+  // backed up yet — the three steps that actually gate a first backup.
+  const [checklist, setChecklist] = useState<OnboardingStep[] | null>(null);
+  useEffect(() => {
+    if (!heartbeat || heartbeat.total === 0 || heartbeat.synced > 0) {
+      setChecklist(null);
+      return;
+    }
+    if (isOnboardingDismissed()) {
+      setChecklist(null);
+      return;
+    }
+    void collectOnboardingFacts(heartbeat.synced)
+      .then((facts) => {
+        const steps = listPendingOnboardingSteps(facts);
+        setChecklist(shouldShowChecklist(steps, false) ? steps : null);
+      })
+      .catch(() => setChecklist(null));
+  }, [heartbeat, rows.length]);
+
   const backUpAll = useCallback(() => {
     const pending = rows.filter((r) => r.state === "local" || r.state === "failed");
     if (pending.length === 0) return;
@@ -772,6 +793,32 @@ export function GalleryScreen() {
                 heartbeat.lastSyncedAt ? ` · last backup ${timeAgo(heartbeat.lastSyncedAt)}` : ""
               }`}
         </Text>
+      ) : null}
+
+      {checklist && rows.length > 0 ? (
+        <View style={styles.onboardCard}>
+          <Text style={styles.onboardTitle}>Get your backup started</Text>
+          {checklist.map((s) => (
+            <View key={s.key} style={styles.onboardRow}>
+              <Text style={[styles.onboardMark, s.done && styles.onboardMarkDone]}>
+                {s.done ? "✓" : "○"}
+              </Text>
+              <Text style={styles.onboardText}>{s.title}</Text>
+            </View>
+          ))}
+          <Pressable style={styles.onboardBtn} onPress={backUpAll} hitSlop={6}>
+            <Text style={styles.onboardBtnText}>Back up now</Text>
+          </Pressable>
+          <Pressable
+            hitSlop={8}
+            onPress={() => {
+              dismissOnboarding();
+              setChecklist(null);
+            }}
+          >
+            <Text style={styles.migrateDismiss}>Dismiss</Text>
+          </Pressable>
+        </View>
       ) : null}
 
       {scan ? (
@@ -1208,6 +1255,28 @@ const styles = StyleSheet.create({
   },
   migrateActions: { flexDirection: "row", alignItems: "center", gap: theme.spacing.lg, marginTop: theme.spacing.lg },
   migrateDismiss: { color: theme.colors.onSurfaceVariant, fontWeight: "600", fontSize: 13.5 },
+  // v0.47 first-run checklist card
+  onboardCard: {
+    backgroundColor: theme.colors.surfaceHighest,
+    borderRadius: theme.radius.lg,
+    padding: theme.spacing.md,
+    marginHorizontal: theme.spacing.md,
+    marginVertical: theme.spacing.sm,
+    gap: 8,
+  },
+  onboardTitle: { color: theme.colors.onSurface, fontWeight: "700", fontSize: 15 },
+  onboardRow: { flexDirection: "row", alignItems: "center", gap: 8 },
+  onboardMark: { color: theme.colors.onSurfaceVariant, width: 16, textAlign: "center" },
+  onboardMarkDone: { color: theme.colors.primary, fontWeight: "700" },
+  onboardText: { color: theme.colors.onSurface, fontSize: 13.5, flexShrink: 1 },
+  onboardBtn: {
+    alignSelf: "flex-start",
+    backgroundColor: theme.colors.primary,
+    paddingVertical: 9,
+    paddingHorizontal: 16,
+    borderRadius: theme.radius.full,
+  },
+  onboardBtnText: { color: theme.colors.onPrimary, fontWeight: "700", fontSize: 13 },
   loader: { flex: 1 },
   scanBanner: {
     flexDirection: "row",

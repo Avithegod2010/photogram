@@ -6,6 +6,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { FlashList } from "@shopify/flash-list";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { getAlbumMedia } from "../lib/albums";
+import { setAlbumCover, clearAlbumCover, getAlbumCoverId } from "../lib/albumCovers";
 import { listMyGroups, resolveSenderNames, TelegramGroup } from "../lib/chats";
 import { sendPhotoRequest } from "../lib/photoRequest";
 import { listAlbumActivity } from "../db/queries";
@@ -92,6 +93,9 @@ export function AlbumScreen({
   const [requestOpen, setRequestOpen] = useState(false);
   const [requestSubject, setRequestSubject] = useState("");
   const [requestBusy, setRequestBusy] = useState(false);
+  // v0.47 cover picker: the album's hand-picked cover (this album only).
+  const [coverOpen, setCoverOpen] = useState(false);
+  const [coverId, setCoverId] = useState<number | null>(null);
   const [ownUserId, setOwnUserId] = useState<string | null>(null);
   // v0.39 "Share album": pick a Telegram group, then queue every local copy
   // in the album for upload to that chat (normal queue, side-effect-free).
@@ -106,6 +110,10 @@ export function AlbumScreen({
   const lockedKeys = useSettingsStore((s) => s.lockedAlbumKeys);
   const needsUnlock = lockedKeys.includes(key);
   const [unlocked, setUnlocked] = useState(false);
+
+  useEffect(() => {
+    setCoverId(getAlbumCoverId(key));
+  }, [key]);
 
   useEffect(() => {
     if (!needsUnlock || unlocked) return;
@@ -340,6 +348,11 @@ export function AlbumScreen({
             <Text style={styles.shareBtnText}>⇪ Share</Text>
           </Pressable>
         ) : null}
+        {rows.length > 0 ? (
+          <Pressable style={styles.shareBtn} hitSlop={8} onPress={() => setCoverOpen(true)}>
+            <Text style={styles.shareBtnText}>🖼️ Cover</Text>
+          </Pressable>
+        ) : null}
       </View>
       {sharedAlbumId !== undefined ? (
         <View style={styles.toggleRow}>
@@ -476,6 +489,65 @@ export function AlbumScreen({
           loaded ? <Text style={styles.empty}>No items in this album yet.</Text> : null
         }
       />
+
+      {/* v0.47 cover picker */}
+      <Modal visible={coverOpen} transparent animationType="fade" onRequestClose={() => setCoverOpen(false)}>
+        <Pressable style={styles.shareBackdrop} onPress={() => setCoverOpen(false)}>
+          <Pressable style={styles.shareCard} onPress={(e) => e.stopPropagation()}>
+            <Text style={styles.shareTitle}>Pick an album cover</Text>
+            <Text style={styles.shareHint}>
+              Shown on the Albums screen. "Auto" gives back the newest photo.
+            </Text>
+            <ScrollView style={styles.coverGridWrap} contentContainerStyle={styles.coverGrid}>
+              <Pressable
+                style={styles.coverCell}
+                onPress={() => {
+                  clearAlbumCover(key);
+                  setCoverId(null);
+                  setCoverOpen(false);
+                }}
+              >
+                <View style={[styles.coverCellBox, styles.coverCellAuto]}>
+                  <Text style={styles.coverCellAutoText}>Auto</Text>
+                </View>
+              </Pressable>
+              {rows.slice(0, 36).map((r) => (
+                <Pressable
+                  key={r.id}
+                  style={styles.coverCell}
+                  onPress={() => {
+                    void setAlbumCover(key, r.id)
+                      .then(() => {
+                        setCoverId(r.id);
+                        setCoverOpen(false);
+                      })
+                      .catch(() =>
+                        Alert.alert(
+                          "Could not set cover",
+                          "That photo is no longer available. Try another one."
+                        )
+                      );
+                  }}
+                >
+                  {r.thumb_uri ? (
+                    <Image
+                      source={{ uri: r.thumb_uri }}
+                      style={[styles.coverCellBox, coverId === r.id && styles.coverCellOn]}
+                      contentFit="cover"
+                      transition={90}
+                    />
+                  ) : (
+                    <View style={[styles.coverCellBox, styles.coverCellEmpty]} />
+                  )}
+                </Pressable>
+              ))}
+            </ScrollView>
+            <Pressable style={styles.requestCancel} onPress={() => setCoverOpen(false)}>
+              <Text style={styles.shareHint}>Close</Text>
+            </Pressable>
+          </Pressable>
+        </Pressable>
+      </Modal>
 
       {/* v0.44 photo request */}
       <Modal visible={requestOpen} transparent animationType="fade" onRequestClose={() => setRequestOpen(false)}>
@@ -713,6 +785,23 @@ const styles = StyleSheet.create({
   chipOn: { backgroundColor: theme.colors.primaryContainer },
   chipTextOn: { color: theme.colors.onPrimaryContainer },
   listContent: { paddingBottom: 40, paddingTop: theme.spacing.sm },
+  // v0.47 cover picker
+  coverGridWrap: { maxHeight: 320 },
+  coverGrid: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  coverCell: {
+    width: 96,
+    height: 96,
+    borderRadius: theme.radius.lg,
+    overflow: "hidden",
+    borderWidth: 0,
+  },
+  coverCellBox: { width: "100%", height: "100%" },
+  coverCellEmpty: { backgroundColor: theme.colors.surfaceHighest },
+  coverCellAuto: { backgroundColor: theme.colors.surfaceHighest, justifyContent: "center" },
+  coverCellAutoText: {
+    color: theme.colors.onSurface, fontSize: 13, fontWeight: "700", textAlign: "center",
+  },
+  coverCellOn: { borderWidth: 2, borderColor: theme.colors.primary },
   // Album organizer section headers (full-width via overrideItemLayout span).
   groupHeaderWrap: {
     flexDirection: "row",

@@ -4,6 +4,19 @@ Each entry below documents what a commit adds and what comes next. Newest first.
 
 ---
 
+## v0.47 — First-run checklist + album cover picker (Phase D, owner: "code non-stop")
+
+- **First-run checklist**: a small card on the gallery (only when photos exist but NOTHING is
+  backed up yet) with the three steps that actually gate a first backup — photo access,
+  Wi-Fi, and "Back up now" (queues the starting set; the worker keeps the queue going).
+  Auto-dismisses once the first item is synced; a Dismiss flag (MMKV) sticks forever.
+  Decision logic is pure and probe-tested (`src/lib/onboarding.ts`).
+- **Album cover picker**: "🖼️ Cover" chip in every auto-album opens a thumb picker; a
+  hand-picked cover overrides "newest photo" (stale hover-id falls back safely). Stored in
+  MMKV (`album_cover_<key>`), never a schema change.
+- **Probe: 261/261** (checklist semantics + cover override/fallback) + static 48/48 + tsc 0.
+- Device note: JS-only — Metro refresh, no gradle rebuild needed.
+
 ## v0.46 — Home-screen backup widget + quick-settings pause tile (Phase C6, native, needs rebuild)
 
 - **Widget**: Android home-screen widget shows the backup heartbeat — bytes safe,

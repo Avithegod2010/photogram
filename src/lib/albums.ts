@@ -1,5 +1,6 @@
 import { getDb } from "../db";
 import type { MediaRow } from "../db/queries";
+import { getAlbumCoverId } from "./albumCovers";
 
 export interface AutoAlbum {
   key: string;
@@ -71,11 +72,24 @@ export async function getAutoAlbums(): Promise<AutoAlbum[]> {
     );
     const count = row?.count ?? 0;
     if (count > 0) {
+      let coverThumb = row?.cover ?? null;
+      // v0.47 hand-picked cover wins over "newest item" (stale ids fall back).
+      try {
+        const coverId = getAlbumCoverId(def.key);
+        if (coverId !== null) {
+          const picked = await db.getFirstAsync<{ thumb: string | null }>(
+            `SELECT thumb_uri AS thumb FROM media
+             WHERE id = ? AND visibility = 'visible' AND thumb_uri IS NOT NULL`,
+            [coverId]
+          );
+          if (picked?.thumb) coverThumb = picked.thumb;
+        }
+      } catch {}
       albums.push({
         key: def.key,
         label: def.label,
         count,
-        coverThumb: row?.cover ?? null,
+        coverThumb,
       });
     }
   }
