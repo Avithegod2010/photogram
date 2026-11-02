@@ -21,7 +21,7 @@ import { theme } from "../theme";
 export function StorageScreen({
   navigation,
 }: {
-  navigation: NativeStackNavigationProp<{ Viewer: { ids: number[]; index: number } }>;
+  navigation: NativeStackNavigationProp<{ Viewer: { ids: number[]; index: number }; FreeUpSpace: undefined }>;
 }) {
   const insets = useSafeAreaInsets();
   const [largest, setLargest] = useState<LargeItem[] | null>(null);
@@ -130,6 +130,22 @@ export function StorageScreen({
         <Text style={styles.footnote}>
           Categories can overlap (a WhatsApp video is both). Trash and edited copies are never counted.
         </Text>
+
+        {/* v0.51 free-up-space */}
+        <Pressable
+          style={styles.card}
+          onPress={() => navigation.navigate("FreeUpSpace")}
+          android_ripple={{ color: theme.colors.outlineVariant }}
+        >
+          <View style={{ flex: 1 }}>
+            <Text style={styles.catLabel}>🗑️ Free up space</Text>
+            <Text style={styles.catSub}>
+              Delete originals already safe in Telegram — 7+ day-old, non-favorite, fully synced
+              items only.
+            </Text>
+          </View>
+          <Text style={styles.catBytes}>›</Text>
+        </Pressable>
       </ScrollView>
     </View>
   );

@@ -19,7 +19,9 @@ import { JunkSweeperScreen } from "../screens/JunkSweeperScreen";
 import { SimilarScreen } from "../screens/SimilarScreen";
 import { SlideshowScreen } from "../screens/SlideshowScreen";
 import { SavedSearchScreen } from "../screens/SavedSearchScreen";
-import { AlbumRulesScreen } from "../screens/AlbumRulesScreen";import { ScenesScreen } from "../screens/ScenesScreen";
+import { AlbumRulesScreen } from "../screens/AlbumRulesScreen";
+import { ScenesScreen } from "../screens/ScenesScreen";
+import { FreeUpSpaceScreen } from "../screens/FreeUpSpaceScreen";
 import { StorageScreen } from "../screens/StorageScreen";
 import { DiagnosticsScreen } from "../screens/DiagnosticsScreen";
 import { JournalScreen } from "../screens/JournalScreen";
@@ -53,6 +55,7 @@ export type RootStackParamList = {
   SavedSearch: { id: number };
   Scenes: undefined;
   Storage: undefined;
+  FreeUpSpace: undefined;
   Diagnostics: undefined;
   Journal: undefined;
   Highlights: undefined;
@@ -98,7 +101,7 @@ export function RootNavigator() {
       <Stack.Screen name="SavedSearch" component={SavedSearchScreen} />
       <Stack.Screen name="Scenes" component={ScenesScreen} />
       <Stack.Screen name="Storage" component={StorageScreen} />
-      <Stack.Screen name="Diagnostics" component={DiagnosticsScreen} />
+      <Stack.Screen name="FreeUpSpace" component={FreeUpSpaceScreen} />      <Stack.Screen name="Diagnostics" component={DiagnosticsScreen} />
       <Stack.Screen name="Journal" component={JournalScreen} />
       <Stack.Screen name="Highlights" component={HighlightsScreen} />
       <Stack.Screen name="PeopleSetup" component={PeopleSetupScreen} />

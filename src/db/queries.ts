@@ -888,6 +888,90 @@ export async function setMediaState(id: number, state: MediaState): Promise<void
   ]);
 }
 
+// ==================== v0.51 Free up space ====================
+// Conservative on purpose: only VISIBLE, non-favorite rows that are (a) fully
+// synced to Telegram, (b) still have the original file on the phone, and
+// (c) captured at least FREE_MIN_AGE_MS ago (recent photos stay untouchable —
+// that also excludes anything with a bogus taken_at). Favorites are NEVER
+// offered; claims in family albums are fine (their bytes stay in the family
+// chat + the user's own chat).
+export const FREE_MIN_AGE_MS = 7 * 24 * 60 * 60 * 1000;
+
+const FREEABLE_WHERE = `state = 'synced'
+  AND visibility = 'visible'
+  AND is_favorite = 0
+  AND local_uri IS NOT NULL
+  AND media_library_id IS NOT NULL
+  AND taken_at > 0
+  AND taken_at < ?`;
+
+export function freeableOlderThan(): number {
+  return Date.now() - FREE_MIN_AGE_MS;
+}
+
+export async function countFreeable(): Promise<{ count: number; bytes: number }> {
+  const db = await getDb();
+  const row = await db.getFirstAsync<{ count: number; bytes: number }>(
+    `SELECT COUNT(*) AS count, COALESCE(SUM(byte_size), 0) AS bytes
+     FROM media WHERE ${FREEABLE_WHERE}`,
+    [freeableOlderThan()]
+  );
+  return { count: row?.count ?? 0, bytes: row?.bytes ?? 0 };
+}
+
+export interface FreeableRow {
+  id: number;
+  thumb_uri: string | null;
+  file_name: string | null;
+  byte_size: number;
+  taken_at: number;
+}
+
+// Deletion batch feed (same universe as countFreeable/listFreeable): the
+// MediaLibrary asset id is included because Android needs it to trash the
+// actual file.
+export interface FreeableAssetRow {
+  id: number;
+  media_library_id: string;
+  byte_size: number;
+}
+
+export async function listFreeableAssets(limit = 48, offset = 0): Promise<FreeableAssetRow[]> {
+  const db = await getDb();
+  return db.getAllAsync<FreeableAssetRow>(
+    `SELECT id, media_library_id, byte_size
+     FROM media
+     WHERE ${FREEABLE_WHERE}
+     ORDER BY taken_at DESC, id DESC
+     LIMIT ? OFFSET ?`,
+    [freeableOlderThan(), limit, offset]
+  );
+}
+
+export async function listFreeable(limit = 48, offset = 0): Promise<FreeableRow[]> {
+  const db = await getDb();
+  return db.getAllAsync<FreeableRow>(
+    `SELECT id, thumb_uri, file_name, byte_size, taken_at
+     FROM media
+     WHERE ${FREEABLE_WHERE}
+     ORDER BY taken_at DESC, id DESC
+     LIMIT ? OFFSET ?`,
+    [freeableOlderThan(), limit, offset]
+  );
+}
+
+// After a successful device-side delete the file is gone — the row becomes a
+// cloud-only mirror. state stays 'synced' (the bytes never left Telegram).
+export async function markMediaCloudOnly(ids: number[]): Promise<void> {
+  if (ids.length === 0) return;
+  const db = await getDb();
+  const ph = ids.map(() => "?").join(",");
+  await db.runAsync(
+    `UPDATE media SET local_uri = NULL, updated_at = ? WHERE id IN (${ph})`,
+    [Date.now(), ...ids]
+  );
+}
+
 // `state` lets the uploader record remote ids while the bytes are still flying
 // ("uploading") and flip to "synced" only once TDLib confirms completion.
 export async function setMediaRemote(

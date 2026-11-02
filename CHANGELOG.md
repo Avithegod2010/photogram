@@ -4,6 +4,24 @@ Each entry below documents what a commit adds and what comes next. Newest first.
 
 ---
 
+## v0.51 — Free up space (delete phone originals already safe in Telegram)
+
+- **Storage → "🗑️ Free up space"**: a dedicated screen that deletes phone originals once
+  they are safely in Telegram. Safety rails (probe-verified): only VISIBLE + NON-FAVORITE
+  + state='synced' + 7+ days old + rows that carry a MediaLibrary asset id. Favorites
+  and anything from the last 7 days are never offered; trashed/hidden/archived items
+  never appear. Deletion runs in batches of 40 via expo-media-library, and a row's
+  local_uri is only nulled AFTER the device delete succeeds (a stalled pass leaves the
+  row intact — owner reruns; Android's own trash is the last guard). After a successful
+  pass the items show as cloud copies.
+- **New helpers**: countFreeable / listFreeable / listFreeableAssets / markMediaCloudOnly
+  in queries.ts (FREE_MIN_AGE_MS, FREEABLE_WHERE).
+- **uploader.ts untouched** — deleted rows are 'synced', never queued, so the worker
+  cannot be affected.
+- **Probe: 265/265** (universe count/bytes, asset feed ordering, cleared-row state) +
+  static 48/48 + tsc 0. Device: pure JS, Metro refresh is enough (no new native).
+- **Version bump: 0.51.0.**
+
 ## v0.48 — Story background music (homemade, zero license risk) — NEEDS REBUILD (expo-audio)
 
 - The story "on this day" player now has a quiet ambient background loop while photos play.
