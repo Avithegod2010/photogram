@@ -4,6 +4,17 @@ Each entry below documents what a commit adds and what comes next. Newest first.
 
 ---
 
+## v0.54 — Duplicate merge tool (keep one, trash the rest)
+
+- **Storage → "🧬 Merge duplicates"**: groups near-identical shots (same-day, pHash
+  within the junk sweeper's threshold) and lets the owner tap the keeper — the rest go
+  to Trash with `trash_reason = 'merge'` so the v0.39 "restore merged" flow can undo.
+  Nothing is permanently deleted here; the 30-day trash window still applies and Free up
+  space can reclaim the bytes afterwards.
+- Reuses the existing `findDuplicateGroups()` clustering — no new SQL, no schema change.
+- **Probe: 267/267** (clustering smoke test) + static 48/48 + tsc 0. Device: JS-only,
+  Metro refresh.
+
 ## v0.53 — App shortcuts (launcher long-press)
 
 - **Long-press the Photogram icon** → "Open gallery" / "Albums" / "Settings" jump straight
