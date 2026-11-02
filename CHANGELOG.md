@@ -4,6 +4,16 @@ Each entry below documents what a commit adds and what comes next. Newest first.
 
 ---
 
+## v0.53 — App shortcuts (launcher long-press)
+
+- **Long-press the Photogram icon** → "Open gallery" / "Albums" / "Settings" jump straight
+  in. Powered by `expo-quick-actions` (config plugin registered in app.config.ts); the
+  shortcuts are registered on first ready launch and routed via a navigation ref. On
+  Android the plugin emits the shortcuts XML; on iOS it uses the native API.
+- **New dependency**: expo-quick-actions@6.0.2 (rides the pending gradle rebuild for the
+  native shortcuts XML; JS-only would not be enough here).
+- **Probe: unchanged** (no data/ML code; screens only). static 48/48 + tsc 0.
+
 ## v0.52 — Hindi localization (pass 1, JS-only)
 
 - **New `src/lib/i18n.ts`** — a tiny translation helper (`t(key)`) backed by MMKV
