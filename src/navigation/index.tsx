@@ -17,6 +17,7 @@ import { WrappedScreen } from "../screens/WrappedScreen";
 import { EditScreen } from "../screens/EditScreen";
 import { JunkSweeperScreen } from "../screens/JunkSweeperScreen";
 import { SimilarScreen } from "../screens/SimilarScreen";
+import { DuplicateMergeScreen } from "../screens/DuplicateMergeScreen";
 import { SlideshowScreen } from "../screens/SlideshowScreen";
 import { SavedSearchScreen } from "../screens/SavedSearchScreen";
 import { AlbumRulesScreen } from "../screens/AlbumRulesScreen";
@@ -51,6 +52,7 @@ export type RootStackParamList = {
   Edit: { mediaId: number };
   JunkSweeper: undefined;
   Similar: { mode?: "similar" | "groups"; mediaId?: number };
+  DuplicateMerge: undefined;
   Slideshow: { ids: number[]; index: number };
   SavedSearch: { id: number };
   Scenes: undefined;
@@ -98,6 +100,7 @@ export function RootNavigator() {
       <Stack.Screen name="Edit" component={EditScreen} />
       <Stack.Screen name="JunkSweeper" component={JunkSweeperScreen} />
       <Stack.Screen name="Similar" component={SimilarScreen} />
+      <Stack.Screen name="DuplicateMerge" component={DuplicateMergeScreen} />
       <Stack.Screen name="SavedSearch" component={SavedSearchScreen} />
       <Stack.Screen name="Scenes" component={ScenesScreen} />
       <Stack.Screen name="Storage" component={StorageScreen} />

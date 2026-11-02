@@ -21,7 +21,7 @@ import { theme } from "../theme";
 export function StorageScreen({
   navigation,
 }: {
-  navigation: NativeStackNavigationProp<{ Viewer: { ids: number[]; index: number }; FreeUpSpace: undefined }>;
+  navigation: NativeStackNavigationProp<{ Viewer: { ids: number[]; index: number }; FreeUpSpace: undefined; DuplicateMerge: undefined }>;
 }) {
   const insets = useSafeAreaInsets();
   const [largest, setLargest] = useState<LargeItem[] | null>(null);
@@ -142,6 +142,19 @@ export function StorageScreen({
             <Text style={styles.catSub}>
               Delete originals already safe in Telegram — 7+ day-old, non-favorite, fully synced
               items only.
+            </Text>
+          </View>
+          <Text style={styles.catBytes}>›</Text>
+        </Pressable>
+        <Pressable
+          style={styles.card}
+          onPress={() => navigation.navigate("DuplicateMerge")}
+          android_ripple={{ color: theme.colors.outlineVariant }}
+        >
+          <View style={{ flex: 1 }}>
+            <Text style={styles.catLabel}>🧬 Merge duplicates</Text>
+            <Text style={styles.catSub}>
+              Group near-identical shots and keep one — the rest go to Trash (restorable).
             </Text>
           </View>
           <Text style={styles.catBytes}>›</Text>
