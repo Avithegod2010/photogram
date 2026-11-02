@@ -1,6 +1,8 @@
 import React, { useEffect } from "react";
 import { StyleSheet } from "react-native";
 import { StatusBar } from "expo-status-bar";
+import * as QuickActions from "expo-quick-actions";
+import { createNavigationContainerRef } from "@react-navigation/native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { NavigationContainer } from "@react-navigation/native";
 import { useAuthStore } from "./src/auth/authStore";
@@ -19,8 +21,42 @@ import { startNotifyLoop } from "./src/lib/notify";
 import { syncPendingNotes } from "./src/lib/notes";
 import { theme } from "./src/theme";
 
+const navigationRef = createNavigationContainerRef<any>();
+
 export default function App() {
   const phase = useAuthStore((s) => s.phase);
+
+  // v0.53 app shortcuts: set up the launcher shortcuts once and route them.
+  useEffect(() => {
+    if (phase !== "ready") return;
+    let sub: { remove: () => void } | null = null;
+    void (async () => {
+      try {
+        const supported = await QuickActions.isSupported();
+        if (!supported) return;
+        await QuickActions.setItems([
+          { id: "gallery", title: "Open gallery", icon: "search" },
+          { id: "albums", title: "Albums", icon: "photo" },
+          { id: "settings", title: "Settings", icon: "settings" },
+        ]);
+      } catch {}
+    })();
+    try {
+      sub = QuickActions.addListener((action) => {
+        const nav = navigationRef.current;
+        if (!nav) return;
+        const id = action?.id;
+        if (id === "gallery") nav.navigate("Tabs", { screen: "Gallery" });
+        else if (id === "albums") nav.navigate("Albums");
+        else if (id === "settings") nav.navigate("Tabs", { screen: "Settings" });
+      });
+    } catch {}
+    return () => {
+      try {
+        sub?.remove();
+      } catch {}
+    };
+  }, [phase]);
 
   useEffect(() => {
     if (phase !== "ready") return;
@@ -48,7 +84,7 @@ export default function App() {
     <GestureHandlerRootView style={styles.container}>
       <StatusBar style="light" />
       {phase === "ready" ? (
-        <NavigationContainer>
+        <NavigationContainer ref={navigationRef}>
           <RootNavigator />
         </NavigationContainer>
       ) : (

@@ -29,6 +29,7 @@ import { MemoriesCarousel } from "../components/MemoriesCarousel";
 import { collectOnboardingFacts, dismissOnboarding, isOnboardingDismissed, listPendingOnboardingSteps, shouldShowChecklist, OnboardingStep } from "../lib/onboarding";
 import { useSettingsStore } from "../store/settingsStore";
 import { theme } from "../theme";
+import { t } from "../lib/i18n";
 
 type StackNav = NativeStackNavigationProp<{
   Viewer: { ids: number[]; index: number };
@@ -743,7 +744,7 @@ export function GalleryScreen() {
           </View>
         ) : (
           <>
-            <Text style={styles.title}>Gallery</Text>
+            <Text style={styles.title}>{t("tabs.gallery")}</Text>
             <View style={styles.headerRight}>
               <Pressable style={styles.searchBtn} onPress={beginScan} hitSlop={6}>
                 <Text style={styles.searchBtnIcon}>⟳</Text>
@@ -786,10 +787,10 @@ export function GalleryScreen() {
       {heartbeat && heartbeat.total > 0 ? (
         <Text style={styles.heartbeat}>
           {heartbeat.synced >= heartbeat.total
-            ? `🔒 All ${heartbeat.total} backed up${
+            ? `🔒 ${t("gallery.heartbeat.all")} ${heartbeat.total}${
                 heartbeat.lastSyncedAt ? ` · ${timeAgo(heartbeat.lastSyncedAt)}` : ""
               }`
-            : `🔒 ${heartbeat.synced}/${heartbeat.total} in Telegram${
+            : `🔒 ${heartbeat.synced}/${heartbeat.total} ${t("gallery.heartbeat.partial")}${
                 heartbeat.lastSyncedAt ? ` · last backup ${timeAgo(heartbeat.lastSyncedAt)}` : ""
               }`}
         </Text>
@@ -884,10 +885,8 @@ export function GalleryScreen() {
               </View>
             </View>
           ) : null}
-          <Text style={styles.emptyTitle}>No photos yet</Text>
-          <Text style={styles.emptyBody}>
-            Scan your device library to build your local index and start backing up.
-          </Text>
+          <Text style={styles.emptyTitle}>{t("gallery.empty.title")}</Text>
+          <Text style={styles.emptyBody}>{t("gallery.empty.body")}</Text>
           <Pressable style={styles.cta} onPress={beginScan}>
             <Text style={styles.ctaText}>Scan device library</Text>
           </Pressable>

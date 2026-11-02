@@ -15,6 +15,7 @@ import { GalleryScreen } from "../screens/GalleryScreen";
 import { CollectionsScreen } from "../screens/CollectionsScreen";
 import { SettingsScreen } from "../screens/SettingsScreen";
 import { theme } from "../theme";
+import { t } from "../lib/i18n";
 
 export type RootTabParamList = {
   Gallery: undefined;
@@ -157,9 +158,15 @@ export function RootTabs() {
         tabBarStyle: styles.tabBar,
         tabBarActiveTintColor: theme.colors.primary,
         tabBarInactiveTintColor: theme.colors.onSurfaceVariant,
-        tabBarLabel: ({ color }) => (
-          <Text style={[styles.tabLabel, { color }]}>{route.name}</Text>
-        ),
+        tabBarLabel: ({ color }) => {
+          const label =
+            route.name === "Gallery"
+              ? t("tabs.gallery")
+              : route.name === "Collections"
+              ? t("tabs.collections")
+              : t("tabs.settings");
+          return <Text style={[styles.tabLabel, { color }]}>{label}</Text>;
+        },
         tabBarIcon: ({ color, focused }) => (
           <TabIcon routeName={route.name as keyof RootTabParamList} color={color} focused={focused} />
         ),

@@ -32,6 +32,7 @@ import { useSettingsStore, UploadQuality } from "../store/settingsStore";
 import { enableNotifications } from "../lib/notify";
 import { useAuthStore } from "../auth/authStore";
 import { theme } from "../theme";
+import { t, getLocale, setLocale, Locale } from "../lib/i18n";
 
 type SettingsNav = NativeStackNavigationProp<{ Migrate: undefined; JunkSweeper: undefined; Storage: undefined; Diagnostics: undefined; Export: undefined }>;
 
@@ -86,6 +87,7 @@ export function SettingsScreen() {
   const setShowDateOnPhotos = useSettingsStore((s) => s.setShowDateOnPhotos);
   const storyMusic = useSettingsStore((s) => s.storyMusic);
   const setStoryMusic = useSettingsStore((s) => s.setStoryMusic);
+  const [localeTick, setLocaleTick] = useState(0);
   const uploadGapSeconds = useSettingsStore((s) => s.uploadGapSeconds);
   const setUploadGapSeconds = useSettingsStore((s) => s.setUploadGapSeconds);
   const dailyBudgetGb = useSettingsStore((s) => s.dailyBudgetGb);
@@ -336,33 +338,53 @@ export function SettingsScreen() {
             onChange={setExifPreserve}
           />
           <ToggleRow
-            label="Upload on Wi-Fi only"
+            label={t("settings.wifiOnly")}
             sub="Queue uploads until a Wi-Fi connection is available"
             value={wifiOnlyUpload}
             onChange={setWifiOnlyUpload}
           />
           <ToggleRow
-            label="Upload only while charging"
+            label={t("settings.chargeOnly")}
             value={chargeOnlyUpload}
             onChange={setChargeOnlyUpload}
           />
           <ToggleRow
-            label="Show date in every photo"
+            label={t("settings.showDate")}
             sub="Show the capture date on every photo tile in the gallery. Turn off for a cleaner grid."
             value={showDateOnPhotos}
             onChange={setShowDateOnPhotos}
           />
           <ToggleRow
-            label="Story background music"
+            label={t("settings.storyMusic")}
             sub="A quiet, self-made ambient loop plays while photos play as a story. No third-party audio."
             value={storyMusic}
             onChange={setStoryMusic}
           />
         </Section>
 
-        <Section title="Auto-backup">
+        <Section title={t("settings.section.language")}>
+          {(["en", "hi"] as Locale[]).map((loc) => (
+            <Pressable
+              key={loc}
+              style={styles.row}
+              onPress={() => {
+                setLocale(loc);
+                setLocaleTick((n) => n + 1);
+              }}
+            >
+              <Text style={styles.rowLabel}>
+                {loc === "en" ? "English" : "हिंदी"}
+              </Text>
+              <Text style={styles.rowLabel}>
+                {getLocale() === loc ? "✓" : ""}
+              </Text>
+            </Pressable>
+          ))}
+        </Section>
+
+        <Section title={t("settings.section.auto")}>
           <ToggleRow
-            label="Back up new photos automatically"
+            label={t("settings.autoBackup")}
             sub="Photogram quietly rescans every 5 minutes and queues anything new. Wi-Fi/charging rules still apply."
             value={autoBackupEnabled}
             onChange={setAutoBackupEnabled}
@@ -457,7 +479,7 @@ export function SettingsScreen() {
           ) : null}
         </Section>
 
-        <Section title="Storage">
+        <Section title={t("settings.section.storage")}>
           {totals === null ? (
             <ActivityIndicator color={theme.colors.primary} style={{ padding: theme.spacing.lg }} />
           ) : (

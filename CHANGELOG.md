@@ -4,6 +4,21 @@ Each entry below documents what a commit adds and what comes next. Newest first.
 
 ---
 
+## v0.52 — Hindi localization (pass 1, JS-only)
+
+- **New `src/lib/i18n.ts`** — a tiny translation helper (`t(key)`) backed by MMKV
+  `locale` ('en' | 'hi'), with a curated Hindi dictionary covering the gallery, tabs,
+  settings root, and common actions. Default is English; switch in Settings → "Language".
+- **SettingsScreen**: language picker row (English / हिंदी) + localized section titles
+  and toggle labels for the most-used rows (auto-backup, Wi-Fi, charging, story music,
+  notifications master).
+- **GalleryScreen**: header title + the heartbeat line use `t()`; empty-state title uses
+  `t()`. Other surfaces keep English as the fallback (any missing key falls back to
+  English, so nothing ever shows a raw key).
+- **Probe**: added a pure `t()`/`setLocale` test (round-trips EN→HI→EN, falls back).
+- **Device note**: JS-only, Metro refresh is enough. The dictionary is intentionally
+  partial — the owner can extend it by adding keys; missing keys never break the UI.
+
 ## v0.51 — Free up space (delete phone originals already safe in Telegram)
 
 - **Storage → "🗑️ Free up space"**: a dedicated screen that deletes phone originals once

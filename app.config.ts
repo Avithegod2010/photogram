@@ -69,7 +69,7 @@ const config: ExpoConfig = {
   web: {
     favicon: "./assets/favicon.png",
   },
-  plugins: ["expo-sqlite"],
+  plugins: ["expo-sqlite", "expo-quick-actions"],
   extra: {
     tdlibApiId: secrets.apiId,
     tdlibApiHash: secrets.apiHash,
