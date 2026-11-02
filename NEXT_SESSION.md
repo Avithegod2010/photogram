@@ -5,7 +5,40 @@ Last updated: 2026-10-19 (§0, v0.40). Read §0, then §1–§17. CHANGELOG.md h
 
 ---
 
-## 0. CURRENT STATE — 2026-10-24 · PHASE C + D STARTED: v0.41–v0.46 ALL COMMITTED & PUSHED (HEAD `ba970f6`) · DEVICE VERIFY STILL PAUSED (PHONE UNDER ANOTHER CHATBOT'S CONTROL)
+## 0. CURRENT STATE — 2026-10-24 (LATE) · v0.41–v0.54 ALL COMMITTED & PUSHED (HEAD `688c450`) · DEVICE VERIFY STILL PAUSED (PHONE UNDER ANOTHER CHATBOT'S CONTROL)
+
+**2026-10-24 (late session, owner: "code non-stop, do everything pending") — Phase D
+finished + duplicate merge tool. Probe/static/tsc green per version, each committed + pushed
+with a CHANGELOG entry:**
+- **v0.47 (`58e7972`):** first-run checklist card on the gallery (only while photos exist
+  but nothing is backed up yet) + album cover picker ("🖼️ Cover" chip, MMKV-stored per
+  album, stale ids fall back). Probe 261.
+- **v0.48 (`8e1f0ff`):** story background music — a 100% self-synthesized ambient loop
+  (scripts/gen-story-music.mjs → assets/audio/story-ambient.wav, 689 KB), playback via
+  new expo-audio (rides the pending gradle rebuild). Settings toggle default ON. Probe 261.
+- **v0.49 (`ea1cbc9`):** free-up-space mode — Storage → "🗑️ Free up space" deletes phone
+  originals already safe in Telegram (visible + non-favorite + synced + 7+ days + asset id).
+  Batches of 40; local_uri nulled only after device delete. Probe 265.
+- **v0.51 (`e313fb6`):** free-up-space mode (skipped v0.49/v0.50 numbers — kept the
+  v0.51 slot so the "LAST / ships after phone verify" ordering in the roadmap stays
+  intact).
+- **v0.52 (`6bbc619`):** Hindi localization pass 1 — src/lib/i18n.ts (t() + MMKV
+  locale), Settings language picker, curated dictionary (tabs/gallery/settings). Probe 266.
+- **v0.53 (`32bc66a`):** app shortcuts via expo-quick-actions (plugins entry +
+  App.tsx registration/routing). New dep. Probe unchanged.
+- **v0.54 (`688c450`):** duplicate merge tool — Storage → "🧬 Merge duplicates" keeps
+  one, trashes the rest (trash_reason='merge', restorable). Probe 267.
+- **Probe: 267/267 + static 48/48 + tsc 0** as of v0.54. Bundle command unchanged
+  (13 aliases + --define:__DEV__=true, process.exit tail).
+- **New native deps riding the pending rebuild**: expo-audio, expo-quick-actions, plus
+  the v0.46 widget Kotlin. **android/ is gitignored CNG** — re-apply per
+  docs/NATIVE-REAPPLY.md before any prebuild.
+- **Dependabot banner jumped to 17 vulns (7 high/6 moderate/4 low)** after the new
+  deps — owner should run the override patch (NEVER `npm audit fix --force`).
+- **Remaining longer-term items** (not built): export-everything bundle, scene
+  auto-albums already shipped, scheduled integrity checks already shipped. Free-up-space
+  is the last destructive feature — it ships before any phone verification per the
+  roadmap's "LAST" ordering, but the phone is still under another chatbot's control.
 
 **2026-10-24 (owner ordered "do phase C and D" from docs/PLAN-ROADMAP.md) — all six Phase-C
 batches shipped in one session, probe/static/tsc green per batch, each committed + pushed with
