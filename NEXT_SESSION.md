@@ -5,7 +5,35 @@ Last updated: 2026-11-04 (§0, v0.54 + device-verify tooling). Read §0, then §
 
 ---
 
-## 0. CURRENT STATE — 2026-11-04 · v0.41–v0.54 COMMITTED & PUSHED · APK REBUILD IN PROGRESS (memory-tuned) · DEVICE VERIFY BLOCKED ON PHONE BEING OFFLINE
+## 0. CURRENT STATE — 2026-11-05 · v0.54.2 PUSHED · APK INSTALLED ON THE PHONE · UPLOADS RUNNING · DEVICE CHECKS PARTLY DONE
+
+**2026-11-05 — the APK finally reached the phone and the on-device run started.**
+- **v0.54.2 (`605361c`) fixes a real on-device bug:** a kill during an upload left
+  `upload_queue.status='active'` + `media.state='uploading'`; `nextQueued()` only reads
+  `'pending'`, so photos were stranded forever (the phone had **7 stuck since 2026-10-17**,
+  still counted as "queued"). `recoverInterruptedUploads()` (queries.ts, called from App.tsx
+  before `startAutoBackupLoop`) parks them back to pending. Probe 269/269.
+- **Verified on the phone (SM-S942B, Android 17):** install 180,766,900 B; app boots to the
+  gallery (`🔒 1953/2186 in Telegram · last backup 18d ago`); schema migrated **18 → 20** on
+  the live DB; auth session resumed (no QR); Settings (uploads live, storage stats, 6-month
+  chart), Collections (doc albums 10 receipts / 33 documents), People & Pets all render;
+  **FaceNet-128 downloaded** to `files/models/facenet-128.tflite` + SELECTED; face detection
+  toggled ON; Step 3 "Detect & embed" shows `2312 photos left to detect`.
+- **Uploads resumed by themselves:** 734 pending / 2,215 done, ~20 GB to go.
+- **The APK is a DEBUG dev-client build**, so JS comes from Metro. If the app process dies or
+  the phone reboots, it shows the dev launcher until someone runs
+  `npx expo start --dev-client --port 8081` and relaunches with the deep link
+  `exp+photogram://expo-development-client/?url=http%3A%2F%2F127.0.0.1%3A8081`
+  (`E:\Dev\verify-photogram.ps1` does the reverse + deep link). A **release APK** would
+  remove that dependency; it needs one more full build and `run-as` DB pulls stop working.
+- **Wireless debugging is flaky** — the port rotates (38827 → 36383 → 46357 → 41775) and the
+  connection drops when the screen sleeps. Reconnect with
+  `adb mdns services` → `adb connect <ip>:<port>`. USB debugging would be stable.
+- **Settings → auto-backup folders says "No device albums found"** even with full
+  `READ_MEDIA_IMAGES` (granted). v0.54.2 now distinguishes a `getAlbumsAsync` failure from an
+  empty list and logs the error — check logcat on the next run.
+- `E:\Dev\verify-photogram.ps1` and `scripts/inspect-device-db.mjs` are the tooling; the
+  checklist is `docs/DEVICE-VERIFY.md`.
 
 **2026-11-04 — device-verification session (owner: "do the device verification for me").**
 Nothing new shipped; the APK rebuild and the verification tooling were prepared:

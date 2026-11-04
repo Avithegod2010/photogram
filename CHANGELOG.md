@@ -29,6 +29,11 @@ Found by actually running the app on the phone (SM-S942B, Android 17) against th
   resumed, gallery + heartbeat (`1953/2186 in Telegram`), Settings/Collections/Storage render,
   FaceNet-128 downloaded to `files/models/facenet-128.tflite` and selected, face detection
   toggled ON. Probe 269/269 + static 49/49 + tsc 0.
+- **Run log:** `docs/DEVICE-VERIFY.md` §7b records exactly what passed, what is still manual
+  (widget, tile, onboarding, album cover, Hindi, shortcuts, merge, integrity/export/junk,
+  free-up-space last) and the debug-build caveat (the dev client needs Metro; a release APK
+  would not). `NEXT_SESSION.md` §0 has the same summary plus the reconnect recipe for the
+  rotating wireless-debug port.
 
 ## v0.54.1 — Device-verification session: free-up-space runtime bug + build fixes
 

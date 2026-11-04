@@ -177,6 +177,34 @@ the designed behaviour, not a bug.
 
 ---
 
+## 7b. Run log — 2026-11-05 (SM-S942B, Android 17, debug dev-client APK)
+
+Done and passing:
+- 180,766,900-byte APK installed; cold start to the gallery, no red box.
+- Heartbeat `🔒 1953/2186 in Telegram · last backup 18d ago`.
+- **Schema migrated 18 → 20** on the live DB (`meta.schema_version`, ~2,199 rows,
+  31.8 GB) — verified with `scripts/inspect-device-db.mjs` against a `run-as` pull.
+- Session resumed without a QR (Account shows the Telegram name).
+- Settings (upload queue live, storage stats, 6-month chart), Collections (Receipts 10,
+  Documents 33), People & Pets all render.
+- FaceNet-128 (~23 MB) downloaded → **SELECTED**, model at `files/models/facenet-128.tflite`;
+  "Find faces in photos" ON; Step 3 shows `2312 photos left to detect · 0 faces to embed`.
+- Uploads resumed by themselves: 734 pending / 2,215 done / 0 failed.
+
+Found on the device and fixed in v0.54.2:
+- **7 photos stranded in `uploading` since 2026-10-17** — orphaned `active` queue rows after a
+  kill are never reset at boot, and `nextQueued()` only reads `pending`. Now swept at mount.
+- People & Pets still claimed face grouping "arrives in the next update" (shipped in v0.34.1).
+- Auto-backup folder picker said "No device albums found" when `getAlbumsAsync` threw.
+  Check logcat for `[settings] getAlbumsAsync failed` to see the real error.
+
+Still to check by hand: widget, quick-settings tile, onboarding card, album cover, Hindi
+switch, launcher shortcuts, merge duplicates, integrity/export/junk/trash, and **free up space
+last** (only after the upload queue drains). The debug build needs Metro running; if the app
+is killed it opens the dev launcher until the bundle is served again.
+
+---
+
 ## 8. Report template
 
 For each unchecked box, note: screen, what you did, what you expected, what happened, and grab
