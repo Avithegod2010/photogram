@@ -37,8 +37,10 @@ while the bulk backup is uploading.
      `scripts/inspect-device-db.mjs` (schema version, state split, queue, bytes, freeable count)
 
 3. Pass criteria: app launches to the gallery, screenshot shows photos (or the honest empty
-   state), logcat has **no fatal/JS errors**, and `schema` prints **20** (v0.41 = v20) with a
-   plausible `rows`/`bytes` count.
+   state), logcat has **no fatal/JS errors**, and the DB report shows `meta.schema_version`
+   **20** (the app stores the version in `meta`, not in `PRAGMA user_version`, which stays 0)
+   with a plausible `rows`/`bytes` count. A DB that was on 18 must migrate to 20 on first
+   launch — that migration is part of this check.
 
 > `run-as` only works on a debug build (ours). On a release build the DB section is skipped
 > and the manual checks below still apply.

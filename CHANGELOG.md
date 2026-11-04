@@ -4,6 +4,32 @@ Each entry below documents what a commit adds and what comes next. Newest first.
 
 ---
 
+## v0.54.2 — On-device verification: stranded uploads fixed
+
+Found by actually running the app on the phone (SM-S942B, Android 17) against the real
+2,199-photo / 31.8 GB library:
+
+- **REAL BUG FIXED — photos stranded forever after a kill.** A kill/crash while an item is
+  uploading leaves its `upload_queue` row `active` and its media row `state='uploading'`;
+  `nextQueued()` only ever picks `pending`, so those photos never upload again (the device had
+  **7 photos stuck since 2026-10-17**, still counted as "queued" in Settings). New
+  `recoverInterruptedUploads()` parks orphaned `active` rows back to `pending` and flips their
+  media mirror to `queued`; `App.tsx` runs it at mount, before the backup loop starts. Probe
+  covers it (finished rows untouched).
+- **People & Pets copy was stale:** the setup screen said face grouping "arrives in the next
+  update" — grouping shipped in v0.34.1. It now explains that detection and grouping run on
+  the phone and that switching models re-processes the library.
+- **Folder picker:** `getAlbumsAsync` failures were swallowed and rendered as "No device
+  albums found." The screen now distinguishes "couldn't read device albums (check the Photos
+  permission)" from a genuinely empty list, and logs the error for logcat.
+- **DB inspector:** reads `meta.schema_version` (the app's real version — `PRAGMA user_version`
+  stays 0) and prints the expected value; exits with a clear message instead of a stack trace
+  when the adb pull produced an empty file.
+- **Verified on the device:** schema migrated **18 → 20** on the live DB, auth session
+  resumed, gallery + heartbeat (`1953/2186 in Telegram`), Settings/Collections/Storage render,
+  FaceNet-128 downloaded to `files/models/facenet-128.tflite` and selected, face detection
+  toggled ON. Probe 269/269 + static 49/49 + tsc 0.
+
 ## v0.54.1 — Device-verification session: free-up-space runtime bug + build fixes
 
 - **REAL BUG FIXED (Free up space, v0.51):** `FreeUpSpaceScreen` imported

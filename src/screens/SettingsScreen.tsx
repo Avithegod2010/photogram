@@ -129,6 +129,7 @@ export function SettingsScreen() {
 
   // Device albums for the auto-backup folder picker.
   const [deviceAlbums, setDeviceAlbums] = useState<Array<{ id: string; title: string }>>([]);
+  const [albumsError, setAlbumsError] = useState<string | null>(null);
   useEffect(() => {
     if (!autoBackupEnabled || deviceAlbums.length > 0) return;
     void (async () => {
@@ -140,7 +141,12 @@ export function SettingsScreen() {
             .filter((a) => (a.assetCount ?? 0) > 0)
             .map((a) => ({ id: a.id, title: a.title }))
         );
-      } catch {
+        setAlbumsError(null);
+      } catch (e) {
+        // Distinguish "the OS refused" from "there really are none" — the folder
+        // picker used to say "No device albums found" for both.
+        console.warn("[settings] getAlbumsAsync failed", e);
+        setAlbumsError(e instanceof Error ? e.message : String(e));
         setDeviceAlbums([]);
       }
     })();
@@ -442,7 +448,11 @@ export function SettingsScreen() {
                 </View>
               ))}
               {deviceAlbums !== null && deviceAlbums.length === 0 ? (
-                <Text style={styles.rowSub}>No device albums found.</Text>
+                <Text style={styles.rowSub}>
+                  {albumsError
+                    ? "Couldn't read device albums — check the Photos permission, then reopen this screen."
+                    : "No device albums found."}
+                </Text>
               ) : null}
             </>
           ) : null}

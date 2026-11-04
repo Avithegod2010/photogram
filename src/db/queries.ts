@@ -1072,6 +1072,30 @@ export async function resetActiveToPending(): Promise<void> {
   await db.runAsync("UPDATE upload_queue SET status = 'pending' WHERE status = 'active'");
 }
 
+// v0.54.2 — boot-time recovery for an interrupted upload run. A kill, crash or
+// power-off while an item is uploading leaves its queue row `active` and its
+// media row state='uploading'. `nextQueued()` only ever picks `pending`, so
+// without this sweep those photos are stranded: they still count as "queued" in
+// the UI but never upload again (seen on-device: 7 photos stuck since
+// 2026-10-17). Runs before the worker starts; rows already in flight in this
+// process are untouched because nothing is active yet at mount time.
+export async function recoverInterruptedUploads(): Promise<number> {
+  const db = await getDb();
+  const requeued = await db.runAsync(
+    "UPDATE upload_queue SET status = 'pending' WHERE status = 'active'"
+  );
+  await db.runAsync(
+    `UPDATE media SET state = 'queued', updated_at = ?
+      WHERE state = 'uploading'
+        AND EXISTS (
+          SELECT 1 FROM upload_queue q
+           WHERE q.media_id = media.id AND q.status = 'pending'
+        )`,
+    [Date.now()]
+  );
+  return requeued.changes;
+}
+
 // Removes surplus pending rows for the same media AND the same target chat
 // (the Back-up pill can be pressed repeatedly). Grouping includes chat_id so a
 // Saved-Messages row and a send-to-album row for one photo coexist (v0.20).

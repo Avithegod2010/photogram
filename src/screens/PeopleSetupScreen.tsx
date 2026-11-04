@@ -210,8 +210,9 @@ export function PeopleSetupScreen({
             );
           })}
           <Text style={styles.footnote}>
-            Face detection works without a model. The model powers the grouping step, which
-            arrives in the next update.
+            Face detection works without a model. With a model selected, Photogram also groups
+            similar faces into people — detection and grouping run on this phone, and switching
+            models re-processes the library.
           </Text>
         </View>
 

@@ -9,7 +9,7 @@ import { useAuthStore } from "./src/auth/authStore";
 import { LoginScreen } from "./src/screens/LoginScreen";
 import { RootNavigator } from "./src/navigation";
 import { purgeExpiredTrash } from "./src/lib/trash";
-import { repairTakenAtUnits } from "./src/db/queries";
+import { recoverInterruptedUploads, repairTakenAtUnits } from "./src/db/queries";
 import { startAutoBackupLoop } from "./src/lib/autoBackup";
 import { startJunkAutoSweepLoop } from "./src/lib/junkAutoSweep";
 import { startScheduledIntegrityLoop } from "./src/lib/integritySchedule";
@@ -66,6 +66,9 @@ export default function App() {
     // means those loops run next launch (they are all idempotent gates).
     void purgeExpiredTrash().catch(() => {});
     void repairTakenAtUnits().catch(() => {});
+    // Anything left "active"/"uploading" by a kill goes back in the queue before
+    // the worker looks for work (otherwise it is stranded forever).
+    void recoverInterruptedUploads().catch(() => {});
     startAutoBackupLoop();
     const t = setTimeout(() => {
       startJunkAutoSweepLoop();

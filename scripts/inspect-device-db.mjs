@@ -1,3 +1,4 @@
+import fs from "node:fs";
 // Read-only inspector for a DB pulled off the phone (adb run-as). Prints the
 // numbers the device-verification checklist cares about: schema version, media
 // state split, upload queue, byte totals, and the newest uploads.
@@ -7,6 +8,11 @@ import { DatabaseSync } from "node:sqlite";
 const file = process.argv[2];
 if (!file) {
   console.error("usage: node scripts/inspect-device-db.mjs <photogram.db>");
+  process.exit(2);
+}
+if (!fs.existsSync(file) || fs.statSync(file).size === 0) {
+  console.error(`empty or missing DB file: ${file}`);
+  console.error("(the adb pull probably failed — check 'adb devices' and re-run)");
   process.exit(2);
 }
 
@@ -21,7 +27,14 @@ function section(title) {
 try {
   const version = one("PRAGMA user_version");
   section("schema");
-  console.log("user_version:", version?.user_version ?? "(none)");
+  const metaVersion = one("SELECT value FROM meta WHERE key = 'schema_version'");
+  console.log(
+    "meta.schema_version:",
+    metaVersion?.value ?? "(none)",
+    "| PRAGMA user_version:",
+    version?.user_version ?? "(none)",
+    "| app code expects: 20"
+  );
 
   section("media by state");
   for (const row of all(
