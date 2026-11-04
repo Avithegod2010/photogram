@@ -5,12 +5,13 @@ import { Image } from "expo-image";
 import { StatusBar } from "expo-status-bar";
 import { ScrollView } from "react-native-gesture-handler";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
-import * as MediaLibrary from "expo-media-library";
+import * as MediaLibrary from "expo-media-library/legacy";
 import {
   markMediaCloudOnly,
   countFreeable,
   listFreeable,
   listFreeableAssets,
+  type FreeableAssetRow,
   type FreeableRow,
 } from "../db/queries";
 import { formatBytes } from "../lib/stats";
@@ -28,6 +29,34 @@ import { theme } from "../theme";
 // (those rows are 'local'/'failed', never offered here).
 
 const BATCH = 40;
+
+// A failed batch (owner cancelled the system dialog, or an asset vanished
+// between our query and the delete) must not brick the whole run: ask the OS
+// which of the batch's assets are really gone and null only those. Anything
+// still present keeps its local_uri and is offered again next time.
+async function reconcileMissing(rows: FreeableAssetRow[]): Promise<number> {
+  if (rows.length === 0) return 0;
+  try {
+    const perm = await MediaLibrary.getPermissionsAsync();
+    // "Selected photos" access (limited) makes getAssetInfoAsync answer null for
+    // files we simply cannot see — never treat that as gone.
+    if (!perm?.granted || perm.accessPrivileges === "limited") return 0;
+  } catch {
+    return 0;
+  }
+  const gone: number[] = [];
+  for (const r of rows) {
+    try {
+      const info = await MediaLibrary.getAssetInfoAsync(r.media_library_id);
+      if (!info) gone.push(r.id);
+    } catch {
+      // Unknown answer (permission/query error) — assume the file is still
+      // there. Never drop a row on a guess.
+    }
+  }
+  if (gone.length > 0) await markMediaCloudOnly(gone);
+  return gone.length;
+}
 
 export function FreeUpSpaceScreen({
   navigation,
@@ -60,7 +89,7 @@ export function FreeUpSpaceScreen({
       "Delete from your phone?",
       `${stats.count.toLocaleString()} item${stats.count === 1 ? "" : "s"} (${formatBytes(
         stats.bytes
-      )}) will be deleted from this phone. They stay in Telegram and Photogram will show them from the cloud.\n\nAndroid may show its own confirmation for the first item.`,
+      )}) will be deleted from this phone. They stay in Telegram and Photogram will show them from the cloud.\n\nAndroid will show its own "Allow" dialog for each batch of ${BATCH}, and it keeps the files in the gallery's Trash for 30 days — empty the Trash to get the space back right away.`,
       [
         { text: "Cancel", style: "cancel" },
         {
@@ -72,6 +101,7 @@ export function FreeUpSpaceScreen({
             void (async () => {
               let freed = 0;
               let bytes = 0;
+              let batchRows: FreeableAssetRow[] = [];
               try {
                 for (;;) {
                   const rows = await listFreeableAssets(BATCH);
@@ -84,17 +114,26 @@ export function FreeUpSpaceScreen({
                     batchBytes += r.byte_size;
                   }
                   if (byAsset.size === 0) break;
+                  batchRows = rows;
                   await MediaLibrary.deleteAssetsAsync([...byAsset.keys()]);
                   await markMediaCloudOnly([...byAsset.values()].map((v) => v.id));
+                  batchRows = [];
                   freed += byAsset.size;
                   bytes += batchBytes;
                   setProgressFreed(freed);
                 }
                 setDone({ freed, bytes });
               } catch {
+                const recovered = await reconcileMissing(batchRows);
+                if (recovered > 0) {
+                  freed += recovered;
+                  setProgressFreed(freed);
+                }
                 Alert.alert(
                   "Could not finish",
-                  "Some items may not have been deleted. Check Android's gallery trash, then try again — anything still on the phone will be offered again."
+                  recovered > 0
+                    ? `${recovered} item${recovered === 1 ? "" : "s"} were already gone and are now marked as cloud copies. Check Android's gallery trash, then run it again — anything still on the phone will be offered again.`
+                    : "Some items may not have been deleted. Check Android's gallery trash, then try again — anything still on the phone will be offered again."
                 );
               } finally {
                 setRunning(false);
@@ -124,6 +163,10 @@ export function FreeUpSpaceScreen({
         <Text style={styles.notice}>
           Favorites and anything from the last 7 days are never offered.
         </Text>
+        <Text style={styles.notice}>
+          Android moves deleted items to the gallery’s Trash, so the space comes back when you
+          empty the Trash (it empties itself after 30 days).
+        </Text>
         {stats === null ? (
           <ActivityIndicator color={theme.colors.primary} style={styles.loader} />
         ) : (
@@ -141,14 +184,19 @@ export function FreeUpSpaceScreen({
             >
               <Text style={styles.ctaText}>
                 {running
-                  ? `Deleting… ${progressFreed.toLocaleString()} freed — keep the app open`
+                  ? `Moving… ${progressFreed.toLocaleString()} done — keep the app open`
                   : `Free everything (${formatBytes(stats.bytes)})`}
               </Text>
             </Pressable>
             {done ? (
-              <Text style={styles.doneText}>
-                ✓ Freed {done.freed.toLocaleString()} items ({formatBytes(done.bytes)})
-              </Text>
+              <>
+                <Text style={styles.doneText}>
+                  ✓ Moved {done.freed.toLocaleString()} items ({formatBytes(done.bytes)}) to Trash
+                </Text>
+                <Text style={styles.notice}>
+                  Empty the gallery’s Trash to actually reclaim that space.
+                </Text>
+              </>
             ) : null}
           </>
         )}

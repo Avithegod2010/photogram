@@ -104,7 +104,8 @@ export function RootNavigator() {
       <Stack.Screen name="SavedSearch" component={SavedSearchScreen} />
       <Stack.Screen name="Scenes" component={ScenesScreen} />
       <Stack.Screen name="Storage" component={StorageScreen} />
-      <Stack.Screen name="FreeUpSpace" component={FreeUpSpaceScreen} />      <Stack.Screen name="Diagnostics" component={DiagnosticsScreen} />
+      <Stack.Screen name="FreeUpSpace" component={FreeUpSpaceScreen} />
+      <Stack.Screen name="Diagnostics" component={DiagnosticsScreen} />
       <Stack.Screen name="Journal" component={JournalScreen} />
       <Stack.Screen name="Highlights" component={HighlightsScreen} />
       <Stack.Screen name="PeopleSetup" component={PeopleSetupScreen} />

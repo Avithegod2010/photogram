@@ -8,6 +8,41 @@ if a rebuild produces an APK without these, they were lost and must be re-applie
 
 - Aliyun/Tencent gradle mirrors in `android/build.gradle`, long HTTP timeouts in
   `gradle.properties` (see NEXT_SESSION.md).
+- **Memory tuning (8 GB dev machine, added 2026-11-04).** `android/gradle.properties` must
+  contain, or the Kotlin daemon dies with "paging file is too small" / Gradle's node helper
+  aborts with `NTSTATUS 0xC0000409`:
+  ```properties
+  org.gradle.jvmargs=-Xmx1536m -XX:MaxMetaspaceSize=384m -XX:ReservedCodeCacheSize=192m
+  kotlin.daemon.jvmargs=-Xmx1024m -XX:MaxMetaspaceSize=256m -XX:ReservedCodeCacheSize=128m
+  ```
+  Also stop WSL (`wsl --shutdown`) and Docker Desktop before building — they hold 1-2 GB.
+  Build with `--no-daemon` to avoid stacking daemons.
+- **expo-asset must stay on SDK 57.** `expo-audio` declares an `expo-asset: "*"` peer, so a
+  bare `npm install` can hoist the SDK 58 build (58.0.18) and break
+  `expoAutolinking` settings evaluation ("Field 'version' is required ... Publication").
+  `package.json` now pins `expo-asset: ~57.0.20` — never remove it; if npm hoists 58 again,
+  run `npx expo install expo-asset`.
+- **react-native-fast-tflite needs `-g0` on this machine (added 2026-11-04).** Its debug
+  build compiles TFLite headers with `-O1 -g`; with `-g` a single translation unit needs
+  >2 GB of commit and clang aborts with `LLVM ERROR: out of memory` / `clang frontend
+  command failed due to signal` (the C++ half of People & Pets). Patch
+  `node_modules/react-native-fast-tflite/android/build.gradle`:
+  ```groovy
+  debug {
+    cppFlags "-O1 -g0 -fno-var-tracking"
+  }
+  ```
+  then delete `node_modules/react-native-fast-tflite/android/.cxx` and rebuild (the flags are
+  baked into `build.ninja`, so a stale `.cxx` keeps the old ones). **This edit lives in
+  node_modules — re-apply it after every `npm install`.** The .so ships without debug
+  symbols; nothing else changes.
+- If the native build still OOMs, compile that module serially instead of in parallel:
+  ```
+  gradlew :react-native-fast-tflite:configureCMakeDebug --no-daemon
+  cd node_modules\react-native-fast-tflite\android\.cxx\Debug\<hash>\arm64-v8a
+  E:\Dev\android-sdk\cmake\3.22.1\bin\ninja.exe -j1
+  ```
+  then run the normal `:app:assembleDebug` — Gradle reuses the finished objects.
 - `getForumTopics` edits inside `node_modules/react-native-tdlib` are re-applied by
   `scripts/patch-tdlib.js` (run after `npm install`).
 

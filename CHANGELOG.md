@@ -4,6 +4,42 @@ Each entry below documents what a commit adds and what comes next. Newest first.
 
 ---
 
+## v0.54.1 — Device-verification session: free-up-space runtime bug + build fixes
+
+- **REAL BUG FIXED (Free up space, v0.51):** `FreeUpSpaceScreen` imported
+  `expo-media-library` (the SDK 57 "next" class-based entry). In that entry `deleteAssetsAsync`
+  exists only as a **typed shim that throws at runtime** — tsc passed, probe passed, but the
+  feature could never delete anything on the phone. Now imports
+  `expo-media-library/legacy`, matching every other module (scanner/junk/restorer/space).
+  `static-checks.cjs` gained a guard so no source file can import the `next` entry again
+  (static now **49/49**).
+- **Failure recovery:** if a batch throws (owner cancels Android's allow dialog, or an asset
+  disappears between query and delete), the screen now asks the OS which of that batch's
+  assets are really gone and nulls only those, so a rerun makes progress instead of looping on
+  a stale batch. Anything still present keeps its `local_uri`. Copy corrected: Android asks
+  once **per batch of 40**, and the deleted files go to the gallery's **Trash** (30-day
+  restore window) — the screen now says so and tells you to empty the Trash to reclaim the
+  space immediately.
+- **Build unblocked (3 real failures):**
+  1. `expo-asset` had been hoisted to 58.0.18 by `expo-audio`'s `expo-asset: "*"` peer →
+     expoAutolinking settings aborted. Pinned `expo-asset: ~57.0.20` (`npx expo install
+     expo-asset`).
+  2. Kotlin daemon OOM ("paging file is too small") + Gradle's node helper `NTSTATUS
+     0xC0000409` on the 8 GB machine → `android/gradle.properties` retuned to
+     `org.gradle.jvmargs=-Xmx1536m` + `kotlin.daemon.jvmargs=-Xmx1024m`; stop WSL/Docker and
+     build with `--no-daemon`. Documented in `docs/NATIVE-REAPPLY.md` §0.
+  3. `react-native-fast-tflite`'s C++ died with `LLVM ERROR: out of memory` — its debug
+     config compiles TFLite headers with `-g`, which needs >2 GB of commit per file. Patched
+     the module's `build.gradle` to `cppFlags "-O1 -g0 -fno-var-tracking"` (node_modules
+     edit — **re-apply after every `npm install`**, documented in `NATIVE-REAPPLY.md` §0).
+- **New verification tooling (not shipped in the APK):**
+  `E:\Dev\verify-photogram.ps1` (install → launch → screenshot → logcat scan → `run-as` DB
+  pull) + `scripts/inspect-device-db.mjs` (read-only schema/state/queue/freeable report) and
+  the full on-device checklist in **`docs/DEVICE-VERIFY.md`**.
+- **Probe 267/267 + static 49/49 + tsc 0.** Device: the APK already in flight reports
+  versionName 0.54.0 (native-only; JS comes from Metro, so these fixes are live without a
+  rebuild).
+
 ## v0.54 — Duplicate merge tool (keep one, trash the rest)
 
 - **Storage → "🧬 Merge duplicates"**: groups near-identical shots (same-day, pHash

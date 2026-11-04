@@ -1,11 +1,35 @@
 # PHOTOGRAM — MASTER HANDOFF (read this fully before coding)
 
 _This file is the single source of truth for any AI agent or developer picking up this project cold.
-Last updated: 2026-10-19 (§0, v0.40). Read §0, then §1–§17. CHANGELOG.md has per-version notes._
+Last updated: 2026-11-04 (§0, v0.54 + device-verify tooling). Read §0, then §1–§17. CHANGELOG.md has per-version notes._
 
 ---
 
-## 0. CURRENT STATE — 2026-10-24 (LATE) · v0.41–v0.54 ALL COMMITTED & PUSHED (HEAD `688c450`) · DEVICE VERIFY STILL PAUSED (PHONE UNDER ANOTHER CHATBOT'S CONTROL)
+## 0. CURRENT STATE — 2026-11-04 · v0.41–v0.54 COMMITTED & PUSHED · APK REBUILD IN PROGRESS (memory-tuned) · DEVICE VERIFY BLOCKED ON PHONE BEING OFFLINE
+
+**2026-11-04 — device-verification session (owner: "do the device verification for me").**
+Nothing new shipped; the APK rebuild and the verification tooling were prepared:
+- **Build unblocked three times, all real bugs:**
+  1. `expo-asset` had been hoisted to **58.0.18** by `expo-audio`'s `expo-asset: "*"` peer →
+     expoAutolinking settings failed with "Field 'version' is required ... Publication".
+     Fixed by pinning `expo-asset: ~57.0.20` in package.json (`npx expo install expo-asset`).
+  2. Kotlin daemon OOM ("paging file is too small") + Gradle node helper `NTSTATUS
+     0xC0000409` on the 8 GB machine → `android/gradle.properties` retuned to
+     `-Xmx1536m` / `kotlin.daemon.jvmargs=-Xmx1024m`, WSL + Docker stopped, builds run with
+     `--no-daemon`.
+  3. `react-native-fast-tflite` C++ → `LLVM ERROR: out of memory`: its debug flags are
+     `-O1 -g`, and TFLite headers with debug info need >2 GB commit per file. Patched the
+     module to `-O1 -g0 -fno-var-tracking` (node_modules edit — re-apply after `npm install`,
+     `docs/NATIVE-REAPPLY.md` §0). Slow path if it ever recurs: `configureCMakeDebug`, then
+     `ninja -j1` inside `.cxx/Debug/<hash>/arm64-v8a`, then the normal assemble.
+- **New verification tooling:** `E:\Dev\verify-photogram.ps1` (auto-connects wireless mDNS,
+  `adb reverse`, dev-client deep link, install + launch + screenshot + logcat scan + `run-as`
+  DB pull) and `scripts/inspect-device-db.mjs` (read-only schema/state/queue/freeable
+  report). Full checklist: **`docs/DEVICE-VERIFY.md`**.
+- **Phone is on Wi-Fi but not paired with this PC** (mDNS: `192.168.29.30:38827`; `adb
+  connect` refused). Fix: plug in USB + tap Allow, or `adb pair <ip>:<port>` with the 6-digit
+  code from Developer options → Wireless debugging.
+- Commit `e696777` = expo-asset pin + DB inspector.
 
 **2026-10-24 (late session, owner: "code non-stop, do everything pending") — Phase D
 finished + duplicate merge tool. Probe/static/tsc green per version, each committed + pushed
@@ -16,9 +40,6 @@ with a CHANGELOG entry:**
 - **v0.48 (`8e1f0ff`):** story background music — a 100% self-synthesized ambient loop
   (scripts/gen-story-music.mjs → assets/audio/story-ambient.wav, 689 KB), playback via
   new expo-audio (rides the pending gradle rebuild). Settings toggle default ON. Probe 261.
-- **v0.49 (`ea1cbc9`):** free-up-space mode — Storage → "🗑️ Free up space" deletes phone
-  originals already safe in Telegram (visible + non-favorite + synced + 7+ days + asset id).
-  Batches of 40; local_uri nulled only after device delete. Probe 265.
 - **v0.51 (`e313fb6`):** free-up-space mode (skipped v0.49/v0.50 numbers — kept the
   v0.51 slot so the "LAST / ships after phone verify" ordering in the roadmap stays
   intact).
