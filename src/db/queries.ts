@@ -1,4 +1,5 @@
 import { getDb } from "./index";
+import type { HealthSnapshot } from "../lib/healthScore";
 
 export type MediaState = "local" | "queued" | "uploading" | "synced" | "failed";
 export type MediaVisibility = "visible" | "archived" | "trashed" | "hidden";
@@ -2349,6 +2350,50 @@ export async function getDigestStats(): Promise<DigestStats> {
     } catch {}
   }
   return stats;
+}
+
+// --- v0.55 backup health snapshot -----------------------------------------------
+
+// One round-trip for everything the health score needs. Kept next to the
+// digest query because they share the same integrity-report source of truth.
+export async function getHealthSnapshot(): Promise<HealthSnapshot> {
+  const db = await getDb();
+  const row = await db.getFirstAsync<{
+    total: number | null;
+    synced: number | null;
+    pending: number | null;
+    failed: number | null;
+    last: number | null;
+  }>(
+    `SELECT
+       SUM(CASE WHEN visibility = 'visible' THEN 1 ELSE 0 END) AS total,
+       SUM(CASE WHEN visibility = 'visible' AND state = 'synced' THEN 1 ELSE 0 END) AS synced,
+       SUM(CASE WHEN visibility != 'trashed' AND state IN ('local','queued','uploading') THEN 1 ELSE 0 END) AS pending,
+       SUM(CASE WHEN visibility != 'trashed' AND state = 'failed' THEN 1 ELSE 0 END) AS failed,
+       MAX(uploaded_at) AS last
+     FROM media`
+  );
+  let integrityBroken: number | null = null;
+  let integrityFinishedAt: number | null = null;
+  const rep = await getMeta("integrity_report");
+  if (rep) {
+    try {
+      const parsed = JSON.parse(rep) as { broken: number; finishedAt: number | null };
+      if (parsed.finishedAt !== null && typeof parsed.finishedAt === "number") {
+        integrityBroken = parsed.broken ?? 0;
+        integrityFinishedAt = parsed.finishedAt;
+      }
+    } catch {}
+  }
+  return {
+    totalVisible: row?.total ?? 0,
+    synced: row?.synced ?? 0,
+    pending: row?.pending ?? 0,
+    failed: row?.failed ?? 0,
+    integrityBroken,
+    integrityFinishedAt,
+    lastUploadAt: row?.last ?? null,
+  };
 }
 
 // --- v0.40 People v2 follow-ups + "then & now" ----------------------------------

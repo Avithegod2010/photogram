@@ -24,7 +24,8 @@ import { canUseBiometrics } from "../lib/biometrics";
 import { countFreeableBytes } from "../lib/trash";
 import { freeUpDeviceSpace } from "../lib/space";
 import { restoreMediaToDevice } from "../lib/restorer";
-import { getSyncedWithoutLocal, RestorableRow } from "../db/queries";
+import { getSyncedWithoutLocal, RestorableRow, getHealthSnapshot } from "../db/queries";
+import { computeHealth, type HealthGrade, type HealthResult } from "../lib/healthScore";
 import { pauseUploads, refreshCounts, resumeUploads, simulateRateLimitForTesting } from "../lib/uploader";
 import { useUploadStore } from "../store/uploadStore";
 import { safetyState, type SafetyStatus } from "../lib/uploadSafety";
@@ -35,6 +36,20 @@ import { theme } from "../theme";
 import { t, getLocale, setLocale, Locale } from "../lib/i18n";
 
 type SettingsNav = NativeStackNavigationProp<{ Migrate: undefined; JunkSweeper: undefined; Storage: undefined; Diagnostics: undefined; Export: undefined }>;
+
+// Green → amber → red, readable on the dark surface.
+function healthColor(grade: HealthGrade): string {
+  switch (grade) {
+    case "excellent":
+      return "#7BD88F";
+    case "good":
+      return "#A8C7FA";
+    case "fair":
+      return "#FFC46B";
+    default:
+      return "#FF8A80";
+  }
+}
 
 export function SettingsScreen() {
   const insets = useSafeAreaInsets();
@@ -50,6 +65,8 @@ export function SettingsScreen() {
   const [restoringText, setRestoringText] = useState<string | null>(null);
   // Danger zone status rows — re-read on mount, pull-to-refresh and simulate.
   const [safety, setSafety] = useState<SafetyStatus>(() => safetyState());
+  // v0.55 backup health score (recomputed on every load/pull-to-refresh).
+  const [health, setHealth] = useState<HealthResult | null>(null);
 
   const exifPreserve = useSettingsStore((s) => s.exifPreserve);
   const hiddenLockEnabled = useSettingsStore((s) => s.hiddenLockEnabled);
@@ -173,6 +190,9 @@ export function SettingsScreen() {
 
   const load = useCallback(async () => {
     setSafety(safetyState());
+    void getHealthSnapshot()
+      .then((s) => setHealth(computeHealth(s)))
+      .catch(() => setHealth(null));
     try {
       const [t, b, f, r] = await Promise.all([
         getStorageTotals(),
@@ -302,6 +322,45 @@ export function SettingsScreen() {
           >
             <Text style={styles.pauseText}>{uploadPaused ? "Resume uploads" : "Pause uploads"}</Text>
           </Pressable>
+        </Section>
+
+        <Section title="Backup health">
+          {health === null ? (
+            <Row label="Checking backup health…" muted />
+          ) : (
+            <View style={styles.healthCard}>
+              <View style={styles.healthTop}>
+                <View style={[styles.healthBadge, { borderColor: healthColor(health.grade) }]}>
+                  <Text style={[styles.healthScore, { color: healthColor(health.grade) }]}>
+                    {health.score}
+                  </Text>
+                  <Text style={styles.healthOutOf}>/100</Text>
+                </View>
+                <View style={styles.healthTextCol}>
+                  <Text style={styles.healthHeadline}>{health.headline}</Text>
+                  <Text style={[styles.healthGrade, { color: healthColor(health.grade) }]}>
+                    {health.grade.toUpperCase()}
+                  </Text>
+                </View>
+              </View>
+              {health.reasons.slice(0, 4).map((reason, i) => (
+                <Text key={i} style={styles.healthReason}>
+                  • {reason}
+                </Text>
+              ))}
+              {health.actions.length > 0 ? (
+                <Pressable
+                  style={({ pressed }) => [styles.healthBtn, pressed && styles.pressed]}
+                  android_ripple={{ color: theme.colors.outlineVariant }}
+                  onPress={() => navigation.navigate("Diagnostics")}
+                >
+                  <Text style={styles.healthBtnText}>
+                    {health.actions[0].label}
+                  </Text>
+                </Pressable>
+              ) : null}
+            </View>
+          )}
         </Section>
 
         <Section title="Backup preferences">
@@ -1087,6 +1146,38 @@ const styles = StyleSheet.create({
     borderTopRightRadius: 6,
   },
   barLabel: { color: theme.colors.onSurfaceVariant, fontSize: 10.5, marginTop: 6 },
+  // v0.55 backup health card
+  healthCard: {
+    backgroundColor: theme.colors.surface,
+    borderRadius: theme.radius.lg,
+    padding: theme.spacing.md,
+    gap: 6,
+  },
+  healthTop: { flexDirection: "row", alignItems: "center", gap: theme.spacing.md },
+  healthBadge: {
+    width: 74,
+    height: 74,
+    borderRadius: 37,
+    borderWidth: 3,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: theme.colors.surfaceContainer,
+  },
+  healthScore: { fontSize: 26, fontWeight: "800", lineHeight: 30 },
+  healthOutOf: { color: theme.colors.onSurfaceVariant, fontSize: 10.5 },
+  healthTextCol: { flex: 1, gap: 2 },
+  healthHeadline: { color: theme.colors.onSurface, fontSize: 15.5, fontWeight: "700" },
+  healthGrade: { fontSize: 11, fontWeight: "800", letterSpacing: 1 },
+  healthReason: { color: theme.colors.onSurfaceVariant, fontSize: 12.5, lineHeight: 18 },
+  healthBtn: {
+    marginTop: 6,
+    alignSelf: "flex-start",
+    paddingHorizontal: theme.spacing.md,
+    paddingVertical: 8,
+    borderRadius: theme.radius.full,
+    backgroundColor: theme.colors.surfaceHighest,
+  },
+  healthBtnText: { color: theme.colors.primary, fontSize: 13, fontWeight: "600" },
   footer: {
     color: theme.colors.onSurfaceVariant,
     fontSize: 12,

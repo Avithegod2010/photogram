@@ -4,6 +4,18 @@ Each entry below documents what a commit adds and what comes next. Newest first.
 
 ---
 
+## v0.55 — Trust, search & family (batch)
+
+### Backup health score
+- New **`src/lib/healthScore.ts`**: one 0–100 number with a grade, plain-English reasons and the
+  action that would raise it. Penalties are explicit (coverage, queue, failures, integrity,
+  staleness) and "never checked" costs a little and asks for a pass instead of pretending to be
+  verified. `getHealthSnapshot()` (queries.ts) gathers it in one round-trip.
+- Settings → **Backup health** card: score ring, grade, up to four reasons and a button into
+  Diagnostics. Recomputes on mount and on pull-to-refresh.
+- Probe: 7 checks (perfect / empty / half backed up / broken + failed / never checked / stale /
+  grade bands). Probe **276/276**, tsc 0.
+
 ## v0.54.3 — Cloud builds (EAS) + widget/tile survive prebuild
 
 - **EAS Build configured** (`eas.json`): `development` (dev-client APK, needs Metro),
