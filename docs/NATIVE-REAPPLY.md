@@ -59,6 +59,13 @@ if a rebuild produces an APK without these, they were lost and must be re-applie
   `TDLIB_API_HASH` (project env `development` + `preview`); `app.config.ts` falls back to
   them when `tdlib.secrets.json` is absent. Free plan = **15 Android + 15 iOS builds/month**,
   low-priority queue.
+- **OTA updates (added 2026-11-05, v0.55).** `expo-updates` is configured with
+  `runtimeVersion` = app version. For JS-only fixes after a build exists:
+  ```
+  npx eas-cli@latest update --branch preview --message "what changed"
+  ```
+  Bump `version` for native changes (new runtime → new build required); never publish an OTA
+  that needs a native module the installed binary lacks.
 - `getForumTopics` edits inside `node_modules/react-native-tdlib` are re-applied by
   `scripts/patch-tdlib.js` (run after `npm install`).
 

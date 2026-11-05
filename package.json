@@ -31,6 +31,7 @@
     "expo-sqlite": "~57.0.2",
     "expo-status-bar": "~57.0.1",
     "expo-system-ui": "~57.0.3",
+    "expo-updates": "~57.0.27",
     "expo-video": "~57.0.3",
     "expo-video-thumbnails": "~57.0.1",
     "jpeg-js": "^0.4.4",

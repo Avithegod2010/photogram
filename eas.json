@@ -15,11 +15,13 @@
       "distribution": "internal",
       "android": { "buildType": "apk" },
       "environment": "preview",
-      "credentialsSource": "local"
+      "credentialsSource": "local",
+      "channel": "preview"
     },
     "production": {
       "android": { "buildType": "app-bundle" },
-      "environment": "production"
+      "environment": "production",
+      "channel": "production"
     }
   }
 }

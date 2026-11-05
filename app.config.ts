@@ -80,6 +80,16 @@ const config: ExpoConfig = {
   web: {
     favicon: "./assets/favicon.png",
   },
+  // v0.55 OTA: JS-only fixes ship with `eas update` instead of a 30-minute build.
+  // The runtime is the app version, so an OTA can never land on a binary with a
+  // different native surface (expo-updates compares runtimeVersion first).
+  runtimeVersion: { policy: "appVersion" },
+  updates: {
+    url: "https://u.expo.dev/a4035bbc-d072-419f-abec-1123ff72089a",
+    enabled: true,
+    checkAutomatically: "ON_LOAD",
+    fallbackToCacheTimeout: 0,
+  },
   plugins: ["expo-sqlite", "expo-quick-actions", "./plugins/withPhotogramWidget"],
   extra: {
     tdlibApiId: secrets.apiId,

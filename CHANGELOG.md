@@ -6,6 +6,16 @@ Each entry below documents what a commit adds and what comes next. Newest first.
 
 ## v0.55 — Trust, search & family (batch)
 
+### EAS Update (OTA)
+- **`expo-updates ~57.0.27`** installed and configured: `runtimeVersion` is the app version
+  (policy `appVersion`) and `updates.url` points at the project. A JS-only fix can now ship
+  with `eas update --branch preview` in ~2 minutes instead of a 30-minute build, and an OTA can
+  never land on a binary with a different native surface.
+- `eas.json`: `preview` build profile gets `channel: "preview"`, `production` gets
+  `channel: "production"`, so builds and updates meet on the same channel.
+- **Scope note:** the APK currently on the phone was built *before* this change and has no
+  `expo-updates` runtime, so OTA starts working from the next big build.
+
 ### Bulk tagging
 - **`src/lib/tags.ts`**: `normalizeUserTags` moved out of ViewerScreen (unchanged behaviour, static
   check now pins this file) plus `mergeTagList` — case-insensitive de-dupe, keeps the owner's
