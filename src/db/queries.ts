@@ -298,6 +298,8 @@ export interface NewMediaInput {
   longitude?: number | null;
   // v0.19 editor: set on edited copies → the ROOT original's id.
   edited_from?: number | null;
+  // v0.55 checksum proof: SHA-256 of the local original (photos ≤ 8 MB only).
+  content_sha256?: string | null;
 }
 
 export interface QueueRow {
@@ -320,8 +322,8 @@ export async function insertMedia(input: NewMediaInput): Promise<number | null> 
   const result = await db.runAsync(
     `INSERT OR IGNORE INTO media
       (local_uri, thumb_uri, file_name, mime_type, byte_size, width, height, duration_ms,
-       taken_at, fingerprint, state, visibility, tags, latitude, longitude, media_library_id, edited_from, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'visible', ?, ?, ?, ?, ?, ?, ?)`,
+       taken_at, fingerprint, state, visibility, tags, latitude, longitude, media_library_id, edited_from, content_sha256, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'visible', ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       input.local_uri,
       input.thumb_uri,
@@ -339,6 +341,7 @@ export async function insertMedia(input: NewMediaInput): Promise<number | null> 
       input.longitude ?? null,
       input.media_library_id ?? null,
       input.edited_from ?? null,
+      input.content_sha256 ?? null,
       now,
       now,
     ]
@@ -2448,6 +2451,7 @@ export interface DrillCandidate {
   byte_size: number;
   remote_chat_id: string | null;
   remote_message_id: string | null;
+  content_sha256: string | null;
 }
 
 // Only items that are small enough to pull over a phone connection in a drill
@@ -2457,7 +2461,7 @@ export const DRILL_MAX_BYTES = 20 * 1024 * 1024;
 export async function listDrillCandidates(limit = 24): Promise<DrillCandidate[]> {
   const db = await getDb();
   return db.getAllAsync<DrillCandidate>(
-    `SELECT id, file_name, byte_size, remote_chat_id, remote_message_id
+    `SELECT id, file_name, byte_size, remote_chat_id, remote_message_id, content_sha256
        FROM media
       WHERE state = 'synced'
         AND visibility = 'visible'

@@ -6,6 +6,19 @@ Each entry below documents what a commit adds and what comes next. Newest first.
 
 ## v0.55 — Trust, search & family (batch)
 
+### Checksum proof
+- **Schema v21** adds `media.content_sha256` (additive). The scanner hashes photos up to
+  **8 MB** at scan time (`src/lib/checksum.ts`); videos and larger files stay `NULL` and are
+  reported as "unchecked" instead of pretending.
+- The **restore drill** re-hashes the downloaded Telegram copy before deleting it and compares:
+  a mismatch now fails the item with "Checksum mismatch — the Telegram copy differs from the
+  original", and the report lists how many files matched their recorded SHA-256 exactly.
+- `shouldHash` / `verifyChecksum` are pure and probe-tested; the probe also asserts the v21
+  column exists after migrations.
+- New **`npm run probe`** (`scripts/run-probe.ps1`) runs bundle + probe + static + tsc with the
+  full stub-alias list, so the commands can't drift (adds the new `expo-crypto` stub).
+- Probe **299/299**, static 58/58, tsc 0.
+
 ### EAS Update (OTA)
 - **`expo-updates ~57.0.27`** installed and configured: `runtimeVersion` is the app version
   (policy `appVersion`) and `updates.url` points at the project. A JS-only fix can now ship

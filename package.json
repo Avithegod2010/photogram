@@ -62,7 +62,8 @@
     "start": "expo start",
     "android": "expo run:android",
     "ios": "expo run:ios",
-    "web": "expo start --web"
+    "web": "expo start --web",
+    "probe": "powershell -ExecutionPolicy Bypass -File scripts/run-probe.ps1"
   },
   "overrides": {
     "brace-expansion": "^5.0.12",

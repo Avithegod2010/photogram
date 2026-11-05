@@ -9,6 +9,7 @@ import { nearestCity } from "./places";
 import { findDuplicate, quickFingerprint } from "./dedupe";
 import { decodeThumbToGray, pHash64, varianceOfLaplacian } from "./imageAnalysis";
 import { detectFaces } from "./faces";
+import { shouldHash, hashLocalFile } from "./checksum";
 import { mmkv, useSettingsStore } from "../store/settingsStore";
 
 export interface ScanProgress {
@@ -352,11 +353,14 @@ export async function scanDeviceLibrary(
 
         const thumbUri = await makeThumbnail(localUri, isVideo);
         const location = info.location ?? null;
+        const mime = mimeFromAsset(asset);
+        // v0.55 checksum proof: hash photos up to 8 MB once, at scan time.
+        const contentSha = shouldHash(byteSize, mime) ? await hashLocalFile(localUri) : null;
         const inserted = await insertMedia({
           local_uri: localUri,
           thumb_uri: thumbUri,
           file_name: asset.filename,
-          mime_type: mimeFromAsset(asset),
+          mime_type: mime,
           byte_size: byteSize,
           width: asset.width,
           height: asset.height,
@@ -368,6 +372,7 @@ export async function scanDeviceLibrary(
           latitude: location?.latitude ?? null,
           longitude: location?.longitude ?? null,
           media_library_id: asset.id ?? null,
+          content_sha256: contentSha,
         });
         if (inserted !== null) {
           progress.added++;

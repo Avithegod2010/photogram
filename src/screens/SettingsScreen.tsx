@@ -243,6 +243,12 @@ export function SettingsScreen() {
           return;
         }
         const lines: string[] = [`${report.ok}/${report.checked} downloaded and verified.`];
+        if (report.verified > 0) {
+          lines.push(`${report.verified} file(s) matched their recorded SHA-256 exactly.`);
+        }
+        if (report.checksumMismatches > 0) {
+          lines.push(`${report.checksumMismatches} file(s) did NOT match — see below.`);
+        }
         if (report.sizeDiffs > 0) {
           lines.push(`${report.sizeDiffs} file(s) differ in size from the index (expected for Storage saver uploads).`);
         }

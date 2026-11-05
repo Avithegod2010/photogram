@@ -44,7 +44,7 @@ while the bulk backup is uploading.
 
 3. Pass criteria: app launches to the gallery, screenshot shows photos (or the honest empty
    state), logcat has **no fatal/JS errors**, and the DB report shows `meta.schema_version`
-   **20** (the app stores the version in `meta`, not in `PRAGMA user_version`, which stays 0)
+   **21** (the app stores the version in `meta`, not in `PRAGMA user_version`, which stays 0)
    with a plausible `rows`/`bytes` count. A DB that was on 18 must migrate to 20 on first
    launch — that migration is part of this check.
 

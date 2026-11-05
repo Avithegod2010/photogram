@@ -33,7 +33,7 @@ try {
     metaVersion?.value ?? "(none)",
     "| PRAGMA user_version:",
     version?.user_version ?? "(none)",
-    "| app code expects: 20"
+    "| app code expects: 21"
   );
 
   section("media by state");

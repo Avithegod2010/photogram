@@ -288,6 +288,15 @@ const SCHEMA_V20 = `
 ALTER TABLE saved_searches ADD COLUMN rules TEXT;
 `;
 
+//  21. media.content_sha256 - v0.55 checksum proof. SHA-256 of the local
+//     original, computed at scan time for photos up to CHECKSUM_MAX_BYTES.
+//     The restore drill re-hashes the downloaded Telegram copy and compares, so
+//     "backed up" becomes "backed up and byte-identical". Additive: old rows
+//     stay NULL and are simply reported as "unchecked".
+const SCHEMA_V21 = `
+ALTER TABLE media ADD COLUMN content_sha256 TEXT;
+`;
+
 export const MIGRATIONS: Migration[] = [
   { version: 1, up: SCHEMA_V1 },
   { version: 2, up: SCHEMA_V2 },
@@ -309,6 +318,7 @@ export const MIGRATIONS: Migration[] = [
   { version: 18, up: SCHEMA_V18 },
   { version: 19, up: SCHEMA_V19 },
   { version: 20, up: SCHEMA_V20 },
+  { version: 21, up: SCHEMA_V21 },
 ];
 
 export function migrationsAfter(version: number): Migration[] {
