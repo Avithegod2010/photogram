@@ -6,6 +6,17 @@ Each entry below documents what a commit adds and what comes next. Newest first.
 
 ## v0.55 — Trust, search & family (batch)
 
+### Restore drill
+- **`src/lib/restoreDrill.ts`**: picks up to 8 random synced originals (≤20 MB, with a live
+  Telegram pointer), downloads each one for real, confirms the download completed with a
+  sensible size, then deletes the temporary copy. Size differences are only treated as a
+  warning when upload quality is "Original" (Storage-saver recompresses by design).
+- Orchestration is dependency-injected (`list` / `verify` / `rand`) so the probe covers picking,
+  summarising and failure handling without a network; `listDrillCandidates()` never offers
+  trashed, edited or oversized items.
+- Settings → Diagnostics → **Restore drill** with a progress spinner and an alert listing any
+  problems. Probe **281/281** (+5).
+
 ### Backup health score
 - New **`src/lib/healthScore.ts`**: one 0–100 number with a grade, plain-English reasons and the
   action that would raise it. Penalties are explicit (coverage, queue, failures, integrity,

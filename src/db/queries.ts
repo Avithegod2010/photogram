@@ -2396,6 +2396,39 @@ export async function getHealthSnapshot(): Promise<HealthSnapshot> {
   };
 }
 
+// --- v0.55 restore drill --------------------------------------------------------
+
+export interface DrillCandidate {
+  id: number;
+  file_name: string | null;
+  byte_size: number;
+  remote_chat_id: string | null;
+  remote_message_id: string | null;
+}
+
+// Only items that are small enough to pull over a phone connection in a drill
+// (default 20 MB) and that actually carry a Telegram pointer.
+export const DRILL_MAX_BYTES = 20 * 1024 * 1024;
+
+export async function listDrillCandidates(limit = 24): Promise<DrillCandidate[]> {
+  const db = await getDb();
+  return db.getAllAsync<DrillCandidate>(
+    `SELECT id, file_name, byte_size, remote_chat_id, remote_message_id
+       FROM media
+      WHERE state = 'synced'
+        AND visibility = 'visible'
+        AND edited_from IS NULL
+        AND remote_chat_id IS NOT NULL
+        AND remote_message_id IS NOT NULL
+        AND remote_message_id != '0'
+        AND byte_size > 0
+        AND byte_size <= ?
+      ORDER BY RANDOM()
+      LIMIT ?`,
+    [DRILL_MAX_BYTES, limit]
+  );
+}
+
 // --- v0.40 People v2 follow-ups + "then & now" ----------------------------------
 
 // Review-corrections list: every blocked ("not X" / split-off) pair with

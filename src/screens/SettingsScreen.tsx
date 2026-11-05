@@ -26,6 +26,7 @@ import { freeUpDeviceSpace } from "../lib/space";
 import { restoreMediaToDevice } from "../lib/restorer";
 import { getSyncedWithoutLocal, RestorableRow, getHealthSnapshot } from "../db/queries";
 import { computeHealth, type HealthGrade, type HealthResult } from "../lib/healthScore";
+import { runRestoreDrill, DEFAULT_DRILL_COUNT } from "../lib/restoreDrill";
 import { pauseUploads, refreshCounts, resumeUploads, simulateRateLimitForTesting } from "../lib/uploader";
 import { useUploadStore } from "../store/uploadStore";
 import { safetyState, type SafetyStatus } from "../lib/uploadSafety";
@@ -67,6 +68,8 @@ export function SettingsScreen() {
   const [safety, setSafety] = useState<SafetyStatus>(() => safetyState());
   // v0.55 backup health score (recomputed on every load/pull-to-refresh).
   const [health, setHealth] = useState<HealthResult | null>(null);
+  // v0.55 restore drill (downloads a few originals, verifies them, deletes them).
+  const [drillRunning, setDrillRunning] = useState(false);
 
   const exifPreserve = useSettingsStore((s) => s.exifPreserve);
   const hiddenLockEnabled = useSettingsStore((s) => s.hiddenLockEnabled);
@@ -223,6 +226,44 @@ export function SettingsScreen() {
   }, [load]);
 
   const maxBucketCount = Math.max(1, ...buckets.map((b) => b.count));
+
+  // v0.55 restore drill: proves a handful of originals can actually be pulled
+  // back out of Telegram. Runs on demand only (it uses mobile data).
+  const runDrill = useCallback(() => {
+    if (drillRunning) return;
+    setDrillRunning(true);
+    void (async () => {
+      try {
+        const report = await runRestoreDrill();
+        if (report.checked === 0) {
+          Alert.alert(
+            "Restore drill",
+            "Nothing to test yet — no backed-up item with a Telegram copy was found."
+          );
+          return;
+        }
+        const lines: string[] = [`${report.ok}/${report.checked} downloaded and verified.`];
+        if (report.sizeDiffs > 0) {
+          lines.push(`${report.sizeDiffs} file(s) differ in size from the index (expected for Storage saver uploads).`);
+        }
+        if (report.problems.length > 0) {
+          lines.push("");
+          lines.push(`${report.problems.length} problem(s):`);
+          for (const p of report.problems.slice(0, 5)) {
+            lines.push(`• ${p.fileName} — ${p.detail ?? p.outcome}`);
+          }
+        } else {
+          lines.push("Everything came back intact. Your backup restores.");
+        }
+        Alert.alert("Restore drill", lines.join("\n"));
+      } catch (e) {
+        Alert.alert("Restore drill failed", e instanceof Error ? e.message : String(e));
+      } finally {
+        setDrillRunning(false);
+        void load();
+      }
+    })();
+  }, [drillRunning, load]);
 
   const restoreAll = useCallback(() => {
     if (restorable.length === 0) return;
@@ -764,6 +805,22 @@ export function SettingsScreen() {
                 Schema version, database size, queue state, TDLib login state and last scan errors — no computer needed.
               </Text>
             </View>
+          </Pressable>
+          <Pressable
+            style={styles.row}
+            onPress={runDrill}
+            android_ripple={{ color: theme.colors.outlineVariant }}
+          >
+            <View style={styles.toggleText}>
+              <Text style={styles.rowLabel}>
+                {drillRunning ? "Restore drill running…" : "Restore drill"}
+              </Text>
+              <Text style={styles.rowSub}>
+                Downloads {DEFAULT_DRILL_COUNT} random photos straight from Telegram, checks they
+                really arrive, then deletes the temporary copies. Proves your backup restores.
+              </Text>
+            </View>
+            {drillRunning ? <ActivityIndicator color={theme.colors.primary} /> : null}
           </Pressable>
         </Section>
 
