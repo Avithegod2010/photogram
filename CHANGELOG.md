@@ -6,6 +6,15 @@ Each entry below documents what a commit adds and what comes next. Newest first.
 
 ## v0.55.0 — Release build for device verification
 
+### Probe is now public + CI runs it
+- The review probe moved from the gitignored `.expo/review-probe/` to **`scripts/probe/`** (tracked;
+  only its `.build/` output is ignored), and its runner is now `scripts/probe/build.mjs` using the
+  **esbuild JS API** — no Windows-only binary path, so it runs on Linux/macOS too.
+- **`npm run probe`** = bundle + probe + static checks + tsc. GitHub Actions runs exactly that on
+  every push/PR, so the checks that caught the pHash/media-library/schema bugs now protect every
+  change instead of only local runs.
+- `AGENTS.md` updated to the new command and location.
+
 - Version bumped to **0.55.0** and the preview profile now sets
   `ORG_GRADLE_PROJECT_reactNativeArchitectures=arm64-v8a`, so the internal APK carries one ABI
   instead of four (the 0.54.3 build was 349 MB for that reason). The OTA runtime is the app

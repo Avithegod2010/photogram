@@ -63,7 +63,7 @@
     "android": "expo run:android",
     "ios": "expo run:ios",
     "web": "expo start --web",
-    "probe": "powershell -ExecutionPolicy Bypass -File scripts/run-probe.ps1"
+    "probe": "node scripts/probe/build.mjs"
   },
   "overrides": {
     "brace-expansion": "^5.0.12",

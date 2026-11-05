@@ -62,16 +62,14 @@ URLs host-allowlisted). InsightFace/EdgeFace/GhostFaceNet-class models are NON-C
 (weights) → kept out of the picker. Embeddings are only comparable within one model
 (per-sample `model_id`; switching models re-embeds the library).
 
-**The review probe (MANDATORY discipline):** `.expo/review-probe/` (gitignored) runs the REAL
+**The review probe (MANDATORY discipline):** `scripts/probe/` (tracked; only `.build/` is gitignored) runs the REAL
 app stack in Node — real migrations on node:sqlite, real queries/similar/stats/search/people
 modules, real pHash/jpeg math on synthetic JPEGs, native modules stubbed via esbuild aliases.
 It has caught 5 real shipped bugs tsc could never see (pHash64 dead since v0.12 — 8 vs 32 DCT
 basis rows; integrity checked-counter; missing shared-album exclusion in listMissingAnalysis;
 slideshow stall on cloud-only video; bytesToF32 integer-bits decoding). After coding anything,
-run: the esbuild bundle command (recorded in NEXT_SESSION §0 — alias targets must be absolute)
-then
-`node .expo/review-probe/probe.cjs` + `node .expo/review-probe/static-checks.cjs` + `npx tsc
---noEmit` — all must be green before reporting done. Extend the probe when you add data/ML code.
+run: **`npm run probe`** (esbuild bundle + probe + static checks + tsc, cross-platform).
+It must print ALL GREEN before reporting done. Extend the probe when you add data/ML code.
 
 **Pending owner-side steps (not agent work):** COMMITTED & BUILT — the ONE combined gradle
 rebuild ran 2026-10-17 as a COMPILE-ONLY build (no device attached; assemble-only runner

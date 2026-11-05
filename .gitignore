@@ -53,3 +53,7 @@ DEVICE-CHECKLIST.local.md
 
 # security scanner artifacts
 .mimosa/
+
+# probe bundle output
+scripts/probe/.build/
+
