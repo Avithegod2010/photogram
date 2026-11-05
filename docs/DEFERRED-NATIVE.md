@@ -62,3 +62,10 @@ matches.
   compare/revert screen.
 - **Batch edit** — rotate is easy; crop/filter across a selection needs the editor refactored
   to accept a batch.
+- **Thumbnail cache cap** — the thumbnails live in `Paths.cache/thumbs`; needs an orphan sweep
+  (only files no `media.thumb_uri` points at) plus a size cap. Do it with a probe test that
+  asserts a referenced thumb is never deleted.
+- **Accessibility sweep** — icon-only buttons need `accessibilityLabel`s, and some rows are under
+  the 48 dp touch target. Gallery/Viewer/Album first; the rest is mechanical.
+- **Crash reporting (Sentry)** — native dep, privacy-scrubbed, opt-in. Ride the build after the
+  first Play release.
