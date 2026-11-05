@@ -4,6 +4,31 @@ Each entry below documents what a commit adds and what comes next. Newest first.
 
 ---
 
+## v0.54.3 — Cloud builds (EAS) + widget/tile survive prebuild
+
+- **EAS Build configured** (`eas.json`): `development` (dev-client APK, needs Metro),
+  `preview` (standalone release APK with the JS bundled — no PC needed) and `production`
+  (AAB). Project linked as `@avithegod-team/photogram`
+  (`a4035bbc-d072-419f-abec-1123ff72089a`).
+- **Same signature as the installed app.** `credentialsSource: "local"` + `credentials.json`
+  point EAS at the AOSP debug keystore (`credentials/debug.keystore`, alias
+  `androiddebugkey`). A cloud-built APK therefore installs **over** the current app with
+  `adb install -r`, keeping the SQLite index, the TDLib session and the upload queue.
+  Both files stay out of git (`/credentials/`, `credentials.json`).
+- **`.easignore`** mirrors `.gitignore` (so `android/` is not uploaded and EAS runs
+  `expo prebuild`/CNG) but keeps `credentials/` in the archive.
+- **New config plugin `plugins/withPhotogramWidget.js`** re-applies the v0.46 native surfaces
+  on every prebuild: `PhotogramStatusWidget.kt`, `PhotogramTileService.kt`,
+  `widget_status.xml`, `backup_widget_info.xml`, `widget_bg.xml`, the `tile_label`/
+  `widget_empty` strings and the manifest `<receiver>`/`<service>`. Verified by running
+  `expo prebuild` in a clean scratch copy: all files and both manifest entries were generated.
+  This file is now the source of truth for that native code (NATIVE-REAPPLY §1).
+- **`app.config.ts`**: TDLib credentials fall back to `TDLIB_API_ID` / `TDLIB_API_HASH`
+  environment variables, because a cloud build never sees the gitignored
+  `tdlib.secrets.json`. Stored on EAS as **secret** env vars for `development` + `preview`.
+- **`DEVICE-CHECKLIST.local.md`** — the owner's manual on-device checklist, gitignored.
+- Probe 269/269 + static 49/49 + tsc 0 still expected (no runtime code touched).
+
 ## v0.54.2 — On-device verification: stranded uploads fixed
 
 Found by actually running the app on the phone (SM-S942B, Android 17) against the real

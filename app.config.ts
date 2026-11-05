@@ -28,6 +28,17 @@ function loadTdlibSecrets(): TdlibSecrets {
       "tdlib.secrets.json not found. Copy tdlib.secrets.example.json and add your api_id/api_hash from https://my.telegram.org"
     );
   }
+  // Cloud builds (EAS) never see the gitignored file, so the same values can be
+  // injected as environment variables (set them as EAS secrets, never commit).
+  const envId = Number(process.env.TDLIB_API_ID);
+  const envHash = process.env.TDLIB_API_HASH;
+  if (Number.isFinite(envId) && envId > 0 && typeof envHash === "string" && envHash.length > 0) {
+    return {
+      apiId: envId,
+      apiHash: envHash,
+      google_maps_api_key: process.env.GOOGLE_MAPS_API_KEY || null,
+    };
+  }
   return { apiId: null, apiHash: null, google_maps_api_key: null };
 }
 
@@ -36,7 +47,7 @@ const secrets = loadTdlibSecrets();
 const config: ExpoConfig = {
   name: "Photogram",
   slug: "photogram",
-  version: "0.54.2",
+  version: "0.54.3",
   orientation: "portrait",
   icon: "./assets/icon.png",
   userInterfaceStyle: "automatic",
@@ -69,10 +80,12 @@ const config: ExpoConfig = {
   web: {
     favicon: "./assets/favicon.png",
   },
-  plugins: ["expo-sqlite", "expo-quick-actions"],
+  plugins: ["expo-sqlite", "expo-quick-actions", "./plugins/withPhotogramWidget"],
   extra: {
     tdlibApiId: secrets.apiId,
     tdlibApiHash: secrets.apiHash,
+    // EAS project (cloud builds) — not a secret, safe to commit.
+    eas: { projectId: "a4035bbc-d072-419f-abec-1123ff72089a" },
   },
 };
 

@@ -1,0 +1,55 @@
+# EAS Build uses this file INSTEAD of .gitignore (it takes precedence).
+# Mirrors .gitignore, but keeps `credentials/` (debug keystore + credentials.json)
+# so cloud builds are signed with the same key as the local debug APK — that is
+# what lets `adb install -r` replace the app without wiping the SQLite index,
+# the TDLib session or the upload queue.
+
+# dependencies
+node_modules/
+
+# Expo
+.expo/
+dist/
+web-build/
+expo-env.d.ts
+
+# Native
+.kotlin/
+*.orig.*
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+
+# Metro
+.metro-health-check*
+
+# debug
+npm-debug.*
+yarn-debug.*
+yarn-error.*
+
+# macOS
+.DS_Store
+*.pem
+
+# local env files
+.env*.local
+
+# TDLib developer credentials (never commit, never upload — use EAS env vars)
+tdlib.secrets.json
+
+# typescript
+*.tsbuildinfo
+
+# generated native folders (EAS runs `expo prebuild` itself)
+/ios
+/android
+.zcode/
+
+# security scanner artifacts
+.mimosa/
+
+# local device checklist
+DEVICE-CHECKLIST.local.md

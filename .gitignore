@@ -36,6 +36,13 @@ yarn-error.*
 # TDLib developer credentials (never commit)
 tdlib.secrets.json
 
+# EAS local credentials (debug keystore copy + credentials.json — see .easignore)
+/credentials/
+credentials.json
+
+# personal on-device checklist (owner's local copy)
+DEVICE-CHECKLIST.local.md
+
 # typescript
 *.tsbuildinfo
 
