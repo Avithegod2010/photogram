@@ -6,6 +6,21 @@ Each entry below documents what a commit adds and what comes next. Newest first.
 
 ## v0.55 — Trust, search & family (batch)
 
+### Bulk tagging
+- **`src/lib/tags.ts`**: `normalizeUserTags` moved out of ViewerScreen (unchanged behaviour, static
+  check now pins this file) plus `mergeTagList` — case-insensitive de-dupe, keeps the owner's
+  order, capped at 20 tags per photo so a bulk action can never grow a row without bound.
+- Gallery multi-select gains a **Tag** action with a small dialog; it merges into each selected
+  photo's existing tags and updates the grid in place. Works on hundreds of rows at once.
+- Probe **298/298** (+5 tag checks), static 58/58, tsc 0.
+
+### Scheduled integrity alerts
+- `integrityNeedsAlert()` is pure: a scheduled pass notifies **only** when it finished *and*
+  found something missing. Partial/clean passes stay silent, so the alert keeps its meaning.
+- `integritySchedule` exposes a poster hook; `notify.ts` wires it to the local notification
+  channel and respects the notifications master toggle.
+- Probe **293/293** at the time, tsc 0.
+
 ### Natural-language search
 - **`src/lib/naturalSearch.ts`**: parses "beach at sunset 2024", "may 2023", "favorite videos",
   "today", "last month". Only provable tokens become filters (year, month+year, today/this/last
