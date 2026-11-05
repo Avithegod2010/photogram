@@ -43,19 +43,38 @@ if a rebuild produces an APK without these, they were lost and must be re-applie
   E:\Dev\android-sdk\cmake\3.22.1\bin\ninja.exe -j1
   ```
   then run the normal `:app:assembleDebug` — Gradle reuses the finished objects.
+- **Cloud builds (added 2026-11-05, v0.54.3).** `eas.json` has three profiles —
+  `development` (dev-client APK, still needs Metro), **`preview`** (standalone release APK
+  with the JS bundled — no PC needed) and `production` (AAB). Build with:
+  ```
+  $env:EXPO_TOKEN = (Get-Content E:\Dev\expo-token.txt -Raw).Trim()
+  npx eas-cli@latest build --platform android --profile preview --non-interactive
+  ```
+  `credentialsSource: "local"` + `credentials.json` make EAS sign with the AOSP debug key
+  (`credentials/debug.keystore`, alias `androiddebugkey`), so the result installs **over**
+  the existing app and keeps the DB / TDLib session / upload queue. `credentials/` and
+  `credentials.json` are gitignored. `.easignore` mirrors `.gitignore` (so `android/` is not
+  uploaded and EAS runs `expo prebuild`) but keeps `credentials/` in the archive.
+  TDLib credentials come from the **secret** EAS env vars `TDLIB_API_ID` /
+  `TDLIB_API_HASH` (project env `development` + `preview`); `app.config.ts` falls back to
+  them when `tdlib.secrets.json` is absent. Free plan = **15 Android + 15 iOS builds/month**,
+  low-priority queue.
 - `getForumTopics` edits inside `node_modules/react-native-tdlib` are re-applied by
   `scripts/patch-tdlib.js` (run after `npm install`).
 
 ## 1. v0.46 — Backup status widget + quick-settings tile (commit 11a0fe4)
 
-JS side is already in git (`src/lib/widgetState.ts`, autoBackup gating). The native half
-lives only in `android/`:
+**Source of truth since v0.54.3: `plugins/withPhotogramWidget.js`.** It re-creates everything
+below on every `expo prebuild`, including EAS cloud builds (verified with a clean scratch
+prebuild). Do **not** hand-edit the generated copies in `android/` — edit the plugin, commit
+it, and rebuild. The list below is only a description of what the plugin writes.
+
+JS side is already in git (`src/lib/widgetState.ts`, autoBackup gating). The native half is
+generated:
 
 1. **`android/app/src/main/java/com/photogram/app/PhotogramStatusWidget.kt`** —
    AppWidgetProvider reading `files/widget_state.json` (JSON with `line1`, `line2`),
-   RemoteViews + tap → MainActivity. Copy the full file from git history? It never was in
-   git (android/ ignored) — keep the copy stored in this doc's companion zipped backup or
-   re-type from CHANGELOG v0.46 reference. Current on-disk file (2026-10-24) is valid.
+   RemoteViews + tap → MainActivity.
 2. **`android/app/src/main/java/com/photogram/app/PhotogramTileService.kt`** — TileService
    writing/removing `files/tile_pause`, subtitle "Backup paused"/"Backing up".
 3. **`AndroidManifest.xml`** — inside `<application>`:

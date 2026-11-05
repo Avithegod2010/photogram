@@ -13,8 +13,14 @@ while the bulk backup is uploading.
 
 1. Plug the phone in via USB with USB debugging on (or `adb connect <ip>:<port>` for the
    phone's *current* wireless-debug port — the old `192.168.29.97:35247` is stale).
-2. Build the APK if needed (see §6 build notes). The debug APK is an **expo-dev-client** build,
-   so it needs Metro: start it in a second window before running the checks:
+2. Build the APK if needed (see §6 build notes). Two options now:
+   - **Cloud (preferred, no PC needed):** `npx eas-cli@latest build --platform android
+     --profile preview --non-interactive`, then download the APK from the build page and
+     `adb install -r` it. The `preview` profile is a **standalone release APK** (JS bundled),
+     signed with the same debug key, so it installs over the current app and keeps the data.
+     It does **not** need Metro.
+   - **Local debug build (dev client):** see §6. It needs Metro on port 8081, so start it in a
+     second window before running the checks:
 
    ```
    cd "E:\Opencode CLI\Projects\photogram"

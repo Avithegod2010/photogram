@@ -1,13 +1,34 @@
 # PHOTOGRAM — MASTER HANDOFF (read this fully before coding)
 
 _This file is the single source of truth for any AI agent or developer picking up this project cold.
-Last updated: 2026-11-04 (§0, v0.54 + device-verify tooling). Read §0, then §1–§17. CHANGELOG.md has per-version notes._
+Last updated: 2026-11-05 (§0, v0.54.3 + EAS cloud builds). Read §0, then §1–§17. CHANGELOG.md has per-version notes._
 
 ---
 
-## 0. CURRENT STATE — 2026-11-05 · v0.54.2 PUSHED · APK INSTALLED ON THE PHONE · UPLOADS RUNNING · DEVICE CHECKS PARTLY DONE
+## 0. CURRENT STATE — 2026-11-05 (late) · v0.54.3 PUSHED · CLOUD BUILD RUNNING · PHONE APP STOPPED (UPLOADS PAUSED)
 
-**2026-11-05 — the APK finally reached the phone and the on-device run started.**
+**2026-11-05 late — moving builds off this PC (owner request).**
+- **EAS Build configured** (`eas.json`, project `@avithegod-team/photogram`,
+  `a4035bbc-d072-419f-abec-1123ff72089a`): `development` = dev-client APK (needs Metro),
+  **`preview` = standalone release APK** (JS bundled, no PC), `production` = AAB.
+  Free plan gives **15 Android + 15 iOS builds/month**, low-priority queue.
+- **Signature continuity:** `credentialsSource: "local"` + `credentials.json` +
+  `credentials/debug.keystore` (AOSP debug key) → cloud APKs install **over** the current
+  app with `adb install -r`, preserving SQLite, the TDLib session and the upload queue.
+- **`plugins/withPhotogramWidget.js`** re-applies the widget + tile (Kotlin, XML, strings,
+  manifest) on every prebuild — verified with a clean scratch `expo prebuild`. This plugin is
+  now the source of truth; `android/` can be regenerated at will.
+- **TDLib creds for the cloud:** `TDLIB_API_ID` / `TDLIB_API_HASH` are EAS **secret** env vars
+  (`development`, `preview`); `app.config.ts` falls back to them.
+- **Build in flight:** `7ad135fa-e495-4a2a-8a11-ff120ef69a91` (preview, v0.54.3, commit
+  `37797aa`). Download the APK from the build page when it finishes, then `adb install -r`.
+- **The phone's app process is gone** (it was the debug build, so it cannot restart without
+  Metro). Uploads are **paused at 735 queued / 2,215 done** (~20 GB left) — the queue is safe
+  in SQLite. Installing the standalone preview APK and opening it resumes the backup with no PC.
+- The owner's manual checks live in **`DEVICE-CHECKLIST.local.md`** (gitignored).
+- ⚠️ The Expo access token was pasted in chat and should be rotated after the build.
+
+**2026-11-05 — v0.54.2 + the on-device run.**
 - **v0.54.2 (`605361c`) fixes a real on-device bug:** a kill during an upload left
   `upload_queue.status='active'` + `media.state='uploading'`; `nextQueued()` only reads
   `'pending'`, so photos were stranded forever (the phone had **7 stuck since 2026-10-17**,
