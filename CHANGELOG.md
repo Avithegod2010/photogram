@@ -6,6 +6,20 @@ Each entry below documents what a commit adds and what comes next. Newest first.
 
 ## v0.55 — Trust, search & family (batch)
 
+### Weekly DB maintenance
+- **`src/lib/dbMaintenance.ts`**: once a week (meta `db_maintenance_at`) the app checkpoints the
+  WAL (`PRAGMA wal_checkpoint(TRUNCATE)`), refreshes planner stats (`PRAGMA optimize`) and runs
+  `VACUUM` **only** when at least 20% of the file is free pages. Best-effort: a busy DB simply
+  waits for next week, and maintenance can never break boot. Runs from the deferred boot block.
+- Probe **318/318** (+4) and the probe now exits on an unhandled crash instead of hanging.
+
+### CI + deferred backlog
+- `.github/workflows/ci.yml`: `npm ci` + `npx tsc --noEmit` on every push/PR. The review probe
+  stays a local gate (`.expo/` is gitignored), so CI is the public safety net.
+- `docs/DEFERRED-NATIVE.md`: the build-bound queue (camera, document scanner, WorkManager +
+  foreground service with the protected-uploader rules, collage, video, Cast, Sentry) and the
+  JS items still on the shelf (light theme, two-pane tablet layout, version history, batch edit).
+
 ### Re-upload missing items
 - The integrity walk already proves which Telegram messages are gone; Safety check now offers
   **“Re-upload N missing items”**. `clearRemotePointers()` forgets the dead chat/message ids
