@@ -1,90 +1,64 @@
-# Photogram 📸 → 📨
+# Photogram
 
-**Your own Telegram account as free, unlimited photo backup.** Photogram is an Android gallery app
-(Expo / React Native) that backs up your phone's photos and videos to *your* Telegram "Saved
-Messages" via TDLib — then gives you a fast, private, offline-first gallery on top: memories,
-albums, search, shared family albums, and more.
+A free, self-hosted alternative to Google Photos: your phone's photos are backed up to **your own
+Telegram account** (Saved Messages and family groups/topics), so there is no subscription, no
+third-party server and no lock-in. The gallery is a local SQLite index; Telegram is only the
+byte warehouse.
 
-> **Status: personal project, in active development.** Features marked "not yet device-verified"
-> in [CHANGELOG.md](CHANGELOG.md) are freshly coded and still need on-device testing.
+Android · Expo SDK 57 · React Native 0.86 (New Architecture) · TDLib (real user account) · MIT.
 
-## Why Telegram?
+## What it does
 
-Telegram gives personal accounts effectively unlimited cloud storage for media. Photogram uses
-your **own** account — no third-party server, no subscription. Your photos upload to a chat only
-you can see, and a local SQLite index keeps browsing instant even offline.
+- **Backup** with preview-first uploads, EXIF preserved, a FLOOD_WAIT-safe rate ladder, Wi-Fi /
+  charging / time-window rules, and a live heartbeat (`1953/2186 in Telegram`).
+- **Trust tools**: backup health score, resumable integrity walk, restore drill that actually
+  downloads random originals, SHA-256 checksums, re-upload of missing items, export of the whole
+  index.
+- **Organization**: albums, topic sub-albums, shared family albums with live group sync, smart
+  albums (saved searches), duplicate merge, places, Scenes.
+- **On-device intelligence**: ML Kit text/label/face detection, TensorFlow Lite face embeddings
+  (People & Pets), pHash duplicate detection, OCR document albums, natural-language search
+  ("beach 2024", "favorite videos").
+- **Delight**: Memories, Wrapped, journal, highlights, stories with Ken Burns + ambient music,
+  editor with versioned archive, widget, quick-settings tile, wallpaper rotation, share-sheet
+  intake, launcher shortcuts.
+- **Privacy by design**: no analytics, no cloud of ours, `allowBackup=false`, the biometric lock,
+  and the option to keep family photos out of the timeline.
 
-## Features
+## Build it
 
-- **Masonry gallery** (Days/Months/Years pinch zoom) with day headers, memories carousel, and
-  "on this day" stories
-- **Real backup engine:** persistent upload queue, upload-completion confirmation (items are only
-  marked "synced" after Telegram confirms the bytes landed), storage-saver recompression,
-  preview-first upload format (small preview instantly, original threaded as a reply)
-- **Account safety:** real FLOOD_WAIT handling with a configurable escalation ladder, daily/hourly
-  budgets, and a Settings "Danger zone"
-- **Favorites ❤, multi-select bulk actions (backup/archive/hide/delete), timeline scrubber**
-- **Photo journaling:** a note on any photo becomes its Telegram caption (visible everywhere,
-  forever)
-- **Auto-albums** (Camera / Screenshots / WhatsApp / Downloads / Videos), **shared family albums**
-  from a Telegram group (with forum-topic sub-albums), **Archive + Hidden** (biometric gate)
-- **Search** by date ("June 2026"), filename, tags, and text inside photos (on-device OCR, opt-in)
-- **Trash with 30-day countdown**, restore-to-device, one-tap phone migration
-- **Optional notifications** (backup finished / on this day), **shareable backup status card**,
-  safety check, free-up-space with scoped-storage support
+Local tooling is documented in `docs/NATIVE-REAPPLY.md`. Cloud builds (no Android SDK needed):
 
-## Build it yourself
-
-**Requirements:** Node 20+, JDK 17, Android SDK (Android 11+ device or emulator), a Telegram
-developer account ([my.telegram.org](https://my.telegram.org) → `api_id` + `api_hash`).
-
-```bash
+```
 npm install
-
-# 1. Credentials — copy the example and fill in your own api_id/api_hash:
-cp tdlib.secrets.example.json tdlib.secrets.json   # gitignored, never commit
-
-# 2. Run on a device/emulator (creates the native Android project):
-npx expo run:android
+npx eas-cli@latest build --platform android --profile preview
 ```
 
-Daily development: `npx expo start --dev-client --host lan` (a Metro server; LAN host avoids
-IPv6-only localhost binding issues on some setups).
+`preview` produces a standalone APK with the JS bundled; `development` produces a dev-client APK
+that needs Metro. OTA updates for JS-only changes: `npx eas-cli@latest update --branch preview`.
 
-## Privacy model
+Type-check and the full local test gate:
 
-- Media uploads go **only** to your own Saved Messages (or a Telegram group you explicitly link
-  as a shared album).
-- The developer credentials (`api_id`/`api_hash`) live in a gitignored local file; end users of
-  the app log in with their own account via QR / tap-to-confirm, keylessly.
-- Aggregate-only features (e.g. the shareable backup status card) never include file names,
-  paths, or album/contact names.
+```
+npm run probe   # esbuild bundle + 300+ data/ML checks + static guards + tsc
+```
 
-## For users
+## Layout
 
-**What Photogram does, in one paragraph.** It is a full replacement for your phone's gallery app
-that quietly copies every photo and video you take to **your own Telegram account** (the private
-"Saved Messages" chat, plus any family group you explicitly link), then gives you a fast,
-private, offline-first gallery on top: instant search across everything including text *inside*
-photos, auto-organized albums, memories, favorites, people & pets grouping — all on-device, no
-accounts to create, no photos leave without going to **your** chat.
+```
+src/screens/    one file per screen (gallery, viewer, albums, people, settings…)
+src/lib/        the logic: uploader, scanner, integrity, people, search, wallpaper…
+src/db/         schema.ts (append-only migrations) + queries.ts
+plugins/        config plugins that re-apply native code on every prebuild
+scripts/probe/  the review probe (runs the real app modules in Node)
+docs/           design notes, device checklist, native re-apply, release process
+```
 
-- **Your data stays yours.** Uploads go only to your own Telegram. The app has no backend server,
-  no analytics, no crash reporting. See the full [privacy policy](PRIVACY.md).
-- **Works offline.** The gallery database lives on your phone; Telegram is just the warehouse
-  where the bytes live.
-- **Migration-safe.** Set up a new phone by signing into Telegram and pointing Photogram at your
-  Saved Messages — it rebuilds your gallery index from what Telegram confirms.
+## Privacy
 
-*Note: this is an early-stage personal project. The Play Store listing is in progress; until then
-it is Android, built from source here.*
-
-## Project docs
-
-- [CHANGELOG.md](CHANGELOG.md) — per-version notes, newest first
-- [NEXT_SESSION.md](NEXT_SESSION.md) — engineering handoff/state document
-- [docs/](docs/) — feature plans and design decisions
+`PRIVACY.md` explains exactly what is stored where. Short version: photos go to **your** Telegram
+account; the index stays on the phone and is excluded from Android backups.
 
 ## License
 
-Released under the [MIT License](LICENSE) — free to use, modify, and build on, with attribution.
+MIT. TDLib and the bundled ML models have their own licenses (see `docs/NATIVE-REAPPLY.md`).

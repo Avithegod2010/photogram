@@ -6,6 +6,14 @@ Each entry below documents what a commit adds and what comes next. Newest first.
 
 ## v0.55.0 — Release build for device verification
 
+### Docs: README + release checklist
+- **`README.md`** — what Photogram is, the feature map, how to build (EAS), the repo layout, and
+  the privacy/licence one-liners. The repo is public and MIT, so this is the front door.
+- **`docs/RELEASE-CHECKLIST.md`** — the owner actions for the first Play submission (AAB, Play App
+  Signing, data-safety form, privacy URL, closed testing), token/secret hygiene (rotate the Expo
+  token, EAS secret vars), the Dependabot policy (never `npm audit fix --force`), and
+  after-release steps (tag, OTA-only for JS fixes, keep the previous APK).
+
 ### Error boundary + startup budget
 - **`src/components/ErrorBoundary.tsx`**: a render crash now shows an honest, recoverable screen
   ("Something went wrong" + the message + Try again) instead of a white void. It wraps both the
