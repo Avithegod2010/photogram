@@ -149,6 +149,74 @@ class WallpaperBootReceiver : BroadcastReceiver() {
 }
 `;
 
+const SHARE_INTAKE_KT = `package __PACKAGE__
+
+import android.content.Context
+import android.content.Intent
+import android.net.Uri
+import org.json.JSONArray
+import java.io.File
+
+/**
+ * v0.55 share-sheet intake.
+ *
+ * When another app shares photos/videos to Photogram, MainActivity.onCreate
+ * calls capture(): every EXTRA_STREAM uri is copied into files/shared_inbox and
+ * listed in files/shared_inbox.json. JS picks that list up on the next boot,
+ * hands each file to the MediaStore (gallery), and deletes the temp copy - so
+ * shared media flows through the exact same scan/backup path as camera photos.
+ */
+object SharedMediaIntake {
+    private const val INBOX_DIR = "shared_inbox"
+    private const val INDEX = "shared_inbox.json"
+
+    fun capture(context: Context, intent: Intent?) {
+        try {
+            val action = intent?.action ?: return
+            val uris = mutableListOf<Uri>()
+            when (action) {
+                Intent.ACTION_SEND -> {
+                    @Suppress("DEPRECATION")
+                    val one = intent.getParcelableExtra<Uri>(Intent.EXTRA_STREAM)
+                    if (one != null) uris.add(one)
+                }
+                Intent.ACTION_SEND_MULTIPLE -> {
+                    @Suppress("DEPRECATION")
+                    val many = intent.getParcelableArrayListExtra<Uri>(Intent.EXTRA_STREAM)
+                    if (many != null) uris.addAll(many)
+                }
+                else -> return
+            }
+            if (uris.isEmpty()) return
+
+            val dir = File(context.filesDir, INBOX_DIR)
+            if (!dir.exists()) dir.mkdirs()
+            val out = JSONArray()
+            var index = 0
+            for (uri in uris) {
+                try {
+                    val dest = File(dir, "share_" + System.currentTimeMillis() + "_" + index)
+                    index++
+                    context.contentResolver.openInputStream(uri)?.use { input ->
+                        dest.outputStream().use { output -> input.copyTo(output) }
+                    }
+                    if (dest.exists() && dest.length() > 0) {
+                        out.put(dest.absolutePath)
+                    } else {
+                        dest.delete()
+                    }
+                } catch (_: Exception) {
+                    // one bad uri must not lose the rest of the share
+                }
+            }
+            File(context.filesDir, INDEX).writeText(out.toString())
+        } catch (_: Exception) {
+            // A failed intake must never crash the launch.
+        }
+    }
+}
+`;
+
 const WIDGET_KT = `package __PACKAGE__
 
 import android.app.PendingIntent
@@ -335,6 +403,7 @@ function withWidgetFiles(config) {
       writeFile(path.join(javaDir, "WallpaperRotation.kt"), WALLPAPER_KT.replace("__PACKAGE__", pkg));
       writeFile(path.join(javaDir, "WallpaperAlarmReceiver.kt"), WALLPAPER_ALARM_KT.replace("__PACKAGE__", pkg));
       writeFile(path.join(javaDir, "WallpaperBootReceiver.kt"), WALLPAPER_BOOT_KT.replace("__PACKAGE__", pkg));
+      writeFile(path.join(javaDir, "SharedMediaIntake.kt"), SHARE_INTAKE_KT.replace("__PACKAGE__", pkg));
       writeFile(path.join(resDir, "xml", "backup_widget_info.xml"), WIDGET_INFO_XML);
       writeFile(path.join(resDir, "layout", "widget_status.xml"), WIDGET_LAYOUT_XML);
       writeFile(path.join(resDir, "drawable", "widget_bg.xml"), WIDGET_BG_XML);
@@ -405,6 +474,36 @@ function withWidgetManifest(config) {
       });
     }
 
+    // v0.55 share sheet: accept photos/videos from other apps. The filters live
+    // on MainActivity so a share opens the app directly.
+    const mainActivity = (app.activity ?? []).find(
+      (a) => a?.$?.["android:name"] === ".MainActivity"
+    );
+    if (mainActivity) {
+      mainActivity["intent-filter"] = mainActivity["intent-filter"] || [];
+      const hasShare = mainActivity["intent-filter"].some((f) =>
+        (f?.action ?? []).some((a) => a?.$?.["android:name"] === "android.intent.action.SEND")
+      );
+      if (!hasShare) {
+        mainActivity["intent-filter"].push({
+          action: [{ $: { "android:name": "android.intent.action.SEND" } }],
+          category: [{ $: { "android:name": "android.intent.category.DEFAULT" } }],
+          data: [
+            { $: { "android:mimeType": "image/*" } },
+            { $: { "android:mimeType": "video/*" } },
+          ],
+        });
+        mainActivity["intent-filter"].push({
+          action: [{ $: { "android:name": "android.intent.action.SEND_MULTIPLE" } }],
+          category: [{ $: { "android:name": "android.intent.category.DEFAULT" } }],
+          data: [
+            { $: { "android:mimeType": "image/*" } },
+            { $: { "android:mimeType": "video/*" } },
+          ],
+        });
+      }
+    }
+
     // v0.55 wallpaper rotation: a daily alarm receiver plus a boot receiver
     // that re-schedules the alarm after a reboot.
     if (!app.receiver.some((r) => r?.$?.["android:name"] === ".WallpaperAlarmReceiver")) {
@@ -432,7 +531,7 @@ function withWallpaperSchedule(config) {
     if (!src.includes("WallpaperRotation.schedule(this)")) {
       src = src.replace(
         "super.onCreate(null)",
-        "super.onCreate(null)\n    WallpaperRotation.schedule(this)"
+        "super.onCreate(null)\n    WallpaperRotation.schedule(this)\n    SharedMediaIntake.capture(this, intent)"
       );
     }
     cfg.modResults.contents = src;

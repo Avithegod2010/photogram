@@ -26,6 +26,20 @@ Each entry below documents what a commit adds and what comes next. Newest first.
   full stub-alias list, so the commands can't drift (adds the new `expo-crypto` stub).
 - Probe **299/299**, static 58/58, tsc 0.
 
+### Share sheet — send photos to Photogram from any app
+- **Native intake:** the plugin now gives `MainActivity` the `ACTION_SEND` /
+  `ACTION_SEND_MULTIPLE` filters for `image/*` and `video/*`, writes
+  `SharedMediaIntake.kt`, and calls `SharedMediaIntake.capture(this, intent)` in `onCreate`.
+  Every shared uri is copied into `files/shared_inbox` (a bad uri can't lose the rest) and listed
+  in `files/shared_inbox.json`.
+- **JS half (`src/lib/sharedInbox.ts`):** on boot it hands each file to the MediaStore
+  (`createAssetAsync`), deletes the temp copy, then removes the index — so shared media follows
+  the exact same scan/backup path as a camera photo. Pure `parseSharedInbox()` accepts only
+  absolute paths, de-dupes, caps at 20 and ignores malformed JSON (probe-tested).
+- Verified with a clean scratch `expo prebuild`: the Kotlin file, both intent-filters and the
+  `capture(this, intent)` call are generated; static checks pin those tokens.
+- Probe **317/317** (+4), static 67/67, tsc 0. Needs the next build (native).
+
 ### Wallpaper rotation (home + lock screen)
 - **Native, no JS bridge:** the config plugin now writes `WallpaperRotation.kt` (daily
   `AlarmManager` tick, `SharedPreferences` cursor, `WallpaperManager.setBitmap` for home **and**

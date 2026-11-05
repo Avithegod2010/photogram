@@ -14,6 +14,7 @@ import { startAutoBackupLoop } from "./src/lib/autoBackup";
 import { getRecentAutoAlbum, albumDef } from "./src/lib/albums";
 import { buildShortcutItems, parseShortcutId } from "./src/lib/shortcuts";
 import { syncWallpaperConfig } from "./src/lib/wallpaper";
+import { consumeSharedInbox } from "./src/lib/sharedInbox";
 import { startJunkAutoSweepLoop } from "./src/lib/junkAutoSweep";
 import { startScheduledIntegrityLoop } from "./src/lib/integritySchedule";
 import { startSnapshotLoop } from "./src/lib/snapshotExport";
@@ -85,6 +86,8 @@ export default function App() {
       startWidgetStateLoop();
       // v0.55: refresh the native wallpaper list (no-op when the toggle is off).
       void syncWallpaperConfig().catch(() => {});
+      // v0.55: move anything another app shared with us into the gallery.
+      void consumeSharedInbox().catch(() => {});
       startGroupSync();
       startNotifyLoop();
       void syncPendingNotes().catch(() => {});
