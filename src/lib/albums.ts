@@ -57,6 +57,26 @@ export function albumDef(key: string): AlbumDef | null {
   return ALBUM_DEFS.find((a) => a.key === key) ?? null;
 }
 
+// v0.55 dynamic shortcuts: which auto-album received the newest photo? One
+// MAX(taken_at) per definition is cheap at boot and keeps the label consistent
+// with the Albums screen.
+export async function getRecentAutoAlbum(): Promise<{ key: string; label: string } | null> {
+  const db = await getDb();
+  let best: { key: string; label: string; last: number } | null = null;
+  for (const def of ALBUM_DEFS) {
+    try {
+      const row = await db.getFirstAsync<{ last: number | null }>(
+        `SELECT MAX(taken_at) AS last FROM media WHERE visibility = 'visible' AND ${def.cond}`
+      );
+      const last = row?.last ?? 0;
+      if (last > 0 && (best === null || last > best.last)) {
+        best = { key: def.key, label: def.label, last };
+      }
+    } catch {}
+  }
+  return best ? { key: best.key, label: best.label } : null;
+}
+
 export async function getAutoAlbums(): Promise<AutoAlbum[]> {
   const db = await getDb();
   const albums: AutoAlbum[] = [];

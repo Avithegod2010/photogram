@@ -26,6 +26,14 @@ Each entry below documents what a commit adds and what comes next. Newest first.
   full stub-alias list, so the commands can't drift (adds the new `expo-crypto` stub).
 - Probe **299/299**, static 58/58, tsc 0.
 
+### Dynamic launcher shortcuts
+- The fourth shortcut is now **the auto-album that received the newest photo** (Camera,
+  Screenshots, WhatsApp, Downloads…), not a static "Settings" clone. `buildShortcutItems()` and
+  `parseShortcutId()` are pure, cap at Android's 4, and round-trip the `album:<key>` id; the
+  listener resolves the key through `albumDef()` so a removed album can never navigate nowhere.
+- No native bridge needed: expo-quick-actions already writes real `ShortcutManager` entries.
+- Probe **305/305** (+4).
+
 ### Widget v2 — memory photo
 - The widget now shows the **memory-of-the-day thumbnail** above the numbers:
   `buildWidgetState()` adds `photoPath` (the same cover the Memories carousel uses), the

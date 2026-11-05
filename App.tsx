@@ -11,6 +11,8 @@ import { RootNavigator } from "./src/navigation";
 import { purgeExpiredTrash } from "./src/lib/trash";
 import { recoverInterruptedUploads, repairTakenAtUnits } from "./src/db/queries";
 import { startAutoBackupLoop } from "./src/lib/autoBackup";
+import { getRecentAutoAlbum, albumDef } from "./src/lib/albums";
+import { buildShortcutItems, parseShortcutId } from "./src/lib/shortcuts";
 import { startJunkAutoSweepLoop } from "./src/lib/junkAutoSweep";
 import { startScheduledIntegrityLoop } from "./src/lib/integritySchedule";
 import { startSnapshotLoop } from "./src/lib/snapshotExport";
@@ -34,21 +36,25 @@ export default function App() {
       try {
         const supported = await QuickActions.isSupported();
         if (!supported) return;
-        await QuickActions.setItems([
-          { id: "gallery", title: "Open gallery", icon: "search" },
-          { id: "albums", title: "Albums", icon: "photo" },
-          { id: "settings", title: "Settings", icon: "settings" },
-        ]);
+        // v0.55 dynamic shortcuts: the newest auto-album replaces the static
+        // fourth slot, so the launcher shows where the last photo landed.
+        const recent = await getRecentAutoAlbum().catch(() => null);
+        await QuickActions.setItems(buildShortcutItems(recent));
       } catch {}
     })();
     try {
       sub = QuickActions.addListener((action) => {
         const nav = navigationRef.current;
         if (!nav) return;
-        const id = action?.id;
-        if (id === "gallery") nav.navigate("Tabs", { screen: "Gallery" });
-        else if (id === "albums") nav.navigate("Albums");
-        else if (id === "settings") nav.navigate("Tabs", { screen: "Settings" });
+        const target = parseShortcutId(action?.id);
+        if (!target) return;
+        if (target.kind === "gallery") nav.navigate("Tabs", { screen: "Gallery" });
+        else if (target.kind === "albums") nav.navigate("Albums");
+        else if (target.kind === "settings") nav.navigate("Tabs", { screen: "Settings" });
+        else if (target.kind === "album") {
+          const def = albumDef(target.albumKey);
+          if (def) nav.navigate("Album", { key: def.key, label: def.label });
+        }
       });
     } catch {}
     return () => {
