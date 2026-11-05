@@ -3,6 +3,7 @@ import {
   ActivityIndicator,
   Alert,
   BackHandler,
+  Modal,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -18,10 +19,11 @@ import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
-import { pageVisibleMedia, getRandomMedia, setMediaFavorite, setMediaVisibility, getTimelineRange, saveSearch, searchPeopleForQuery, type PersonHit, MediaRow } from "../db/queries";
+import { pageVisibleMedia, getRandomMedia, setMediaFavorite, setMediaVisibility, getTimelineRange, saveSearch, searchPeopleForQuery, updateMediaUserTags, type PersonHit, MediaRow } from "../db/queries";
 import { getBackupHeartbeat, BackupHeartbeat } from "../lib/stats";
 import { formatBytes } from "../lib/stats";
 import { runSearch } from "../lib/search";
+import { mergeTagList, normalizeUserTags } from "../lib/tags";
 import { scanDeviceLibrary, ScanProgress } from "../lib/scanner";
 import { enqueueForUpload, startWorker } from "../lib/uploader";
 import { hasSavedMessagesMedia } from "../lib/rehydrate";
@@ -230,6 +232,9 @@ export function GalleryScreen() {
   // ticks; the bottom bar bulk-applies Back up / Archive / Hide / Delete.
   const [selectionMode, setSelectionMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  // v0.55 bulk tagging dialog.
+  const [tagOpen, setTagOpen] = useState(false);
+  const [tagText, setTagText] = useState("");
   const [selTick, setSelTick] = useState(0);
 
   const enterSelection = useCallback((id: number) => {
@@ -329,6 +334,37 @@ export function GalleryScreen() {
     },
     [selectedRows, exitSelection]
   );
+
+  // v0.55 bulk tagging: add one comma-separated tag list to every selected row,
+  // merging with whatever each photo already has (no duplicates).
+  const applyBulkTag = useCallback(() => {
+    const added = normalizeUserTags(tagText);
+    const targets = selectedRows;
+    if (!added || targets.length === 0) {
+      setTagOpen(false);
+      setTagText("");
+      return;
+    }
+    void (async () => {
+      try {
+        for (const r of targets) {
+          try {
+            await updateMediaUserTags(r.id, mergeTagList(r.user_tags ?? null, added));
+          } catch {}
+        }
+        const ids = new Set(targets.map((r) => r.id));
+        setRows((prev) =>
+          prev.map((r) =>
+            ids.has(r.id) ? { ...r, user_tags: mergeTagList(r.user_tags ?? null, added) } : r
+          )
+        );
+      } finally {
+        setTagOpen(false);
+        setTagText("");
+        exitSelection();
+      }
+    })();
+  }, [tagText, selectedRows, exitSelection]);
 
   const bulkFavorite = useCallback(() => {
     if (selectedRows.length === 0) return;
@@ -1021,6 +1057,14 @@ export function GalleryScreen() {
           </Pressable>
           <Pressable
             style={[styles.selAction, selectedRows.length === 0 && styles.selActionDisabled]}
+            onPress={() => setTagOpen(true)}
+            disabled={selectedRows.length === 0}
+          >
+            <Ionicons name="pricetag-outline" size={20} color={theme.colors.onSurface} />
+            <Text style={styles.selActionLabel}>Tag</Text>
+          </Pressable>
+          <Pressable
+            style={[styles.selAction, selectedRows.length === 0 && styles.selActionDisabled]}
             onPress={() => bulkVisibility("hidden")}
             disabled={selectedRows.length === 0}
           >
@@ -1037,12 +1081,43 @@ export function GalleryScreen() {
           </Pressable>
         </View>
       ) : null}
+
+      {tagOpen ? (
+        <Modal transparent visible animationType="fade" onRequestClose={() => setTagOpen(false)}>
+          <View style={styles.tagOverlay}>
+            <View style={styles.tagCard}>
+              <Text style={styles.tagTitle}>
+                Tag {selectedRows.length} item{selectedRows.length === 1 ? "" : "s"}
+              </Text>
+              <TextInput
+                style={styles.tagInput}
+                value={tagText}
+                onChangeText={setTagText}
+                placeholder="india, family, 2024"
+                placeholderTextColor={theme.colors.onSurfaceVariant}
+                autoFocus
+                autoCapitalize="none"
+                returnKeyType="done"
+                onSubmitEditing={applyBulkTag}
+              />
+              <Text style={styles.tagHint}>Comma-separated. Existing tags on each photo are kept.</Text>
+              <View style={styles.tagActions}>
+                <Pressable onPress={() => setTagOpen(false)} hitSlop={10}>
+                  <Text style={styles.tagCancel}>Cancel</Text>
+                </Pressable>
+                <Pressable onPress={applyBulkTag} hitSlop={10}>
+                  <Text style={styles.tagSave}>Save tags</Text>
+                </Pressable>
+              </View>
+            </View>
+          </View>
+        </Modal>
+      ) : null}
     </View>
   );
 }
 
-const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: theme.colors.background },
+const styles = StyleSheet.create({  root: { flex: 1, backgroundColor: theme.colors.background },
   header: {
     flexDirection: "row",
     alignItems: "center",
@@ -1290,5 +1365,36 @@ const styles = StyleSheet.create({
   },
   scanText: { color: theme.colors.onSurfaceVariant, fontSize: 12.5, flex: 1 },
   scanDismiss: { color: theme.colors.primary, fontWeight: "600", fontSize: 13 },
+  // v0.55 bulk tagging dialog
+  tagOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.6)",
+    justifyContent: "center",
+    padding: theme.spacing.lg,
+  },
+  tagCard: {
+    backgroundColor: theme.colors.surface,
+    borderRadius: theme.radius.lg,
+    padding: theme.spacing.md,
+    gap: theme.spacing.sm,
+  },
+  tagTitle: { color: theme.colors.onSurface, fontSize: 16, fontWeight: "700" },
+  tagInput: {
+    color: theme.colors.onSurface,
+    backgroundColor: theme.colors.surfaceHighest,
+    borderRadius: theme.radius.md,
+    paddingHorizontal: theme.spacing.md,
+    paddingVertical: 10,
+    fontSize: 15,
+  },
+  tagHint: { color: theme.colors.onSurfaceVariant, fontSize: 12 },
+  tagActions: {
+    flexDirection: "row",
+    justifyContent: "flex-end",
+    gap: theme.spacing.lg,
+    marginTop: theme.spacing.xs,
+  },
+  tagCancel: { color: theme.colors.onSurfaceVariant, fontSize: 14, fontWeight: "600" },
+  tagSave: { color: theme.colors.primary, fontSize: 14, fontWeight: "700" },
 });
 

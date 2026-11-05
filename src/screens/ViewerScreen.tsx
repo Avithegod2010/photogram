@@ -21,6 +21,7 @@ import { getMediaByIds, setMediaVisibility, setMediaFavorite, isSharedAlbumMedia
 import { enqueueForUpload } from "../lib/uploader";
 import { saveViewerNote, syncPendingNotes } from "../lib/notes";
 import { sendToAlbum } from "../lib/sendToAlbum";
+import { normalizeUserTags } from "../lib/tags";
 import { hasRemoteCopy, restoreMediaToDevice } from "../lib/restorer";
 import { formatBytes } from "../lib/stats";
 import { theme } from "../theme";
@@ -628,13 +629,7 @@ function NoteEditorModal({
 
 // v0.25 manual tags: comma-separated input → trimmed tags (each capped at 50
 // chars), ", "-joined for storage/display. Null = no tags (clears).
-function normalizeUserTags(raw: string): string | null {
-  const tags = raw
-    .split(",")
-    .map((t) => t.trim().slice(0, 50))
-    .filter((t) => t.length > 0);
-  return tags.length > 0 ? tags.join(", ") : null;
-}
+// normalizeUserTags now lives in src/lib/tags.ts (shared with bulk tagging).
 
 // Same dialog shape as NoteEditorModal (shares noteStyles) — but tags are
 // purely local state, unlike notes which sync to Telegram captions.
