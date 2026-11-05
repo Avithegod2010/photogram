@@ -1,5 +1,6 @@
 import { File, Paths } from "expo-file-system";
 import { formatBytes, getBackupHeartbeat, getStorageTotals } from "./stats";
+import { getMemories } from "./memories";
 
 // v0.46 Android home-screen widget handoff. The probe can run this module un-
 // changed: the widget itself (Kotlin, android/) only READS files/widget_state.json
@@ -46,6 +47,8 @@ export async function buildWidgetState(): Promise<{
   pending: number;
   synced: number;
   total: number;
+  // v0.55 widget v2: memory-of-the-day thumbnail (same grouping as the carousel).
+  photoPath: string | null;
   updatedAt: number;
 } | null> {
   const heartbeat = await getBackupHeartbeat();
@@ -61,7 +64,14 @@ export async function buildWidgetState(): Promise<{
   const line2 = `${synced.toLocaleString()} of ${total.toLocaleString()} backed up${last}${
     tilePauseActive() ? " · queuing paused" : ""
   }`;
-  return { line1, line2, pending, synced, total, updatedAt: Date.now() };
+  // v0.55 widget v2: the cover of the closest memory, or null when the library
+  // has no prior-year photos yet (the widget hides the image then).
+  let photoPath: string | null = null;
+  try {
+    const memories = await getMemories(1);
+    photoPath = memories[0]?.coverThumb ?? null;
+  } catch {}
+  return { line1, line2, pending, synced, total, updatedAt: Date.now(), photoPath };
 }
 
 // Never throws; returns whether a state file is now on disk.

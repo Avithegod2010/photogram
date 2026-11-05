@@ -26,6 +26,17 @@ Each entry below documents what a commit adds and what comes next. Newest first.
   full stub-alias list, so the commands can't drift (adds the new `expo-crypto` stub).
 - Probe **299/299**, static 58/58, tsc 0.
 
+### Widget v2 — memory photo
+- The widget now shows the **memory-of-the-day thumbnail** above the numbers:
+  `buildWidgetState()` adds `photoPath` (the same cover the Memories carousel uses), the
+  Kotlin decodes it with `BitmapFactory` and hands a bitmap to RemoteViews, and the photo block
+  hides itself when the library has no prior-year photos yet.
+- `backup_widget_info.xml` grows to 120 dp min height; the config plugin and its static checks
+  were updated together (`widget_photo`, `BitmapFactory`, `photoPath`), and a clean scratch
+  `expo prebuild` confirms the generated Kotlin/layout/XML.
+- Privacy unchanged: still no file names, albums or contacts — only a local bitmap and numbers.
+- Probe **301/301**, static 61/61, tsc 0. Needs the next build (native).
+
 ### EAS Update (OTA)
 - **`expo-updates ~57.0.27`** installed and configured: `runtimeVersion` is the app version
   (policy `appVersion`) and `updates.url` points at the project. A JS-only fix can now ship

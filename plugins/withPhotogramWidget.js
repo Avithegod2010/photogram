@@ -45,17 +45,19 @@ import android.appwidget.AppWidgetProvider
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.graphics.BitmapFactory
+import android.view.View
 import android.widget.RemoteViews
 import org.json.JSONObject
 import java.io.File
 
 /**
- * v0.46 Photogram backup status widget. Shows the numbers-only state the JS
- * side writes to files/widget_state.json (aggregate counts/bytes only - same
- * privacy rule as the family heartbeat card: no file names, paths, album or
- * contact names). Android refreshes at most every 30 min via the provider's
- * updatePeriodMillis; the JS loop rewrites the file every 15 min so the next
- * scheduled update picks up fresh numbers.
+ * v0.46 Photogram backup status widget, v0.55 photo variant.
+ * Shows the numbers-only state the JS side writes to files/widget_state.json
+ * (aggregate counts/bytes only - same privacy rule as the family heartbeat card:
+ * no file names, paths, album or contact names) plus the memory-of-the-day
+ * thumbnail the JS side points at (a local app-private file, decoded here and
+ * handed to RemoteViews as a bitmap - nothing leaves the device).
  */
 class PhotogramStatusWidget : AppWidgetProvider() {
 
@@ -68,6 +70,7 @@ class PhotogramStatusWidget : AppWidgetProvider() {
             val views = RemoteViews(context.packageName, R.layout.widget_status).apply {
                 setTextViewText(R.id.widget_title, "Photogram")
                 setTextViewText(R.id.widget_body, context.getString(R.string.widget_empty))
+                setViewVisibility(R.id.widget_photo, View.GONE)
             }
             try {
                 val f = File(context.filesDir, "widget_state.json")
@@ -75,6 +78,14 @@ class PhotogramStatusWidget : AppWidgetProvider() {
                     val o = JSONObject(f.readText())
                     views.setTextViewText(R.id.widget_title, "Photogram \\u00B7 " + o.optString("line1"))
                     views.setTextViewText(R.id.widget_body, o.optString("line2"))
+                    val photoPath = o.optString("photoPath", "")
+                    if (photoPath.isNotEmpty()) {
+                        val bitmap = BitmapFactory.decodeFile(photoPath)
+                        if (bitmap != null) {
+                            views.setImageViewBitmap(R.id.widget_photo, bitmap)
+                            views.setViewVisibility(R.id.widget_photo, View.VISIBLE)
+                        }
+                    }
                 }
             } catch (_: Exception) {
                 // A malformed state file must never crash the launcher host.
@@ -150,7 +161,7 @@ class PhotogramTileService : TileService() {
 const WIDGET_INFO_XML = `<?xml version="1.0" encoding="utf-8"?>
 <appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
   android:minWidth="180dp"
-  android:minHeight="40dp"
+  android:minHeight="120dp"
   android:updatePeriodMillis="1800000"
   android:initialLayout="@layout/widget_status"
   android:resizeMode="horizontal|vertical"
@@ -166,6 +177,13 @@ const WIDGET_LAYOUT_XML = `<?xml version="1.0" encoding="utf-8"?>
   android:gravity="center_vertical"
   android:padding="10dp"
   android:background="@drawable/widget_bg">
+  <ImageView
+    android:id="@+id/widget_photo"
+    android:layout_width="match_parent"
+    android:layout_height="90dp"
+    android:scaleType="centerCrop"
+    android:visibility="gone"
+    android:contentDescription="@string/widget_empty"/>
   <TextView
     android:id="@+id/widget_title"
     android:layout_width="match_parent"
