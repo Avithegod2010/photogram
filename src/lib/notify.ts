@@ -4,6 +4,7 @@ import { countFavoriteAnniversaries } from "../db/queries";
 import { uploadsMmkv, useUploadStore } from "../store/uploadStore";
 import { useSettingsStore } from "../store/settingsStore";
 import { maybeRunMonthlyDigest, setDigestPoster } from "./digest";
+import { setIntegrityProblemPoster } from "./integritySchedule";
 
 // v0.16 Notifications (strictly opt-in). Two local notification types:
 //  - "Backup finished" when the upload queue drains with new completions.
@@ -211,6 +212,16 @@ export function startNotifyLoop(): void {
   setDigestPoster(async (body) => {
     if (!useSettingsStore.getState().notifyHealthDigest) return;
     await post("backup", body.title, body.lines.join("\n"));
+  });
+  // v0.55 scheduled integrity: speak up only when the finished pass found
+  // something missing (a clean or partial pass stays silent).
+  setIntegrityProblemPoster(async (broken, checked) => {
+    if (!useSettingsStore.getState().notificationsEnabled) return;
+    await post(
+      "backup",
+      "Backup check found a problem",
+      `${broken} of ${checked} checked item${checked === 1 ? "" : "s"} could not be found in Telegram. Open Settings → Safety check to see them.`
+    );
   });
   setTimeout(() => void maybeRunMonthlyDigest().catch(() => {}), 45_000);
   setInterval(() => void maybeRunMonthlyDigest().catch(() => {}), CHECK_INTERVAL_MS);

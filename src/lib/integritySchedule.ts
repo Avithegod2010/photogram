@@ -35,6 +35,11 @@ export async function checkScheduledIntegrity(): Promise<boolean> {
     const report = await runIntegrityPass(undefined, undefined, 200);
     if (report.finishedAt !== null) {
       mmkv.set(LAST_DONE_KEY, String(Date.now()));
+      if (integrityNeedsAlert(report) && integrityProblemPoster) {
+        try {
+          await integrityProblemPoster(report.broken, report.checked);
+        } catch {}
+      }
       // v0.39 deep maintenance: while the prompt is here, let the junk sweep
       // take its weekly turn too (its own gate decides whether it actually
       // runs — "alongside" never means double-firing).
@@ -51,6 +56,27 @@ export async function checkScheduledIntegrity(): Promise<boolean> {
 
 const CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000;
 const FIRST_CHECK_DELAY_MS = 90_000;
+
+// v0.55: a scheduled pass is silent when everything is fine and speaks up only
+// when something is actually missing. Kept pure so the probe can check the
+// "never alert on a partial or clean pass" rule without running a real walk.
+export function integrityNeedsAlert(report: {
+  broken: number;
+  finishedAt: number | null;
+}): boolean {
+  return report.finishedAt !== null && report.broken > 0;
+}
+
+// Hook set by lib/notify.ts (avoids importing notifications here).
+export let integrityProblemPoster:
+  | ((broken: number, checked: number) => Promise<void>)
+  | null = null;
+
+export function setIntegrityProblemPoster(
+  fn: (broken: number, checked: number) => Promise<void>
+): void {
+  integrityProblemPoster = fn;
+}
 
 let loopStarted = false;
 
