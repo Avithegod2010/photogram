@@ -27,7 +27,13 @@ Each entry below documents what a commit adds and what comes next. Newest first.
   environment variables, because a cloud build never sees the gitignored
   `tdlib.secrets.json`. Stored on EAS as **secret** env vars for `development` + `preview`.
 - **`DEVICE-CHECKLIST.local.md`** — the owner's manual on-device checklist, gitignored.
-- Probe 269/269 + static 49/49 + tsc 0 still expected (no runtime code touched).
+- **Lockfile fix for cloud installs:** EAS runs `npm ci` (npm 10), which refused the lock
+  because `expo-quick-actions` → `@expo/require-utils@55.0.8` has an **optional peer**
+  `typescript ^5` while the project pins `~6.0.3`. Local npm 11 tolerated it; npm 10 did not
+  (`Missing: typescript@5.9.3 from lock file`). `package-lock.json` was regenerated with
+  npm 10, which records a nested `typescript@5.9.3` peer under `expo-quick-actions`. Root
+  stays on TS 6.0.3. Verify with `npx npm@10.9.8 ci --dry-run`.
+- Probe 269/269 + static 58/58 + tsc 0 still expected (no runtime code touched).
 
 ## v0.54.2 — On-device verification: stranded uploads fixed
 
