@@ -15,6 +15,7 @@ import { getRecentAutoAlbum, albumDef } from "./src/lib/albums";
 import { buildShortcutItems, parseShortcutId } from "./src/lib/shortcuts";
 import { syncWallpaperConfig } from "./src/lib/wallpaper";
 import { consumeSharedInbox } from "./src/lib/sharedInbox";
+import { maybeRunDbMaintenance } from "./src/lib/dbMaintenance";
 import { startJunkAutoSweepLoop } from "./src/lib/junkAutoSweep";
 import { startScheduledIntegrityLoop } from "./src/lib/integritySchedule";
 import { startSnapshotLoop } from "./src/lib/snapshotExport";
@@ -88,6 +89,8 @@ export default function App() {
       void syncWallpaperConfig().catch(() => {});
       // v0.55: move anything another app shared with us into the gallery.
       void consumeSharedInbox().catch(() => {});
+      // v0.55: weekly WAL checkpoint / planner stats / occasional VACUUM.
+      void maybeRunDbMaintenance().catch(() => {});
       startGroupSync();
       startNotifyLoop();
       void syncPendingNotes().catch(() => {});
