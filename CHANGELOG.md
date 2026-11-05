@@ -34,6 +34,14 @@ Each entry below documents what a commit adds and what comes next. Newest first.
   npm 10, which records a nested `typescript@5.9.3` peer under `expo-quick-actions`. Root
   stays on TS 6.0.3. Verify with `npx npm@10.9.8 ci --dry-run`.
 - Probe 269/269 + static 58/58 + tsc 0 still expected (no runtime code touched).
+- **Cloud build verified on the phone (2026-11-05):** 349 MB APK (all four ABIs), signed with
+  the same debug key (`fac61745…033b9c`) so it installed **over** the debug app in 238 s with
+  data intact; boots **without Metro**; gallery + heartbeat (`1953/2695 in Telegram`) render;
+  `PhotogramStatusWidget` is registered as an appwidget provider; no fatal/JS errors in
+  logcat. Uploads resumed: **770 queued / 2,215 uploaded / 0 failed**, and the first item
+  being uploaded was `Screenshot_20260826_161840_Nimbus…` — one of the 7 photos that
+  v0.54.2's `recoverInterruptedUploads()` rescued. Note: release builds are not debuggable,
+  so `adb run-as` DB pulls no longer work; use Settings → Self-check on the device.
 
 ## v0.54.2 — On-device verification: stranded uploads fixed
 
