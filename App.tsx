@@ -16,6 +16,9 @@ import { buildShortcutItems, parseShortcutId } from "./src/lib/shortcuts";
 import { syncWallpaperConfig } from "./src/lib/wallpaper";
 import { consumeSharedInbox } from "./src/lib/sharedInbox";
 import { maybeRunDbMaintenance } from "./src/lib/dbMaintenance";
+import { ErrorBoundary } from "./src/components/ErrorBoundary";
+import { recordStartup } from "./src/lib/startup";
+import Constants from "expo-constants";
 import { startJunkAutoSweepLoop } from "./src/lib/junkAutoSweep";
 import { startScheduledIntegrityLoop } from "./src/lib/integritySchedule";
 import { startSnapshotLoop } from "./src/lib/snapshotExport";
@@ -69,6 +72,9 @@ export default function App() {
 
   useEffect(() => {
     if (phase !== "ready") return;
+    // v0.55 startup budget: one sample per cold start (App.tsx imports the
+    // module at the top, so BOOT_AT is the earliest JS timestamp we can trust).
+    void recordStartup(Constants.expoConfig?.version ?? "unknown").catch(() => {});
     // Cold-start speed pass: only the core (trash purge + the backup loop)
     // starts immediately; everything else is deferred well past the first
     // frame so the gallery appears fast. App kill before the timeout just
@@ -102,11 +108,15 @@ export default function App() {
     <GestureHandlerRootView style={styles.container}>
       <StatusBar style="light" />
       {phase === "ready" ? (
-        <NavigationContainer ref={navigationRef}>
-          <RootNavigator />
-        </NavigationContainer>
+        <ErrorBoundary>
+          <NavigationContainer ref={navigationRef}>
+            <RootNavigator />
+          </NavigationContainer>
+        </ErrorBoundary>
       ) : (
-        <LoginScreen />
+        <ErrorBoundary>
+          <LoginScreen />
+        </ErrorBoundary>
       )}
     </GestureHandlerRootView>
   );

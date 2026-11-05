@@ -6,6 +6,15 @@ Each entry below documents what a commit adds and what comes next. Newest first.
 
 ## v0.55.0 — Release build for device verification
 
+### Error boundary + startup budget
+- **`src/components/ErrorBoundary.tsx`**: a render crash now shows an honest, recoverable screen
+  ("Something went wrong" + the message + Try again) instead of a white void. It wraps both the
+  app and the login screen, and logs to logcat/Metro only.
+- **`src/lib/startup.ts`**: cold-start budget. `BOOT_AT` is captured at module import, the first
+  ready phase records one sample, and the last 10 live in `meta.startup_samples` (median helper
+  included) — so "the gallery feels slow" becomes a number instead of a feeling.
+- Probe **322/322** (+4), static 67/67, tsc 0.
+
 ### Probe is now public + CI runs it
 - The review probe moved from the gitignored `.expo/review-probe/` to **`scripts/probe/`** (tracked;
   only its `.build/` output is ignored), and its runner is now `scripts/probe/build.mjs` using the
