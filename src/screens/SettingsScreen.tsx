@@ -75,6 +75,8 @@ export function SettingsScreen() {
   const hiddenLockEnabled = useSettingsStore((s) => s.hiddenLockEnabled);
   const wifiOnlyUpload = useSettingsStore((s) => s.wifiOnlyUpload);
   const chargeOnlyUpload = useSettingsStore((s) => s.chargeOnlyUpload);
+  const wallpaperRotation = useSettingsStore((s) => s.wallpaperRotation);
+  const setWallpaperRotation = useSettingsStore((s) => s.setWallpaperRotation);
   const setExifPreserve = useSettingsStore((s) => s.setExifPreserve);
   const setHiddenLockEnabled = useSettingsStore((s) => s.setHiddenLockEnabled);
   const setWifiOnlyUpload = useSettingsStore((s) => s.setWifiOnlyUpload);
@@ -673,6 +675,24 @@ export function SettingsScreen() {
         </Section>
 
         <Section title="Device storage">
+          <View style={styles.row}>
+            <View style={styles.toggleText}>
+              <Text style={styles.rowLabel}>Rotate wallpaper from favorites</Text>
+              <Text style={styles.rowSub}>
+                Sets a favourite photo as your home and lock-screen wallpaper once a day.
+                Only photos already on this phone are used; open the app once after enabling.
+              </Text>
+            </View>
+            <Switch
+              value={wallpaperRotation}
+              onValueChange={(v) => {
+                setWallpaperRotation(v);
+                void import("../lib/wallpaper").then((m) => m.syncWallpaperConfig());
+              }}
+              trackColor={{ false: theme.colors.outline, true: theme.colors.primaryContainer }}
+              thumbColor={wallpaperRotation ? theme.colors.primary : theme.colors.onSurfaceVariant}
+            />
+          </View>
           <View style={styles.row}>
             <View style={styles.toggleText}>
               <Text style={styles.rowLabel}>Free up device space</Text>

@@ -13,7 +13,7 @@
 //
 // The Kotlin/XML below is the same code that shipped in v0.46-v0.54; keep this
 // file as the source of truth from now on (docs/NATIVE-REAPPLY.md §1).
-const { withAndroidManifest, withDangerousMod } = require("@expo/config-plugins");
+const { withAndroidManifest, withDangerousMod, withMainActivity } = require("@expo/config-plugins");
 const fs = require("fs");
 const path = require("path");
 
@@ -36,6 +36,118 @@ function mergeStrings(filePath, entries) {
   }
   if (changed || !fs.existsSync(filePath)) fs.writeFileSync(filePath, xml, "utf8");
 }
+
+const WALLPAPER_KT = `package __PACKAGE__
+
+import android.app.AlarmManager
+import android.app.PendingIntent
+import android.content.Context
+import android.content.Intent
+import android.graphics.BitmapFactory
+import android.app.WallpaperManager
+import org.json.JSONObject
+import java.io.File
+
+/**
+ * v0.55 wallpaper rotation (home + lock screen).
+ *
+ * JS writes files/wallpaper_config.json: {"enabled": true, "paths": ["/data/..."...]}
+ * (absolute local paths of favourited photos, capped by JS). This object reads
+ * it on a daily AlarmManager tick, sets the next path, and advances a
+ * SharedPreferences cursor so the order is stable across reboots.
+ *
+ * No JS bridge: everything here is triggered by the OS (alarm + boot), so the
+ * rotation keeps working when the app is closed.
+ */
+object WallpaperRotation {
+    private const val CONFIG = "wallpaper_config.json"
+    private const val PREFS = "photogram_wallpaper"
+    private const val INTERVAL_MS = 24L * 60L * 60L * 1000L
+    private const val REQUEST_CODE = 7411
+
+    private fun alarmIntent(context: Context): PendingIntent =
+        PendingIntent.getBroadcast(
+            context,
+            REQUEST_CODE,
+            Intent(context, WallpaperAlarmReceiver::class.java),
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        )
+
+    fun schedule(context: Context) {
+        try {
+            val alarm = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
+            val first = System.currentTimeMillis() + 60L * 1000L
+            alarm.setInexactRepeating(AlarmManager.RTC, first, INTERVAL_MS, alarmIntent(context))
+        } catch (_: Exception) {
+            // Scheduling is best-effort; the boot receiver retries next reboot.
+        }
+    }
+
+    fun rotate(context: Context) {
+        try {
+            val f = File(context.filesDir, CONFIG)
+            if (!f.exists()) return
+            val o = JSONObject(f.readText())
+            if (!o.optBoolean("enabled", false)) return
+            val arr = o.optJSONArray("paths") ?: return
+            if (arr.length() == 0) return
+
+            val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            var idx = prefs.getInt("index", 0)
+            if (idx < 0) idx = 0
+            idx %= arr.length
+            val path = arr.optString(idx, "")
+            val file = File(path)
+            if (!file.exists()) {
+                prefs.edit().putInt("index", (idx + 1) % arr.length).apply()
+                return
+            }
+            val bitmap = BitmapFactory.decodeFile(path) ?: return
+            val wm = WallpaperManager.getInstance(context)
+            try {
+                wm.setBitmap(bitmap)
+            } catch (_: Exception) {}
+            try {
+                wm.setBitmap(bitmap, null, true, WallpaperManager.FLAG_LOCK)
+            } catch (_: Exception) {
+                // Lock-screen wallpaper needs API 24+; home already succeeded.
+            }
+            prefs.edit().putInt("index", (idx + 1) % arr.length).apply()
+        } catch (_: Exception) {
+            // A malformed config or a revoked permission must never crash the app.
+        }
+    }
+}
+`;
+
+const WALLPAPER_ALARM_KT = `package __PACKAGE__
+
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.Intent
+
+class WallpaperAlarmReceiver : BroadcastReceiver() {
+    override fun onReceive(context: Context, intent: Intent?) {
+        WallpaperRotation.rotate(context)
+        WallpaperRotation.schedule(context)
+    }
+}
+`;
+
+const WALLPAPER_BOOT_KT = `package __PACKAGE__
+
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.Intent
+
+class WallpaperBootReceiver : BroadcastReceiver() {
+    override fun onReceive(context: Context, intent: Intent?) {
+        if (intent?.action == Intent.ACTION_BOOT_COMPLETED) {
+            WallpaperRotation.schedule(context)
+        }
+    }
+}
+`;
 
 const WIDGET_KT = `package __PACKAGE__
 
@@ -220,6 +332,9 @@ function withWidgetFiles(config) {
 
       writeFile(path.join(javaDir, "PhotogramStatusWidget.kt"), WIDGET_KT.replace("__PACKAGE__", pkg));
       writeFile(path.join(javaDir, "PhotogramTileService.kt"), TILE_KT.replace("__PACKAGE__", pkg));
+      writeFile(path.join(javaDir, "WallpaperRotation.kt"), WALLPAPER_KT.replace("__PACKAGE__", pkg));
+      writeFile(path.join(javaDir, "WallpaperAlarmReceiver.kt"), WALLPAPER_ALARM_KT.replace("__PACKAGE__", pkg));
+      writeFile(path.join(javaDir, "WallpaperBootReceiver.kt"), WALLPAPER_BOOT_KT.replace("__PACKAGE__", pkg));
       writeFile(path.join(resDir, "xml", "backup_widget_info.xml"), WIDGET_INFO_XML);
       writeFile(path.join(resDir, "layout", "widget_status.xml"), WIDGET_LAYOUT_XML);
       writeFile(path.join(resDir, "drawable", "widget_bg.xml"), WIDGET_BG_XML);
@@ -239,6 +354,18 @@ function withWidgetManifest(config) {
 
     app.receiver = app.receiver || [];
     app.service = app.service || [];
+
+    // v0.55 wallpaper rotation permissions (both are normal permissions).
+    const manifest = cfg.modResults.manifest;
+    manifest["uses-permission"] = manifest["uses-permission"] || [];
+    for (const perm of [
+      "android.permission.SET_WALLPAPER",
+      "android.permission.RECEIVE_BOOT_COMPLETED",
+    ]) {
+      if (!manifest["uses-permission"].some((p) => p?.$?.["android:name"] === perm)) {
+        manifest["uses-permission"].push({ $: { "android:name": perm } });
+      }
+    }
 
     const hasReceiver = app.receiver.some(
       (r) => r?.$?.["android:name"] === ".PhotogramStatusWidget"
@@ -277,10 +404,42 @@ function withWidgetManifest(config) {
         ],
       });
     }
+
+    // v0.55 wallpaper rotation: a daily alarm receiver plus a boot receiver
+    // that re-schedules the alarm after a reboot.
+    if (!app.receiver.some((r) => r?.$?.["android:name"] === ".WallpaperAlarmReceiver")) {
+      app.receiver.push({
+        $: { "android:name": ".WallpaperAlarmReceiver", "android:exported": "false" },
+      });
+    }
+    if (!app.receiver.some((r) => r?.$?.["android:name"] === ".WallpaperBootReceiver")) {
+      app.receiver.push({
+        $: { "android:name": ".WallpaperBootReceiver", "android:exported": "true" },
+        "intent-filter": [
+          { action: [{ $: { "android:name": "android.intent.action.BOOT_COMPLETED" } }] },
+        ],
+      });
+    }
+    return cfg;
+  });
+}
+
+// Wallpaper scheduling starts with the app process. MainActivity lives in the
+// same package, so no import is needed - just the call inside onCreate.
+function withWallpaperSchedule(config) {
+  return withMainActivity(config, (cfg) => {
+    let src = cfg.modResults.contents;
+    if (!src.includes("WallpaperRotation.schedule(this)")) {
+      src = src.replace(
+        "super.onCreate(null)",
+        "super.onCreate(null)\n    WallpaperRotation.schedule(this)"
+      );
+    }
+    cfg.modResults.contents = src;
     return cfg;
   });
 }
 
 module.exports = function withPhotogramWidget(config) {
-  return withWidgetManifest(withWidgetFiles(config));
+  return withWidgetManifest(withWidgetFiles(withWallpaperSchedule(config)));
 };

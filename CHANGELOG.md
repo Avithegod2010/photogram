@@ -26,6 +26,22 @@ Each entry below documents what a commit adds and what comes next. Newest first.
   full stub-alias list, so the commands can't drift (adds the new `expo-crypto` stub).
 - Probe **299/299**, static 58/58, tsc 0.
 
+### Wallpaper rotation (home + lock screen)
+- **Native, no JS bridge:** the config plugin now writes `WallpaperRotation.kt` (daily
+  `AlarmManager` tick, `SharedPreferences` cursor, `WallpaperManager.setBitmap` for home **and**
+  lock screen), `WallpaperAlarmReceiver` and a boot receiver that re-schedules after a reboot.
+  It also adds `SET_WALLPAPER` + `RECEIVE_BOOT_COMPLETED` and calls
+  `WallpaperRotation.schedule(this)` from `MainActivity.onCreate`, so rotation keeps working
+  while the app is closed.
+- **JS half (`src/lib/wallpaper.ts`):** only favourites with a local file path qualify (a
+  cloud-only row would make the service download on a timer). Disabled writes
+  `{enabled:false, paths:[]}` so no stale paths sit on disk; capped at 50.
+- Settings → Device storage → **Rotate wallpaper from favorites** (with the "open the app once
+  after enabling" caveat). `syncWallpaperConfig()` also runs on boot.
+- Verified with a clean scratch `expo prebuild`: all three Kotlin files, both permissions, both
+  receivers and the `MainActivity` call are generated; static checks pin those tokens.
+- Probe **313/313** (+4), static 65/65, tsc 0. Needs the next build (native).
+
 ### Dynamic launcher shortcuts
 - The fourth shortcut is now **the auto-album that received the newest photo** (Camera,
   Screenshots, WhatsApp, Downloads…), not a static "Settings" clone. `buildShortcutItems()` and

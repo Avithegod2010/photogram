@@ -2495,6 +2495,29 @@ export async function clearRemotePointers(ids: number[]): Promise<void> {
   );
 }
 
+// --- v0.55 wallpaper rotation ---------------------------------------------------
+
+export interface WallpaperCandidateRow {
+  local_uri: string | null;
+  taken_at: number;
+}
+
+// Favourites with a local file, newest first. The native service walks this list
+// round-robin, so the order is the rotation order.
+export async function listWallpaperCandidates(limit = 100): Promise<WallpaperCandidateRow[]> {
+  const db = await getDb();
+  return db.getAllAsync<WallpaperCandidateRow>(
+    `SELECT local_uri, taken_at FROM media
+      WHERE is_favorite = 1
+        AND visibility = 'visible'
+        AND local_uri IS NOT NULL
+        AND local_uri != ''
+      ORDER BY taken_at DESC, id DESC
+      LIMIT ?`,
+    [Math.max(1, Math.min(200, limit))]
+  );
+}
+
 // --- v0.40 People v2 follow-ups + "then & now" ----------------------------------
 
 // Review-corrections list: every blocked ("not X" / split-off) pair with

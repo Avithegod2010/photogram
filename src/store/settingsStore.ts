@@ -20,6 +20,8 @@ interface SettingsState {
   hiddenLockEnabled: boolean;
   wifiOnlyUpload: boolean;
   chargeOnlyUpload: boolean;
+  // v0.55: native wallpaper rotation (daily, favourites only).
+  wallpaperRotation: boolean;
   uploadQuality: UploadQuality;
   // Upload scheme: send a small preview photo first, then the original file as
   // a reply to that preview (keeps a light preview visible in Telegram while
@@ -91,6 +93,7 @@ interface SettingsState {
   setHiddenLockEnabled: (v: boolean) => void;
   setWifiOnlyUpload: (v: boolean) => void;
   setChargeOnlyUpload: (v: boolean) => void;
+  setWallpaperRotation: (v: boolean) => void;
   setUploadQuality: (q: UploadQuality) => void;
   setPreviewReplyUploads: (v: boolean) => void;
   setSharedTimelineMaster: (v: boolean) => void;
@@ -123,6 +126,7 @@ export const useSettingsStore = create<SettingsState>()(
       hiddenLockEnabled: true,
       wifiOnlyUpload: false,
       chargeOnlyUpload: false,
+      wallpaperRotation: false,
       uploadQuality: "storage_saver",
       previewReplyUploads: true,
       sharedTimelineMaster: false,
@@ -160,6 +164,7 @@ export const useSettingsStore = create<SettingsState>()(
       setHiddenLockEnabled: (v) => set({ hiddenLockEnabled: v }),
       setWifiOnlyUpload: (v) => set({ wifiOnlyUpload: v }),
       setChargeOnlyUpload: (v) => set({ chargeOnlyUpload: v }),
+      setWallpaperRotation: (v) => set({ wallpaperRotation: v }),
       setUploadQuality: (q) => set({ uploadQuality: q }),
       setPreviewReplyUploads: (v) => set({ previewReplyUploads: v }),
       setSharedTimelineMaster: (v) => set({ sharedTimelineMaster: v }),
