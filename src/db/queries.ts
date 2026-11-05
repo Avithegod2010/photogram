@@ -1299,6 +1299,50 @@ export async function searchByDateRange(fromMs: number, toMs: number): Promise<M
   );
 }
 
+// --- v0.55 natural-language search ----------------------------------------------
+
+export interface MediaSearchFilter {
+  text?: string | null;
+  fromMs?: number | null;
+  toMs?: number | null;
+  kind?: "photo" | "video" | null;
+  favoritesOnly?: boolean;
+  limit?: number;
+}
+
+// One query for every natural-search combination. The text branch matches the
+// same six columns as searchMediaRaw, so plain-text results stay identical.
+export async function searchMediaFiltered(f: MediaSearchFilter): Promise<MediaRow[]> {
+  const db = await getDb();
+  const clauses: string[] = ["visibility = 'visible'", "edited_from IS NULL"];
+  const params: Array<string | number> = [];
+
+  const text = (f.text ?? "").trim();
+  if (text.length > 0) {
+    const like = `%${text.replace(/[%_]/g, "")}%`;
+    clauses.push(
+      "(file_name LIKE ? OR tags LIKE ? OR ocr_text LIKE ? OR place_name LIKE ? OR ml_labels LIKE ? OR user_tags LIKE ?)"
+    );
+    params.push(like, like, like, like, like, like);
+  }
+  if (typeof f.fromMs === "number" && typeof f.toMs === "number") {
+    clauses.push("taken_at >= ? AND taken_at < ?");
+    params.push(f.fromMs, f.toMs);
+  }
+  if (f.kind === "video") {
+    clauses.push("(mime_type LIKE 'video/%' OR duration_ms > 0)");
+  } else if (f.kind === "photo") {
+    clauses.push("(mime_type IS NULL OR mime_type NOT LIKE 'video/%') AND COALESCE(duration_ms, 0) = 0");
+  }
+  if (f.favoritesOnly) clauses.push("is_favorite = 1");
+
+  params.push(Math.max(1, Math.min(2000, f.limit ?? 300)));
+  return db.getAllAsync<MediaRow>(
+    `SELECT * FROM media WHERE ${clauses.join(" AND ")} ${EXCLUDE_ALL_SHARED} ORDER BY taken_at DESC, id DESC LIMIT ?`,
+    params
+  );
+}
+
 // --- v0.36 scene auto-albums -----------------------------------------------------
 
 // Scenes are curated label sets rendered as auto-updating albums, built on the

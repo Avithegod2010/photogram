@@ -6,6 +6,16 @@ Each entry below documents what a commit adds and what comes next. Newest first.
 
 ## v0.55 — Trust, search & family (batch)
 
+### Natural-language search
+- **`src/lib/naturalSearch.ts`**: parses "beach at sunset 2024", "may 2023", "favorite videos",
+  "today", "last month". Only provable tokens become filters (year, month+year, today/this/last
+  month, photo/video, favorites); everything else stays free text, so a bare "may" is a word,
+  not a month. `remove` is implicit — the matched words never leak into the text term.
+- **`searchMediaFiltered()`** (queries.ts): one query for text + date range + kind + favorites,
+  matching the same six columns as `searchMediaRaw`, so plain-text results are unchanged.
+- `runSearch()` now uses it, so the gallery search box and saved searches get it for free.
+- Probe **292/292** (+11: parser cases and real SQL combinations).
+
 ### Restore drill
 - **`src/lib/restoreDrill.ts`**: picks up to 8 random synced originals (≤20 MB, with a live
   Telegram pointer), downloads each one for real, confirms the download completed with a

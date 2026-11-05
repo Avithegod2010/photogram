@@ -1,4 +1,5 @@
-import { searchByDateRange, searchMediaRaw, MediaRow } from "../db/queries";const MONTHS = [
+import { MediaRow } from "../db/queries";
+import { runNaturalSearch } from "./naturalSearch";const MONTHS = [
   "january", "february", "march", "april", "may", "june",
   "july", "august", "september", "october", "november", "december",
 ];
@@ -62,9 +63,9 @@ function buildMonth(year: number, monthIndex: number): ParsedDateRange {
 }
 
 export async function runSearch(query: string): Promise<MediaRow[]> {
-  const dateRange = parseDateQuery(query);
-  if (dateRange) return searchByDateRange(dateRange.fromMs, dateRange.toMs);
-  return searchMediaRaw(query);
+  // v0.55: one parser for text + year/month + photo/video + favorites.
+  // parseDateQuery stays exported for callers that want a date-only answer.
+  return runNaturalSearch(query);
 }
 
 // Rules albums (schema v20) live in queries.ts; re-exported here so screens
