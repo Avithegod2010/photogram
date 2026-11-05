@@ -82,6 +82,7 @@ import { buildShortcutItems, parseShortcutId, MAX_SHORTCUTS } from "../../src/li
 import { buildWallpaperConfig, MAX_WALLPAPER_PATHS } from "../../src/lib/wallpaper";
 import { parseSharedInbox, MAX_SHARED_ITEMS } from "../../src/lib/sharedInbox";
 import { shouldRunMaintenance, maybeRunDbMaintenance, MAINTENANCE_KEY } from "../../src/lib/dbMaintenance";
+import { appendStartupSample, medianStartupMs, STARTUP_KEEP } from "../../src/lib/startup";
 import { countFreeable, listFreeableAssets, markMediaCloudOnly as clearLocalUri, recoverInterruptedUploads } from "..\/..\/src\/db\/queries";
 import { buildWidgetState, syncWidgetState, tilePauseActive } from "../../src/lib/widgetState";
 import { File, Paths } from "expo-file-system";
@@ -2169,6 +2170,38 @@ async function main() {
     const stamp = await getMeta(MAINTENANCE_KEY);
     check("maintenance: timestamp persisted for the weekly gate",
       typeof stamp === "string" && Number(stamp) > 0, String(stamp));
+  }
+
+  {
+    // ==================== v0.55 - startup budget ====================
+    const s1 = { at: 1, ms: 900, version: "0.55.0" };
+    const s2 = { at: 2, ms: 500, version: "0.55.0" };
+    const s3 = { at: 3, ms: 700, version: "0.55.0" };
+    const stored = appendStartupSample([s1], s2);
+    check(
+      "startup: samples append in order",
+      stored.length === 2 && stored[1].ms === 500,
+      JSON.stringify(stored)
+    );
+    check(
+      "startup: median is computed on sorted values",
+      medianStartupMs([s1, s2, s3]) === 700 && medianStartupMs([]) === null,
+      String(medianStartupMs([s1, s2, s3]))
+    );
+    const manySamples = Array.from({ length: 15 }, (_, i) => ({
+      at: i,
+      ms: 100 + i,
+      version: "x",
+    }));
+    check(
+      "startup: history keeps only the newest 10",
+      appendStartupSample(manySamples, { at: 99, ms: 50, version: "x" }).length === STARTUP_KEEP,
+      String(appendStartupSample(manySamples, { at: 99, ms: 50, version: "x" }).length)
+    );
+    check(
+      "startup: bogus samples are dropped",
+      appendStartupSample([{ at: 1, ms: -5, version: "x" }], { at: 2, ms: 100, version: "x" }).length === 1
+    );
   }
 
   console.log(`\nRESULT: ${passed} passed, ${failed} failed`);

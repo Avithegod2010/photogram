@@ -228,8 +228,8 @@ request):**
   in stubs/react-native.ts", extend the RN stub (was extended with PixelRatio/StyleSheet/View/
   Text/AppRegistry/LogBox/TurboModuleRegistry this session). The expo-document-picker stub
   (`stubs/expo-document-picker.ts`) is new. Bundle via direct exe is fastest:
-  `& "node_modules\@esbuild\win32-x64\esbuild.exe" .expo/review-probe/probe.ts --bundle
-  --platform=node --format=cjs --outfile=.expo/review-probe/probe.cjs` + the recorded aliases.
+  `& "node_modules\@esbuild\win32-x64\esbuild.exe" scripts/probe/probe.ts --bundle
+  --platform=node --format=cjs --outfile=scripts/probe/probe.cjs` + the recorded aliases.
 - **REMAINING DEVICE WORK (only when phone is FREE):** v0.12 → v0.39 checklist (Settings → Smart
   tags ON + Find faces ON → rescan → People model + Detect&embed + Group faces → People v2
   (merge/split/Not-X/sensitivity) → Trash undo-merge banner → scheduled integrity chips →
@@ -323,22 +323,22 @@ Working tree clean, tsc clean. Owner picked MIT. History was fully REWRITTEN bef
    review: 71/71 integration + 48/48 static + tsc 0; **pHash64-since-v0.12 DCT bug (8 vs 32
    basis rows) found+fixed — the junk sweep's near-dup category starts working after this
    batch**; cloud-only video no longer stalls the slideshow. Probe harness lives at
-   `.expo/review-probe/` (gitignored). **Re-run cmd (verified 2026-10-17; alias targets must be
+   `scripts/probe/` (gitignored). **Re-run cmd (verified 2026-10-17; alias targets must be
    ABSOLUTE or esbuild fails to resolve them):** from repo root —
    `$P=(Get-Location).Path -replace '\\','/'` then
-   `npx --no-install esbuild .expo/review-probe/probe.ts --bundle --platform=node --format=cjs
-   --outfile=.expo/review-probe/probe.cjs` followed by
-   `--alias:expo-sqlite="$P/.expo/review-probe/stubs/expo-sqlite.ts"`
-   `--alias:expo-file-system="$P/.expo/review-probe/stubs/expo-file-system.ts"`
-   `--alias:expo-file-system/legacy="$P/.expo/review-probe/stubs/expo-file-system-legacy.ts"`
-   `--alias:expo-image-manipulator="$P/.expo/review-probe/stubs/expo-image-manipulator.ts"`
-   `--alias:expo-media-library="$P/.expo/review-probe/stubs/expo-media-library.ts"`
-   `--alias:expo-media-library/legacy="$P/.expo/review-probe/stubs/expo-media-library-legacy.ts"`
-   `--alias:expo-constants="$P/.expo/review-probe/stubs/expo-constants.ts"`
-   `--alias:react-native="$P/.expo/review-probe/stubs/react-native.ts"`
-   `--alias:react-native-tdlib="$P/.expo/review-probe/stubs/react-native-tdlib.ts"`
-   `--alias:react-native-mmkv="$P/.expo/review-probe/stubs/react-native-mmkv.ts"`
-   `--alias:react-native-fast-tflite="$P/.expo/review-probe/stubs/react-native-fast-tflite.ts"`
+   `npx --no-install esbuild scripts/probe/probe.ts --bundle --platform=node --format=cjs
+   --outfile=scripts/probe/probe.cjs` followed by
+   `--alias:expo-sqlite="$P/scripts/probe/stubs/expo-sqlite.ts"`
+   `--alias:expo-file-system="$P/scripts/probe/stubs/expo-file-system.ts"`
+   `--alias:expo-file-system/legacy="$P/scripts/probe/stubs/expo-file-system-legacy.ts"`
+   `--alias:expo-image-manipulator="$P/scripts/probe/stubs/expo-image-manipulator.ts"`
+   `--alias:expo-media-library="$P/scripts/probe/stubs/expo-media-library.ts"`
+   `--alias:expo-media-library/legacy="$P/scripts/probe/stubs/expo-media-library-legacy.ts"`
+   `--alias:expo-constants="$P/scripts/probe/stubs/expo-constants.ts"`
+   `--alias:react-native="$P/scripts/probe/stubs/react-native.ts"`
+   `--alias:react-native-tdlib="$P/scripts/probe/stubs/react-native-tdlib.ts"`
+   `--alias:react-native-mmkv="$P/scripts/probe/stubs/react-native-mmkv.ts"`
+   `--alias:react-native-fast-tflite="$P/scripts/probe/stubs/react-native-fast-tflite.ts"`
    (one command line; diag.ts same pattern with expo-file-system + react-native aliases only).
    static-checks.cjs is plain node — no bundling. The createAssetAsync undefined-import warning
    is known and benign.
