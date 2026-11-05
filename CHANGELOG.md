@@ -4,6 +4,13 @@ Each entry below documents what a commit adds and what comes next. Newest first.
 
 ---
 
+## v0.55.0 — Release build for device verification
+
+- Version bumped to **0.55.0** and the preview profile now sets
+  `ORG_GRADLE_PROJECT_reactNativeArchitectures=arm64-v8a`, so the internal APK carries one ABI
+  instead of four (the 0.54.3 build was 349 MB for that reason). The OTA runtime is the app
+  version, so this build is the base for every future `eas update --branch preview`.
+
 ## v0.55 — Trust, search & family (batch)
 
 ### Weekly DB maintenance

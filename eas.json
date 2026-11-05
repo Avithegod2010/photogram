@@ -16,7 +16,10 @@
       "android": { "buildType": "apk" },
       "environment": "preview",
       "credentialsSource": "local",
-      "channel": "preview"
+      "channel": "preview",
+      "env": {
+        "ORG_GRADLE_PROJECT_reactNativeArchitectures": "arm64-v8a"
+      }
     },
     "production": {
       "android": { "buildType": "app-bundle" },
