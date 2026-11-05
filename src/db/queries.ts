@@ -2477,6 +2477,24 @@ export async function listDrillCandidates(limit = 24): Promise<DrillCandidate[]>
   );
 }
 
+// --- v0.55 re-upload missing items ----------------------------------------------
+
+// The integrity walk found rows whose Telegram message is gone but whose local
+// file is still here. Clear the dead pointers first so the uploader records a
+// fresh message id instead of inheriting a stale one, then let the normal queue
+// do the work.
+export async function clearRemotePointers(ids: number[]): Promise<void> {
+  if (ids.length === 0) return;
+  const db = await getDb();
+  const placeholders = ids.map(() => "?").join(",");
+  await db.runAsync(
+    `UPDATE media
+        SET remote_chat_id = NULL, remote_message_id = NULL, uploaded_at = NULL, updated_at = ?
+      WHERE id IN (${placeholders})`,
+    [Date.now(), ...ids]
+  );
+}
+
 // --- v0.40 People v2 follow-ups + "then & now" ----------------------------------
 
 // Review-corrections list: every blocked ("not X" / split-off) pair with

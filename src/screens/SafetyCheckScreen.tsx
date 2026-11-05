@@ -1,11 +1,12 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { Pressable, Alert, StyleSheet, Text, View } from "react-native";
 import { StatusBar } from "expo-status-bar";
 import { Image } from "expo-image";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { FlashList } from "@shopify/flash-list";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
-import { getSafetyReport, SafetyReport } from "../db/queries";
+import { getSafetyReport, SafetyReport, clearRemotePointers } from "../db/queries";
+import { enqueueForUpload } from "../lib/uploader";
 import { formatBytes } from "../lib/stats";
 import { IntegrityReport, loadIntegrityReport, runIntegrityPass } from "../lib/integrity";
 import type { IntegritySchedule } from "../lib/integritySchedule";
@@ -40,6 +41,7 @@ export function SafetyCheckScreen({
   const [report, setReport] = useState<SafetyReport | null>(null);
   const [integrity, setIntegrity] = useState<IntegrityReport | null>(null);
   const [checking, setChecking] = useState(false);
+  const [reuploading, setReuploading] = useState(false);
   const cancelRef = useRef({ cancelled: false });
 
   const reload = useCallback(() => {
@@ -72,6 +74,53 @@ export function SafetyCheckScreen({
       setChecking(false);
     }
   }, [checking]);
+
+  // v0.55: the integrity walk proved these messages are gone. The files are
+  // still on the phone, so one tap puts them back in the upload queue with
+  // fresh remote pointers.
+  const reuploadMissing = useCallback(() => {
+    const rows = integrity?.rows ?? [];
+    if (rows.length === 0 || reuploading) return;
+    Alert.alert(
+      "Re-upload missing items?",
+      `${rows.length} item${rows.length === 1 ? "" : "s"} will be sent to Telegram again. Items whose local file is gone will be skipped.`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Re-upload",
+          onPress: () => {
+            setReuploading(true);
+            void (async () => {
+              let queued = 0;
+              let skipped = 0;
+              try {
+                await clearRemotePointers(rows.map((r) => r.id));
+                for (const row of rows) {
+                  try {
+                    await enqueueForUpload(row.id);
+                    queued++;
+                  } catch {
+                    skipped++;
+                  }
+                }
+              } catch {
+                // a failure here must not hide what already got queued
+              } finally {
+                setReuploading(false);
+                reload();
+              }
+              Alert.alert(
+                "Re-upload",
+                skipped === 0
+                  ? `${queued} item${queued === 1 ? "" : "s"} queued. The backup will send them again.`
+                  : `${queued} queued, ${skipped} skipped (no local file left).`
+              );
+            })();
+          },
+        },
+      ]
+    );
+  }, [integrity, reuploading, reload]);
 
   const allSafe =
     report !== null && report.pendingCount === 0 && report.failedCount === 0;
@@ -205,6 +254,17 @@ export function SafetyCheckScreen({
                 {integrity.rows.length > 5 ? (
                   <Text style={styles.integritySub}>…and {integrity.rows.length - 5} more.</Text>
                 ) : null}
+                <Pressable
+                  style={[styles.runBtn, reuploading && styles.btnDisabled]}
+                  onPress={reuploadMissing}
+                  disabled={reuploading}
+                >
+                  <Text style={styles.runBtnText}>
+                    {reuploading
+                      ? "Queueing…"
+                      : `Re-upload ${integrity.rows.length} missing item${integrity.rows.length === 1 ? "" : "s"}`}
+                  </Text>
+                </Pressable>
               </>
             ) : null}
           </View>

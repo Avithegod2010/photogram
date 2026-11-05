@@ -6,6 +6,13 @@ Each entry below documents what a commit adds and what comes next. Newest first.
 
 ## v0.55 — Trust, search & family (batch)
 
+### Re-upload missing items
+- The integrity walk already proves which Telegram messages are gone; Safety check now offers
+  **“Re-upload N missing items”**. `clearRemotePointers()` forgets the dead chat/message ids
+  (and `uploaded_at`) first, then each row is re-queued through the normal uploader — so it can
+  never inherit a stale message id. Rows whose local file is gone are counted and skipped.
+- Probe **300/300** (+1), static 58/58, tsc 0.
+
 ### Checksum proof
 - **Schema v21** adds `media.content_sha256` (additive). The scanner hashes photos up to
   **8 MB** at scan time (`src/lib/checksum.ts`); videos and larger files stay `NULL` and are
