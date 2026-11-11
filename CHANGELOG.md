@@ -4,7 +4,38 @@ Each entry below documents what a commit adds and what comes next. Newest first.
 
 ---
 
-## v0.55.0 — Release build for device verification
+## v0.55.0 — Quiet Archive UI overhaul + release build
+
+### Quiet Archive: the designer pass
+- **One token system** in `src/theme.ts`: semantic colour roles (warm archive palette), an
+  eight-size type scale with four weights, 4/8/12/16/24/32 spacing, 4/12/20/999 radii, elevation,
+  120/180/240ms motion and the five-status backup vocabulary. Legacy keys stay as aliases.
+- **One UI kit** in `src/ui/` (22 files): Screen, AppBar, AppText, Section, ListRow, ToggleRow,
+  Button, IconButton, Chip/Segmented, Input, Sheet, Dialog + global DialogHost, EmptyState,
+  ErrorState, Skeleton, ProgressBar, Stat, Badge/StatusBadge, MediaTile, OfflineNotice.
+- **All 38 screens migrated.** Gallery is now edge-to-edge with a floating auto-hiding header,
+  skeleton first load, real empty/error states, quiet heartbeat, scan/first-run cards and a
+  scrollable selection bar. Collections is four searchable groups with one icon per group.
+  Settings is grouped, calm and keeps danger at the bottom. Viewer is a black canvas with
+  auto-hiding chrome and a More sheet. Album/Albums/People/Login are rebuilt on the same kit.
+- **Accessibility:** 99 labels and 63 roles (was 1/1), 48dp targets, icon+text+colour status
+  (never colour alone), progressbar semantics, modal focus, reduced-motion support, and layouts
+  that grow at 200% font scale (AppBar moves actions to a second row, sheets/dialogs scroll,
+  selection bars scroll, the tab bar grows).
+- **Motion cleanup:** removed the gear spin, cloud bounce, search wiggle, tab-screen entrance and
+  Memories entrance. Kept only press feedback, the 240ms sheet, Gallery chrome and the deliberate
+  Story/Wrapped media moments; all respect reduced motion.
+- **Performance:** FlashList stable keys/getItemType, no needless masonry on uniform grids,
+  expo-image cachePolicy/recyclingKey, and the Viewer no longer creates a video player per image.
+- **Localization:** the dictionary grew to 287 entries with `tf()` interpolation and `tCount()`
+  pluralization/thousands separators; Collections, Gallery chrome, Settings headings, Viewer
+  actions, Album/Albums/People labels and the new state vocabulary are translated to Hindi.
+- **Static guard:** `scripts/probe/static-checks.cjs` now fails on raw hex colours or one-off
+  `fontSize` under `src/screens`, `src/components`, `src/ui`, and warns on remaining in-app
+  `Alert.alert`.
+- Docs: `docs/UI-SYSTEM.md` (tokens + component inventory), `docs/UI-PROGRESS.md` (screen status),
+  `docs/UI-MIGRATION-RECIPE.md` (safe migration recipe).
+- Probe **322/322**, static **69/69**, tsc 0.
 
 ### Docs: README + release checklist
 - **`README.md`** — what Photogram is, the feature map, how to build (EAS), the repo layout, and

@@ -1,17 +1,30 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Alert, Pressable, StyleSheet, Text, View } from "react-native";
+import { StyleSheet, View } from "react-native";
 import { StatusBar } from "expo-status-bar";
 import { Image } from "expo-image";
-import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
-import { enqueueUploadWithReply, getMediaByIds, MediaRow } from "../db/queries";
+import {
+  enqueueUploadWithReply,
+  getMediaByIds,
+  insertMedia,
+  MediaRow,
+} from "../db/queries";
 import { quickFingerprint } from "../lib/dedupe";
-import { insertMedia } from "../db/queries";
 import { renderEdit, EditAdjustments } from "../lib/imageEdit";
 import { startWorker } from "../lib/uploader";
 import { theme } from "../theme";
+import { t } from "../lib/i18n";
+import {
+  AppText,
+  Button,
+  EmptyState,
+  ErrorState,
+  IconButton,
+  Skeleton,
+  alertDialog,
+} from "../ui";
 
 type EditNav = NativeStackNavigationProp<{ Viewer: { ids: number[]; index: number } }>;
 
@@ -29,7 +42,10 @@ export function EditScreen({
   navigation: EditNav;
   route: { params: { mediaId: number } };
 }) {
+  const insets = useSafeAreaInsets();
   const [original, setOriginal] = useState<MediaRow | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [rotation, setRotation] = useState<0 | 90 | 180 | 270>(0);
   const [brightness, setBrightness] = useState(0);
   const [contrast, setContrast] = useState(0);
@@ -38,9 +54,22 @@ export function EditScreen({
   const [previewTick, setPreviewTick] = useState(0);
   const previewTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  useEffect(() => {
-    void getMediaByIds([route.params.mediaId]).then((rows) => setOriginal(rows[0] ?? null));
+  const load = useCallback(async () => {
+    setLoading(true);
+    setLoadError(null);
+    try {
+      const rows = await getMediaByIds([route.params.mediaId]);
+      setOriginal(rows[0] ?? null);
+    } catch (e) {
+      setLoadError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setLoading(false);
+    }
   }, [route.params.mediaId]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
 
   // Crop rect: normalized against the ROTATED image frame. null = no crop.
   const [crop, setCrop] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
@@ -160,16 +189,50 @@ export function EditScreen({
     } catch (err) {
       // Without this the button silently does nothing on any render failure
       // (corrupt source, decode refusal, out-of-range crop).
-      Alert.alert("Couldn't save the edit", err instanceof Error ? err.message : String(err));
+      void alertDialog({
+        title: "Couldn't save the edit",
+        message: err instanceof Error ? err.message : String(err),
+      });
     } finally {
       setSaving(false);
     }
   }, [original, saving, adj, navigation]);
 
+  if (loadError) {
+    return (
+      <View style={styles.root}>
+        <StatusBar style="light" />
+        <ErrorState
+          title={t("state.error")}
+          body={loadError}
+          retryLabel={t("common.retry")}
+          onRetry={() => void load()}
+        />
+      </View>
+    );
+  }
+
   if (!original) {
     return (
       <View style={styles.root}>
-        <Text style={styles.centerText}>Loading…</Text>
+        <StatusBar style="light" />
+        {loading ? (
+          <View style={styles.centered}>
+            <Skeleton
+              width="70%"
+              height={280}
+              radius={theme.radius.control}
+              label={t("state.loading")}
+            />
+          </View>
+        ) : (
+          <EmptyState
+            icon="image-outline"
+            title={t("viewer.empty")}
+            actionLabel={t("common.back")}
+            onAction={() => navigation.goBack()}
+          />
+        )}
       </View>
     );
   }
@@ -178,72 +241,97 @@ export function EditScreen({
   const dispH = rotatedH > rotatedW ? DISPLAY_MAX : Math.round((rotatedH / rotatedW) * DISPLAY_MAX);
 
   return (
-    <View style={[styles.root, { paddingTop: 12 }]}>
+    <View style={[styles.root, { paddingTop: insets.top + theme.spacing.sm }]}>
       <StatusBar style="light" />
       <View style={styles.header}>
-        <Pressable onPress={() => navigation.goBack()} hitSlop={12}>
-          <Ionicons name="close" size={26} color={theme.colors.onSurface} />
-        </Pressable>
-        <Text style={styles.title}>Edit</Text>
-        <Pressable onPress={() => void save()} disabled={saving} hitSlop={8}>
-          <Text style={[styles.save, saving && { opacity: 0.5 }]}>{saving ? "Saving…" : "Save"}</Text>
-        </Pressable>
+        <IconButton
+          icon="close"
+          label={t("common.close")}
+          onPress={() => navigation.goBack()}
+        />
+        <AppText
+          variant="title3"
+          align="center"
+          accessibilityRole="header"
+          style={styles.headerTitle}
+        >
+          Edit
+        </AppText>
+        <Button
+          label={saving ? "Saving…" : t("common.save")}
+          size="sm"
+          loading={saving}
+          onPress={() => void save()}
+          style={styles.saveButton}
+        />
       </View>
 
       <View style={styles.previewWrap}>
         <GestureDetector gesture={cropDrag}>
-          <View style={{ width: dispW, height: dispH }}>
+          <View
+            style={{ width: dispW, height: dispH }}
+            accessible
+            accessibilityLabel="Crop area"
+            accessibilityHint="Drag inside the box to move the crop"
+          >
             <Image
               source={{
                 uri: `${original.thumb_uri}?tick=${previewTick}&r=${rotation}&b=${brightness}&c=${contrast}&s=${saturation}`,
               }}
-              style={{ width: dispW, height: dispH, borderRadius: 8 }}
+              style={{ width: dispW, height: dispH, borderRadius: theme.radius.control }}
               contentFit="cover"
               transition={0}
+              accessible={false}
             />
             {crop ? (
               <View
                 pointerEvents="none"
-                style={{
-                  position: "absolute",
-                  left: crop.x * dispW,
-                  top: crop.y * dispH,
-                  width: crop.w * dispW,
-                  height: crop.h * dispH,
-                  borderWidth: 2,
-                  borderColor: theme.colors.primary,
-                  borderRadius: 6,
-                  backgroundColor: "#00000055",
-                }}
+                style={[
+                  styles.cropBox,
+                  {
+                    left: crop.x * dispW,
+                    top: crop.y * dispH,
+                    width: crop.w * dispW,
+                    height: crop.h * dispH,
+                  },
+                ]}
               />
             ) : null}
           </View>
         </GestureDetector>
-        <Text style={styles.hint}>Drag inside the box to move the crop</Text>
+        <AppText variant="caption2Regular" color={theme.colors.onViewerMuted}>
+          Drag inside the box to move the crop
+        </AppText>
       </View>
 
       <View style={styles.controls}>
         <View style={styles.toolRow}>
-          <Pressable style={styles.tool} onPress={rotate}>
-            <Ionicons name="refresh" size={18} color={theme.colors.onSurface} />
-            <Text style={styles.toolLabel}>Rotate {rotation}°</Text>
-          </Pressable>
-          <Pressable style={styles.tool} onPress={() => setCrop({ x: 0.1, y: 0.1, w: 0.8, h: 0.8 })}>
-            <Ionicons name="crop" size={18} color={theme.colors.onSurface} />
-            <Text style={styles.toolLabel}>Crop</Text>
-          </Pressable>
-          <Pressable
-            style={styles.tool}
+          <Button
+            label={`Rotate ${rotation}°`}
+            icon="refresh"
+            size="sm"
+            variant="secondary"
+            onPress={rotate}
+          />
+          <Button
+            label="Crop"
+            icon="crop"
+            size="sm"
+            variant="secondary"
+            onPress={() => setCrop({ x: 0.1, y: 0.1, w: 0.8, h: 0.8 })}
+          />
+          <Button
+            label="Reset"
+            icon="arrow-undo"
+            size="sm"
+            variant="secondary"
             onPress={() => {
               setCrop(null);
               setBrightness(0);
               setContrast(0);
               setSaturation(0);
             }}
-          >
-            <Ionicons name="arrow-undo" size={18} color={theme.colors.onSurface} />
-            <Text style={styles.toolLabel}>Reset</Text>
-          </Pressable>
+          />
         </View>
 
         <SliderRow label="Brightness" value={brightness} onChange={setBrightness} />
@@ -256,10 +344,11 @@ export function EditScreen({
 
 // Minimal pure-JS slider (a new native slider package would force a rebuild).
 function SliderInput({
+  label,
   value,
   onChange,
 }: {
-  label?: string;
+  label: string;
   value: number;
   onChange: (v: number) => void;
 }) {
@@ -273,16 +362,32 @@ function SliderInput({
       onChange(Math.round(Math.max(-100, Math.min(100, (e.x / Math.max(1, trackW.current)) * 200 - 100))));
     });
   const frac = (value + 100) / 200;
+  const fillLeft = Math.min(50, frac * 100);
+  const fillWidth = Math.abs(frac - 0.5) * 100;
   return (
     <GestureDetector gesture={pan}>
       <View
-        style={styles.track}
+        style={styles.trackTouch}
+        accessible
+        accessibilityRole="adjustable"
+        accessibilityLabel={label}
+        accessibilityValue={{ min: -100, max: 100, now: value }}
+        accessibilityActions={[
+          { name: "increment", label: "Increase" },
+          { name: "decrement", label: "Decrease" },
+        ]}
+        onAccessibilityAction={(e) => {
+          const step = e.nativeEvent.actionName === "increment" ? 10 : -10;
+          onChange(Math.round(Math.max(-100, Math.min(100, value + step))));
+        }}
         onLayout={(e) => {
           trackW.current = e.nativeEvent.layout.width;
         }}
       >
-        <View style={styles.trackFill} />
-        <View style={[styles.knob, { left: `${frac * 100}%` }]} />
+        <View style={styles.trackBar}>
+          <View style={[styles.trackFill, { left: `${fillLeft}%`, width: `${fillWidth}%` }]} />
+          <View style={[styles.knob, { left: `${frac * 100}%` }]} />
+        </View>
       </View>
     </GestureDetector>
   );
@@ -299,63 +404,71 @@ function SliderRow({
 }) {
   return (
     <View style={styles.sliderRow}>
-      <Text style={styles.sliderLabel}>{label}</Text>
-      <View style={{ flex: 1 }}>
-        <SliderInput value={value} onChange={onChange} />
+      <AppText variant="caption" color={theme.colors.onSurfaceVariant} style={styles.sliderLabel}>
+        {label}
+      </AppText>
+      <View style={styles.sliderTrackWrap}>
+        <SliderInput label={label} value={value} onChange={onChange} />
       </View>
-      <Text style={styles.sliderValue}>{value > 0 ? `+${value}` : value}</Text>
+      <AppText variant="caption" tabular style={styles.sliderValue}>
+        {value > 0 ? `+${value}` : value}
+      </AppText>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: "#000000" },
-  centerText: { color: "#FFFFFF99", textAlign: "center", marginTop: 80 },
+  root: { flex: 1, backgroundColor: theme.colors.viewer },
+  centered: { flex: 1, alignItems: "center", justifyContent: "center" },
   header: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    paddingHorizontal: theme.spacing.lg,
-    paddingBottom: 8,
+    paddingHorizontal: theme.spacing.md,
+    paddingBottom: theme.spacing.sm,
   },
-  title: { color: theme.colors.onSurface, fontSize: 17, fontWeight: "700" },
-  save: { color: theme.colors.primary, fontSize: 15, fontWeight: "700" },
-  previewWrap: { alignItems: "center", paddingVertical: 10 },
-  hint: { color: "#FFFFFF66", fontSize: 11, marginTop: 6 },
-  controls: { paddingHorizontal: theme.spacing.lg, gap: 10 },
-  toolRow: { flexDirection: "row", gap: theme.spacing.md, marginBottom: 4 },
-  tool: {
+  headerTitle: { flex: 1, marginHorizontal: theme.spacing.sm },
+  saveButton: { alignSelf: "center" },
+  previewWrap: { alignItems: "center", paddingVertical: theme.spacing.compact, gap: theme.spacing.sm },
+  cropBox: {
+    position: "absolute",
+    borderWidth: 2,
+    borderColor: theme.colors.accent,
+    borderRadius: theme.radius.thumb,
+    backgroundColor: theme.colors.mediaScrim,
+  },
+  controls: { paddingHorizontal: theme.spacing.lg, gap: theme.spacing.compact },
+  toolRow: {
     flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    backgroundColor: theme.colors.surfaceContainer,
-    borderRadius: theme.radius.full,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
+    gap: theme.spacing.sm,
+    flexWrap: "wrap",
+    marginBottom: theme.spacing.xs,
   },
-  toolLabel: { color: theme.colors.onSurface, fontSize: 12, fontWeight: "600" },
   sliderRow: { flexDirection: "row", alignItems: "center", gap: theme.spacing.md },
-  sliderLabel: { color: theme.colors.onSurfaceVariant, fontSize: 12.5, width: 84 },
-  sliderValue: { color: theme.colors.onSurface, fontSize: 12, width: 34, textAlign: "right" },
-  track: {
+  sliderLabel: { width: 84 },
+  sliderTrackWrap: { flex: 1 },
+  sliderValue: { width: 40, textAlign: "right" },
+  trackTouch: { minHeight: theme.layout.touch, justifyContent: "center" },
+  trackBar: {
     height: 28,
-    justifyContent: "center",
+    borderRadius: theme.radius.pill,
     backgroundColor: theme.colors.surfaceContainer,
-    borderRadius: theme.radius.full,
+    justifyContent: "center",
   },
   trackFill: {
     position: "absolute",
-    left: "50%",
-    right: 0,
+    top: 12,
     height: 4,
-    backgroundColor: theme.colors.surfaceHighest,
+    borderRadius: theme.radius.pill,
+    backgroundColor: theme.colors.accentSoft,
   },
   knob: {
     position: "absolute",
+    top: 4,
     width: 20,
     height: 20,
     marginLeft: -10,
-    borderRadius: 10,
-    backgroundColor: theme.colors.primary,
+    borderRadius: theme.radius.pill,
+    backgroundColor: theme.colors.accent,
   },
 });

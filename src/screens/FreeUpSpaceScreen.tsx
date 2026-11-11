@@ -1,9 +1,6 @@
 import React, { useCallback, useEffect, useState } from "react";
-import { ActivityIndicator, Alert, Pressable, StyleSheet, Text, View } from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { ScrollView, StyleSheet, View } from "react-native";
 import { Image } from "expo-image";
-import { StatusBar } from "expo-status-bar";
-import { ScrollView } from "react-native-gesture-handler";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import * as MediaLibrary from "expo-media-library/legacy";
 import {
@@ -16,6 +13,23 @@ import {
 } from "../db/queries";
 import { formatBytes } from "../lib/stats";
 import { theme } from "../theme";
+import { t, tCount, tf } from "../lib/i18n";
+import {
+  AppBar,
+  AppText,
+  Badge,
+  Button,
+  EmptyState,
+  ErrorState,
+  ListRow,
+  ProgressBar,
+  Screen,
+  Section,
+  Skeleton,
+  Stat,
+  alertDialog,
+  confirmDialog,
+} from "../ui";
 
 // v0.51 "Free up space": delete ORIGINALS that are already safe in Telegram.
 // Hard safety rails (probe-verified around the counts):
@@ -63,20 +77,32 @@ export function FreeUpSpaceScreen({
 }: {
   navigation: NativeStackNavigationProp<{ Viewer: { ids: number[]; index: number }; FreeUpSpace: undefined }>;
 }) {
-  const insets = useSafeAreaInsets();
   const [stats, setStats] = useState<{ count: number; bytes: number } | null>(null);
   const [preview, setPreview] = useState<FreeableRow[]>([]);
   const [running, setRunning] = useState(false);
   const [progressFreed, setProgressFreed] = useState(0);
   const [done, setDone] = useState<{ freed: number; bytes: number } | null>(null);
+  const [loadError, setLoadError] = useState(false);
 
   const reload = useCallback(() => {
-    void countFreeable()
-      .then(setStats)
-      .catch(() => setStats({ count: 0, bytes: 0 }));
-    void listFreeable(48)
-      .then(setPreview)
-      .catch(() => setPreview([]));
+    setLoadError(false);
+    let failed = false;
+    void Promise.all([
+      countFreeable()
+        .then(setStats)
+        .catch(() => {
+          setStats({ count: 0, bytes: 0 });
+          failed = true;
+        }),
+      listFreeable(48)
+        .then(setPreview)
+        .catch(() => {
+          setPreview([]);
+          failed = true;
+        }),
+    ]).then(() => {
+      if (failed) setLoadError(true);
+    });
   }, []);
 
   useEffect(() => {
@@ -85,185 +111,234 @@ export function FreeUpSpaceScreen({
 
   const freeAll = useCallback(() => {
     if (!stats || stats.count === 0 || running) return;
-    Alert.alert(
-      "Delete from your phone?",
-      `${stats.count.toLocaleString()} item${stats.count === 1 ? "" : "s"} (${formatBytes(
-        stats.bytes
-      )}) will be deleted from this phone. They stay in Telegram and Photogram will show them from the cloud.\n\nAndroid will show its own "Allow" dialog for each batch of ${BATCH}, and it keeps the files in the gallery's Trash for 30 days — empty the Trash to get the space back right away.`,
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Delete",
-          style: "destructive",
-          onPress: () => {
-            setRunning(true);
-            setProgressFreed(0);
-            void (async () => {
-              let freed = 0;
-              let bytes = 0;
-              let batchRows: FreeableAssetRow[] = [];
-              try {
-                for (;;) {
-                  const rows = await listFreeableAssets(BATCH);
-                  if (rows.length === 0) break;
-                  let batchBytes = 0;
-                  const byAsset = new Map<string, { id: number; byte_size: number }>();
-                  for (const r of rows) {
-                    if (byAsset.has(r.media_library_id)) continue;
-                    byAsset.set(r.media_library_id, { id: r.id, byte_size: r.byte_size });
-                    batchBytes += r.byte_size;
-                  }
-                  if (byAsset.size === 0) break;
-                  batchRows = rows;
-                  await MediaLibrary.deleteAssetsAsync([...byAsset.keys()]);
-                  await markMediaCloudOnly([...byAsset.values()].map((v) => v.id));
-                  batchRows = [];
-                  freed += byAsset.size;
-                  bytes += batchBytes;
-                  setProgressFreed(freed);
-                }
-                setDone({ freed, bytes });
-              } catch {
-                const recovered = await reconcileMissing(batchRows);
-                if (recovered > 0) {
-                  freed += recovered;
-                  setProgressFreed(freed);
-                }
-                Alert.alert(
-                  "Could not finish",
-                  recovered > 0
-                    ? `${recovered} item${recovered === 1 ? "" : "s"} were already gone and are now marked as cloud copies. Check Android's gallery trash, then run it again — anything still on the phone will be offered again.`
-                    : "Some items may not have been deleted. Check Android's gallery trash, then try again — anything still on the phone will be offered again."
-                );
-              } finally {
-                setRunning(false);
-                reload();
-              }
-            })();
-          },
-        },
-      ]
-    );
+    void confirmDialog({
+      title: "Delete from your phone?",
+      message:
+        `${stats.count.toLocaleString()} item${stats.count === 1 ? "" : "s"} (${formatBytes(
+          stats.bytes
+        )}) will be deleted from this phone. They stay in Telegram and Photogram will show them from the cloud.\n\nAndroid will show its own "Allow" dialog for each batch of ${BATCH}, and it keeps the files in the gallery's Trash for 30 days — empty the Trash to get the space back right away.`,
+      confirmLabel: t("common.delete"),
+      destructive: true,
+    }).then((ok) => {
+      if (!ok) return;
+      setRunning(true);
+      setProgressFreed(0);
+      void (async () => {
+        let freed = 0;
+        let bytes = 0;
+        let batchRows: FreeableAssetRow[] = [];
+        try {
+          for (;;) {
+            const rows = await listFreeableAssets(BATCH);
+            if (rows.length === 0) break;
+            let batchBytes = 0;
+            const byAsset = new Map<string, { id: number; byte_size: number }>();
+            for (const r of rows) {
+              if (byAsset.has(r.media_library_id)) continue;
+              byAsset.set(r.media_library_id, { id: r.id, byte_size: r.byte_size });
+              batchBytes += r.byte_size;
+            }
+            if (byAsset.size === 0) break;
+            batchRows = rows;
+            await MediaLibrary.deleteAssetsAsync([...byAsset.keys()]);
+            await markMediaCloudOnly([...byAsset.values()].map((v) => v.id));
+            batchRows = [];
+            freed += byAsset.size;
+            bytes += batchBytes;
+            setProgressFreed(freed);
+          }
+          setDone({ freed, bytes });
+        } catch {
+          const recovered = await reconcileMissing(batchRows);
+          if (recovered > 0) {
+            freed += recovered;
+            setProgressFreed(freed);
+          }
+          void alertDialog({
+            title: "Could not finish",
+            message:
+              recovered > 0
+                ? `${recovered} item${recovered === 1 ? "" : "s"} were already gone and are now marked as cloud copies. Check Android's gallery trash, then run it again — anything still on the phone will be offered again.`
+                : "Some items may not have been deleted. Check Android's gallery trash, then try again — anything still on the phone will be offered again.",
+          });
+        } finally {
+          setRunning(false);
+          reload();
+        }
+      })();
+    });
   }, [stats, running, reload]);
 
+  const nothingToFree = stats !== null && stats.count === 0 && !running && done === null;
+
   return (
-    <View style={[styles.root, { paddingTop: insets.top }]}>
-      <StatusBar style="light" />
-      <View style={styles.header}>
-        <Pressable onPress={() => navigation.goBack()} hitSlop={12}>
-          <Text style={styles.back}>←</Text>
-        </Pressable>
-        <Text style={styles.title}>Free up space</Text>
-      </View>
-      <ScrollView contentContainerStyle={styles.content}>
-        <Text style={styles.lede}>
-          These originals are already safe in Telegram — deleting them from the phone keeps your
-          gallery exactly the same (Photogram shows cloud copies).
-        </Text>
-        <Text style={styles.notice}>
-          Favorites and anything from the last 7 days are never offered.
-        </Text>
-        <Text style={styles.notice}>
-          Android moves deleted items to the gallery’s Trash, so the space comes back when you
-          empty the Trash (it empties itself after 30 days).
-        </Text>
-        {stats === null ? (
-          <ActivityIndicator color={theme.colors.primary} style={styles.loader} />
+    <Screen>
+      <AppBar
+        title="Free up space"
+        subtitle="Delete phone copies that are already safe in Telegram"
+        large
+        onBack={() => navigation.goBack()}
+        backLabel={t("common.back")}
+      />
+
+      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+        {loadError ? (
+          <ErrorState
+            title={t("state.error")}
+            body="Photogram couldn't count what can be freed. Nothing was deleted."
+            retryLabel={t("common.retry")}
+            onRetry={reload}
+          />
         ) : (
           <>
-            <View style={styles.statCard}>
-              <Text style={styles.statBig}>{stats.count.toLocaleString()}</Text>
-              <Text style={styles.statSub}>
-                items · {formatBytes(stats.bytes)} can be freed
-              </Text>
-            </View>
-            <Pressable
-              style={[styles.cta, stats.count === 0 && styles.ctaOff]}
-              onPress={freeAll}
-              disabled={stats.count === 0}
-            >
-              <Text style={styles.ctaText}>
-                {running
-                  ? `Moving… ${progressFreed.toLocaleString()} done — keep the app open`
-                  : `Free everything (${formatBytes(stats.bytes)})`}
-              </Text>
-            </Pressable>
-            {done ? (
-              <>
-                <Text style={styles.doneText}>
-                  ✓ Moved {done.freed.toLocaleString()} items ({formatBytes(done.bytes)}) to Trash
-                </Text>
-                <Text style={styles.notice}>
-                  Empty the gallery’s Trash to actually reclaim that space.
-                </Text>
-              </>
+            <AppText variant="body" color={theme.colors.onSurfaceVariant} style={styles.lede}>
+              These originals are already safe in Telegram — deleting them from the phone keeps
+              your gallery exactly the same, because Photogram shows the cloud copies.
+            </AppText>
+
+            <Section title="Safety rails" icon="shield-checkmark-outline">
+              <ListRow
+                icon="heart-outline"
+                title="Favorites and the last 7 days"
+                subtitle="Never offered for deletion, no matter how much space they use."
+              />
+              <ListRow
+                icon="trash-outline"
+                title="Android keeps its own Trash"
+                subtitle="Deleted items sit in the gallery's Trash for 30 days, so the space comes back when you empty it."
+              />
+            </Section>
+
+            {stats !== null && !nothingToFree ? (
+              <Section
+                title="Preview"
+                icon="images-outline"
+                subtitle={tCount("gallery.itemsCount", preview.length)}
+              >
+                {preview.length === 0 ? (
+                  <View style={styles.emptyPreview}>
+                    <AppText variant="footnote" color={theme.colors.onSurfaceVariant}>
+                      Nothing to preview right now.
+                    </AppText>
+                  </View>
+                ) : (
+                  <View style={styles.grid}>
+                    {preview.map((r) => (
+                      <View key={r.id} style={styles.cell}>
+                        <Image
+                          source={{ uri: r.thumb_uri ?? undefined }}
+                          style={StyleSheet.absoluteFill}
+                          contentFit="cover"
+                          transition={90}
+                          recyclingKey={`free-${r.id}`}
+                          accessible={false}
+                        />
+                      </View>
+                    ))}
+                  </View>
+                )}
+              </Section>
             ) : null}
+
+            {stats === null ? (
+              <View style={styles.skeletonCard}>
+                <Skeleton width="35%" height={28} />
+                <Skeleton width="60%" height={14} />
+                <Skeleton width="100%" height={48} radius={theme.radius.pill} style={styles.skeletonCta} />
+              </View>
+            ) : nothingToFree ? (
+              <EmptyState
+                icon="checkmark-circle-outline"
+                title="Nothing to free yet"
+                body="Everything on this phone is either not backed up, a favorite, or from the last 7 days."
+                actionLabel={t("common.back")}
+                onAction={() => navigation.goBack()}
+              />
+            ) : (
+              <Section
+                title="Ready to free"
+                icon="trash-outline"
+                footer={
+                  done ? "Empty the gallery's Trash to actually reclaim that space." : undefined
+                }
+              >
+                <View style={styles.statRow}>
+                  <Stat value={stats.count.toLocaleString()} label="items can be freed" />
+                  <Stat value={formatBytes(stats.bytes)} label="space they take" />
+                </View>
+                <View style={styles.actionWrap}>
+                  <Button
+                    label={`Free everything (${formatBytes(stats.bytes)})`}
+                    icon="trash-outline"
+                    fullWidth
+                    loading={running}
+                    disabled={running || stats.count === 0}
+                    onPress={freeAll}
+                  />
+                </View>
+                {running ? (
+                  <View style={styles.progressWrap}>
+                    <ProgressBar
+                      progress={stats.count > 0 ? progressFreed / stats.count : 0}
+                      label="Deleting originals"
+                      valueText={`${progressFreed.toLocaleString()} of ${stats.count.toLocaleString()} moved — keep the app open`}
+                      live
+                    />
+                  </View>
+                ) : null}
+                {done ? (
+                  <View style={styles.doneRow}>
+                    <Badge
+                      label={`Moved ${done.freed.toLocaleString()} item${
+                        done.freed === 1 ? "" : "s"
+                      } (${formatBytes(done.bytes)}) to Trash`}
+                      tone="success"
+                      icon="checkmark-circle"
+                    />
+                  </View>
+                ) : null}
+              </Section>
+            )}
           </>
         )}
-        {running ? <ActivityIndicator color={theme.colors.primary} style={styles.loader} /> : null}
-        <Text style={styles.sectionTitle}>Preview</Text>
-        <View style={styles.grid}>
-          {preview.map((r) => (
-            <Image
-              key={r.id}
-              source={{ uri: r.thumb_uri ?? undefined }}
-              style={styles.cell}
-              contentFit="cover"
-              transition={90}
-            />
-          ))}
-        </View>
-        {preview.length === 0 && stats !== null && stats.count === 0 ? (
-          <Text style={styles.hint}>
-            Nothing to free yet — everything either isn't backed up, is a favorite, or is recent.
-          </Text>
-        ) : null}
       </ScrollView>
-    </View>
+    </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: theme.colors.background },
-  header: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: theme.spacing.md,
+  content: {
     paddingHorizontal: theme.spacing.md,
-    paddingBottom: theme.spacing.sm,
+    paddingBottom: theme.spacing.xl,
   },
-  back: { color: theme.colors.onSurface, fontSize: 22, width: 28 },
-  title: { color: theme.colors.onSurface, fontSize: 18, fontWeight: "700" },
-  content: { padding: theme.spacing.md, gap: theme.spacing.sm },
-  lede: { color: theme.colors.onSurfaceVariant, fontSize: 13.5, lineHeight: 20 },
-  notice: { color: theme.colors.onSurfaceVariant, fontSize: 12 },
-  loader: { marginVertical: 12 },
-  statCard: {
-    backgroundColor: theme.colors.surfaceHighest,
-    borderRadius: theme.radius.lg,
+  lede: { marginBottom: theme.spacing.lg },
+  skeletonCard: {
     padding: theme.spacing.md,
-    alignItems: "center",
-    gap: 2,
+    gap: theme.spacing.sm,
+    borderRadius: theme.radius.card,
+    backgroundColor: theme.colors.surfaceContainer,
   },
-  statBig: { color: theme.colors.onSurface, fontSize: 26, fontWeight: "800" },
-  statSub: { color: theme.colors.onSurfaceVariant, fontSize: 13 },
-  cta: {
-    backgroundColor: theme.colors.primary,
-    paddingVertical: 13,
-    borderRadius: theme.radius.full,
-    alignItems: "center",
-    marginTop: theme.spacing.sm,
+  skeletonCta: { marginTop: theme.spacing.sm },
+  statRow: {
+    flexDirection: "row",
+    gap: theme.spacing.sm,
+    paddingHorizontal: theme.spacing.md,
+    paddingTop: theme.spacing.sm,
   },
-  ctaOff: { opacity: 0.4 },
-  ctaText: { color: theme.colors.onPrimary, fontWeight: "700", fontSize: 15 },
-  doneText: { color: theme.colors.primary, fontWeight: "700", textAlign: "center" },
-  sectionTitle: {
-    color: theme.colors.onSurface,
-    fontWeight: "700",
-    fontSize: 14,
-    marginTop: theme.spacing.md,
+  actionWrap: {
+    paddingHorizontal: theme.spacing.md,
+    paddingTop: theme.spacing.md,
+    paddingBottom: theme.spacing.md,
   },
-  grid: { flexDirection: "row", flexWrap: "wrap", gap: 3 },
-  cell: { width: 92, height: 92, borderRadius: 8, margin: 0 },
-  hint: { color: theme.colors.onSurfaceVariant, fontSize: 13 },
+  progressWrap: { paddingHorizontal: theme.spacing.md, paddingBottom: theme.spacing.md },
+  doneRow: { paddingHorizontal: theme.spacing.md, paddingBottom: theme.spacing.md },
+  grid: { flexDirection: "row", flexWrap: "wrap", gap: theme.spacing.xs, padding: theme.spacing.sm },
+  cell: {
+    width: 92,
+    height: 92,
+    borderRadius: theme.radius.control,
+    overflow: "hidden",
+    backgroundColor: theme.colors.surfaceHighest,
+  },
+  emptyPreview: { padding: theme.spacing.md },
 });

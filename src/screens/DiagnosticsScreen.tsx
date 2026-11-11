@@ -1,28 +1,40 @@
 import React, { useCallback, useEffect, useState } from "react";
-import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
-import { StatusBar } from "expo-status-bar";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { ScrollView, StyleSheet, View } from "react-native";
+import Constants from "expo-constants";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
-import { getDbDiagnostics, DbDiagnostics } from "../db/queries";
+import { getDbDiagnostics, type DbDiagnostics } from "../db/queries";
 import { fetchAuthorizationState } from "../lib/tdlib";
 import { getLastScanSummary } from "../lib/scanner";
 import { formatBytes } from "../lib/stats";
-import Constants from "expo-constants";
 import { theme } from "../theme";
+import { t } from "../lib/i18n";
+import {
+  AppBar,
+  AppText,
+  ErrorState,
+  IconButton,
+  Screen,
+  Section,
+  Skeleton,
+} from "../ui";
 
 // v0.31 in-app diagnostics: everything a debugging session would ask for
 // first — schema version, DB size, per-state media counts, queue state,
 // TDLib auth state and the last scan's errors — readable without adb.
 export function DiagnosticsScreen({ navigation }: { navigation: NativeStackNavigationProp<{ Tabs: undefined }> }) {
-  const insets = useSafeAreaInsets();
   const [diag, setDiag] = useState<DbDiagnostics | null>(null);
   const [authState, setAuthState] = useState<string>("unknown");
   const [scanSummary, setScanSummary] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState(false);
 
   const reload = useCallback(() => {
+    setLoadError(false);
     void getDbDiagnostics()
       .then(setDiag)
-      .catch(() => setDiag(null));
+      .catch(() => {
+        setDiag(null);
+        setLoadError(true);
+      });
     void fetchAuthorizationState()
       .then((auth) => setAuthState((auth?.["@type"] as string) ?? "unavailable"))
       .catch(() => setAuthState("unavailable"));
@@ -52,122 +64,122 @@ export function DiagnosticsScreen({ navigation }: { navigation: NativeStackNavig
   })();
 
   return (
-    <View style={[styles.root, { paddingTop: insets.top }]}>
-      <StatusBar style="light" />
-      <View style={styles.header}>
-        <Pressable onPress={() => navigation.goBack()} hitSlop={12}>
-          <Text style={styles.back}>←</Text>
-        </Pressable>
-        <Text style={styles.title}>Diagnostics</Text>
-        <Pressable style={styles.refreshBtn} onPress={reload} hitSlop={8}>
-          <Text style={styles.refreshText}>Refresh</Text>
-        </Pressable>
-      </View>
-      <ScrollView contentContainerStyle={styles.content}>
-        <View style={styles.card}>
-          <DiagRow k="App version" v={Constants.expoConfig?.version ?? "unknown"} />
-          <DiagRow k="Database schema" v={diag ? `v${diag.schemaVersion}` : "…"} />
-          <DiagRow k="Database size" v={diag ? formatBytes(diag.dbBytes) : "…"} />
-          <DiagRow k="TDLib auth state" v={authState} />
-        </View>
+    <Screen>
+      <AppBar
+        title="Diagnostics"
+        subtitle="A snapshot of this phone's index, queue and login state"
+        large
+        onBack={() => navigation.goBack()}
+        backLabel={t("common.back")}
+        actions={<IconButton icon="refresh" label="Refresh" onPress={reload} />}
+      />
 
-        <Text style={styles.sectionTitle}>Library (media table)</Text>
-        <View style={styles.card}>
-          <DiagRow k="Total rows" v={diag ? String(diag.mediaTotal) : "…"} />
-          <DiagRow k="Visible" v={diag ? String(diag.mediaVisible) : "…"} />
-          <DiagRow k="Synced to Telegram" v={diag ? String(diag.mediaSynced) : "…"} />
-          <DiagRow k="Local only" v={diag ? String(diag.mediaLocal) : "…"} />
-          <DiagRow k="Upload failed" v={diag ? String(diag.mediaFailed) : "…"} />
-          <DiagRow k="Archived / Hidden / Trash" v={diag ? `${diag.mediaArchived} / ${diag.mediaHidden} / ${diag.mediaTrashed}` : "…"} />
-        </View>
+      <ScrollView
+        contentContainerStyle={styles.content}
+        showsVerticalScrollIndicator={false}
+      >
+        {loadError ? (
+          <ErrorState
+            title={t("state.error")}
+            body="Photogram couldn't read the database report. Your photos and backups are untouched."
+            retryLabel={t("common.retry")}
+            onRetry={reload}
+          />
+        ) : (
+          <>
+            <Section title="This app" icon="build-outline">
+              <DiagRow k="App version" v={Constants.expoConfig?.version ?? "unknown"} />
+              <DiagRow k="Database schema" v={diag ? `v${diag.schemaVersion}` : undefined} />
+              <DiagRow k="Database size" v={diag ? formatBytes(diag.dbBytes) : undefined} />
+              <DiagRow k="TDLib auth state" v={authState} />
+            </Section>
 
-        <Text style={styles.sectionTitle}>Upload queue</Text>
-        <View style={styles.card}>
-          <DiagRow k="Pending" v={diag ? String(diag.queuePending) : "…"} />
-          <DiagRow k="Active" v={diag ? String(diag.queueActive) : "…"} />
-          <DiagRow k="Failed" v={diag ? String(diag.queueFailed) : "…"} />
-        </View>
+            <Section title="Library (media table)" icon="images-outline">
+              <DiagRow k="Total rows" v={diag ? String(diag.mediaTotal) : undefined} />
+              <DiagRow k="Visible" v={diag ? String(diag.mediaVisible) : undefined} />
+              <DiagRow k="Synced to Telegram" v={diag ? String(diag.mediaSynced) : undefined} />
+              <DiagRow k="Local only" v={diag ? String(diag.mediaLocal) : undefined} />
+              <DiagRow k="Upload failed" v={diag ? String(diag.mediaFailed) : undefined} />
+              <DiagRow
+                k="Archived / Hidden / Trash"
+                v={diag ? `${diag.mediaArchived} / ${diag.mediaHidden} / ${diag.mediaTrashed}` : undefined}
+              />
+            </Section>
 
-        <Text style={styles.sectionTitle}>Features</Text>
-        <View style={styles.card}>
-          <DiagRow k="Saved searches" v={diag ? String(diag.savedSearches) : "…"} />
-          <DiagRow k="Photos hashed (similar search)" v={diag ? String(diag.hashedCount) : "…"} />
-          <DiagRow k="Notes written" v={diag ? String(diag.notedCount) : "…"} />
-          <DiagRow k="Pending junk findings" v={diag ? String(diag.junkPending) : "…"} />
-        </View>
+            <Section title="Upload queue" icon="cloud-upload-outline">
+              <DiagRow k="Pending" v={diag ? String(diag.queuePending) : undefined} />
+              <DiagRow k="Active" v={diag ? String(diag.queueActive) : undefined} />
+              <DiagRow k="Failed" v={diag ? String(diag.queueFailed) : undefined} />
+            </Section>
 
-        <Text style={styles.sectionTitle}>Last scan</Text>
-        <View style={styles.card}>
-          {!scan ? (
-            <DiagRow k="No scan recorded yet" v="—" />
-          ) : (
-            <>
-              <DiagRow k="Finished" v={new Date(scan.finishedAt).toLocaleString()} />
-              <DiagRow k="Scanned / added" v={`${scan.scanned} / ${scan.added}`} />
-              <DiagRow k="Duplicates / failed" v={`${scan.duplicates} / ${scan.failed}`} />
-              {scan.partialAccess ? <DiagRow k="Partial access" v="Android granted only selected items" /> : null}
-              {scan.lastError ? <DiagRow k="Last error" v={scan.lastError} /> : null}
-            </>
-          )}
-        </View>
+            <Section title="Features" icon="sparkles-outline">
+              <DiagRow k="Saved searches" v={diag ? String(diag.savedSearches) : undefined} />
+              <DiagRow
+                k="Photos hashed (similar search)"
+                v={diag ? String(diag.hashedCount) : undefined}
+              />
+              <DiagRow k="Notes written" v={diag ? String(diag.notedCount) : undefined} />
+              <DiagRow k="Pending junk findings" v={diag ? String(diag.junkPending) : undefined} />
+            </Section>
+
+            <Section title="Last scan" icon="search-outline">
+              {!scan ? (
+                <DiagRow k="No scan recorded yet" v="—" />
+              ) : (
+                <>
+                  <DiagRow k="Finished" v={new Date(scan.finishedAt).toLocaleString()} />
+                  <DiagRow k="Scanned / added" v={`${scan.scanned} / ${scan.added}`} />
+                  <DiagRow k="Duplicates / failed" v={`${scan.duplicates} / ${scan.failed}`} />
+                  {scan.partialAccess ? (
+                    <DiagRow k="Partial access" v="Android granted only selected items" />
+                  ) : null}
+                  {scan.lastError ? <DiagRow k="Last error" v={scan.lastError} /> : null}
+                </>
+              )}
+            </Section>
+          </>
+        )}
       </ScrollView>
-    </View>
+    </Screen>
   );
 }
 
-function DiagRow({ k, v }: { k: string; v: string }) {
+function DiagRow({ k, v }: { k: string; v?: string }) {
   return (
-    <View style={styles.row}>
-      <Text style={styles.rowKey}>{k}</Text>
-      <Text style={styles.rowValue} numberOfLines={2}>
-        {v}
-      </Text>
+    <View style={styles.row} accessible accessibilityLabel={`${k}: ${v ?? "loading"}`}>
+      <AppText
+        variant="footnote"
+        color={theme.colors.onSurfaceVariant}
+        numberOfLines={2}
+        style={styles.rowKey}
+      >
+        {k}
+      </AppText>
+      {v === undefined ? (
+        <Skeleton width={72} height={14} />
+      ) : (
+        <AppText variant="footnote" weight="medium" align="right" numberOfLines={3} style={styles.rowValue}>
+          {v}
+        </AppText>
+      )}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: theme.colors.background },
-  header: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: theme.spacing.md,
-    paddingHorizontal: theme.spacing.lg,
-    paddingTop: theme.spacing.md,
-    paddingBottom: theme.spacing.sm,
-  },
-  back: { color: theme.colors.onSurface, fontSize: 24 },
-  title: { flex: 1, color: theme.colors.onSurface, fontSize: 22, fontWeight: "700" },
-  refreshBtn: {
-    backgroundColor: theme.colors.primaryContainer,
-    borderRadius: theme.radius.full,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-  },
-  refreshText: { color: theme.colors.onPrimaryContainer, fontWeight: "700", fontSize: 12 },
-  content: { paddingBottom: 40, paddingHorizontal: theme.spacing.lg },
-  sectionTitle: {
-    color: theme.colors.onSurface,
-    fontSize: 15,
-    fontWeight: "700",
-    marginTop: theme.spacing.lg,
-    marginBottom: theme.spacing.sm,
-  },
-  card: {
-    backgroundColor: theme.colors.surfaceContainer,
-    borderRadius: theme.radius.lg,
-    borderWidth: 1,
-    borderColor: theme.colors.outlineVariant,
+  content: {
     paddingHorizontal: theme.spacing.md,
+    paddingBottom: theme.spacing.xl,
   },
   row: {
     flexDirection: "row",
     justifyContent: "space-between",
-    gap: theme.spacing.md,
-    paddingVertical: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: theme.colors.outlineVariant,
+    alignItems: "center",
+    gap: theme.spacing.compact,
+    paddingHorizontal: theme.spacing.md,
+    paddingVertical: theme.spacing.compact,
+    minHeight: theme.layout.touch,
   },
-  rowKey: { color: theme.colors.onSurfaceVariant, fontSize: 13, flexShrink: 1 },
-  rowValue: { color: theme.colors.onSurface, fontSize: 13, fontWeight: "500", textAlign: "right", flexShrink: 2 },
+  rowKey: { flexShrink: 1 },
+  rowValue: { flexShrink: 2 },
 });

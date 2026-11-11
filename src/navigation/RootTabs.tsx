@@ -1,21 +1,20 @@
-import React, { useEffect, useLayoutEffect } from "react";
+import React, { useEffect } from "react";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
-import { StyleSheet, Text, View } from "react-native";
+import { StyleSheet, View, useWindowDimensions } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import Animated, {
-  Easing,
   useAnimatedStyle,
+  useReducedMotion,
   useSharedValue,
-  withSequence,
-  withSpring,
   withTiming,
 } from "react-native-reanimated";
-import { useIsFocused } from "@react-navigation/native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { GalleryScreen } from "../screens/GalleryScreen";
 import { CollectionsScreen } from "../screens/CollectionsScreen";
 import { SettingsScreen } from "../screens/SettingsScreen";
 import { theme } from "../theme";
 import { t } from "../lib/i18n";
+import { easing } from "../ui/motion";
 
 export type RootTabParamList = {
   Gallery: undefined;
@@ -25,72 +24,26 @@ export type RootTabParamList = {
 
 const Tab = createBottomTabNavigator<RootTabParamList>();
 
+/**
+ * Icon semantics fixed: Gallery is a photo grid, Collections is a library of
+ * albums, Settings is settings. Filled = active, outline = inactive.
+ */
 const TAB_ICONS: Record<
   keyof RootTabParamList,
   { on: keyof typeof Ionicons.glyphMap; off: keyof typeof Ionicons.glyphMap }
 > = {
-  Gallery: { on: "cloud", off: "cloud-outline" },
-  Collections: { on: "search", off: "search-outline" },
+  Gallery: { on: "images", off: "images-outline" },
+  Collections: { on: "albums", off: "albums-outline" },
   Settings: { on: "settings", off: "settings-outline" },
 };
 
-/**
- * Fades + slides the incoming tab screen in on every focus. Tab screens stay
- * mounted, so this is driven by the navigation focus state, not mounting.
- */
-function useTabEntrance() {
-  const isFocused = useIsFocused();
-  const progress = useSharedValue(0);
+const TAB_LABEL: Record<keyof RootTabParamList, string> = {
+  Gallery: "tabs.gallery",
+  Collections: "tabs.collections",
+  Settings: "tabs.settings",
+};
 
-  // useLayoutEffect so the hidden start state is applied before the first
-  // painted frame after a focus switch (also correct after screen freezes).
-  useLayoutEffect(() => {
-    if (!isFocused) return;
-    progress.value = 0;
-    progress.value = withTiming(1, { duration: 200, easing: Easing.out(Easing.cubic) });
-  }, [isFocused, progress]);
-
-  return useAnimatedStyle(() => ({
-    opacity: progress.value,
-    transform: [{ translateY: (1 - progress.value) * 12 }],
-  }));
-}
-
-/** Root wrapper for every tab screen — keeps screen internals untouched. */
-function TabScreenShell({ children }: { children: React.ReactNode }) {
-  const entranceStyle = useTabEntrance();
-  return <Animated.View style={[styles.shell, entranceStyle]}>{children}</Animated.View>;
-}
-
-function GalleryTabScreen() {
-  return (
-    <TabScreenShell>
-      <GalleryScreen />
-    </TabScreenShell>
-  );
-}
-
-function CollectionsTabScreen(props: React.ComponentProps<typeof CollectionsScreen>) {
-  return (
-    <TabScreenShell>
-      <CollectionsScreen {...props} />
-    </TabScreenShell>
-  );
-}
-
-function SettingsTabScreen() {
-  return (
-    <TabScreenShell>
-      <SettingsScreen />
-    </TabScreenShell>
-  );
-}
-
-/**
- * Tab bar glyph with a spring-based focus animation, one per tab personality:
- * cloud pops, search wiggles, gear does a full spin. Runs every time the tab
- * gains focus (the tab bar is always mounted, unlike the screens).
- */
+/** A 24dp glyph that settles at 1.05 when focused. No spins, no bouncing. */
 function TabIcon({
   routeName,
   color,
@@ -100,102 +53,100 @@ function TabIcon({
   color: string;
   focused: boolean;
 }) {
-  const scale = useSharedValue(1);
-  const rotate = useSharedValue(0);
+  const reduced = useReducedMotion();
+  const scale = useSharedValue(focused ? 1.05 : 1);
 
   useEffect(() => {
-    if (!focused) {
-      // Ease back to identity while hidden so the next focus replays cleanly.
-      scale.value = withTiming(1, { duration: 120 });
-      rotate.value = withTiming(0, { duration: 120 });
-      return;
-    }
-    if (routeName === "Settings") {
-      // Gear: one smooth 360° spin.
-      rotate.value = withTiming(360, { duration: 400, easing: Easing.inOut(Easing.cubic) }, (finished) => {
-        if (finished) rotate.value = 0;
-      });
-    } else if (routeName === "Gallery") {
-      // Cloud: little bounce/scale pop (1 → 1.18 → 1).
-      scale.value = withSequence(
-        withSpring(1.18, { stiffness: 320, damping: 13 }),
-        withSpring(1, { stiffness: 280, damping: 14 })
-      );
-      rotate.value = withTiming(0, { duration: 100 });
-    } else {
-      // Search: quick pulse + rotation wiggle (-12° → 12° → 0).
-      scale.value = withSequence(
-        withSpring(1.12, { stiffness: 320, damping: 13 }),
-        withSpring(1, { stiffness: 280, damping: 14 })
-      );
-      rotate.value = withSequence(
-        withTiming(-12, { duration: 100, easing: Easing.out(Easing.quad) }),
-        withTiming(12, { duration: 150, easing: Easing.inOut(Easing.quad) }),
-        withTiming(0, { duration: 120, easing: Easing.in(Easing.quad) })
-      );
-    }
-  }, [focused, routeName, scale, rotate]);
+    scale.set(
+      reduced
+        ? focused
+          ? 1.05
+          : 1
+        : withTiming(focused ? 1.05 : 1, {
+            duration: theme.motion.duration.fast,
+            easing: easing.standard,
+          })
+    );
+  }, [focused, reduced, scale]);
 
-  const iconStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: scale.value }, { rotate: rotate.value + "deg" }],
-  }));
-
+  const style = useAnimatedStyle(() => ({ transform: [{ scale: scale.get() }] }));
   const icons = TAB_ICONS[routeName];
+
   return (
-    <View style={[styles.tabIconWrap, focused && styles.tabIconFocused]}>
-      <Animated.View style={iconStyle}>
-        <Ionicons name={focused ? icons.on : icons.off} size={18} color={color} />
+    <View style={styles.iconBox}>
+      <Animated.View style={style}>
+        <Ionicons
+          name={focused ? icons.on : icons.off}
+          size={theme.layout.icon}
+          color={color}
+          importantForAccessibility="no"
+        />
       </Animated.View>
     </View>
   );
 }
 
 export function RootTabs() {
+  const insets = useSafeAreaInsets();
+  const { fontScale } = useWindowDimensions();
+  // Let the bar grow with the OS font scale instead of clipping 11dp labels.
+  const labelGrowth = Math.min(12, Math.round((fontScale - 1) * 12));
+
   return (
     <Tab.Navigator
-      screenOptions={({ route }) => ({
-        headerShown: false,
-        tabBarStyle: styles.tabBar,
-        tabBarActiveTintColor: theme.colors.primary,
-        tabBarInactiveTintColor: theme.colors.onSurfaceVariant,
-        tabBarLabel: ({ color }) => {
-          const label =
-            route.name === "Gallery"
-              ? t("tabs.gallery")
-              : route.name === "Collections"
-              ? t("tabs.collections")
-              : t("tabs.settings");
-          return <Text style={[styles.tabLabel, { color }]}>{label}</Text>;
-        },
-        tabBarIcon: ({ color, focused }) => (
-          <TabIcon routeName={route.name as keyof RootTabParamList} color={color} focused={focused} />
-        ),
-      })}
+      screenOptions={({ route }) => {
+        const name = route.name as keyof RootTabParamList;
+        return {
+          headerShown: false,
+          animation: "none",
+          tabBarHideOnKeyboard: true,
+          tabBarActiveTintColor: theme.colors.accent,
+          tabBarInactiveTintColor: theme.colors.onSurfaceVariant,
+          tabBarAccessibilityLabel: t(TAB_LABEL[name]),
+          tabBarLabel: t(TAB_LABEL[name]),
+          tabBarStyle: [
+            styles.tabBar,
+            { height: theme.layout.tabBar + insets.bottom + labelGrowth },
+          ],
+          tabBarItemStyle: styles.tabItem,
+          tabBarLabelStyle: styles.tabLabel,
+          tabBarAllowFontScaling: true,
+          sceneStyle: styles.scene,
+          tabBarIcon: ({ color, focused }) => (
+            <TabIcon routeName={name} color={color} focused={focused} />
+          ),
+          tabBarIconStyle: styles.tabIconSlot,
+        };
+      }}
     >
-      <Tab.Screen name="Gallery" component={GalleryTabScreen} />
-      <Tab.Screen name="Collections" component={CollectionsTabScreen} />
-      <Tab.Screen name="Settings" component={SettingsTabScreen} />
+      <Tab.Screen name="Gallery" component={GalleryScreen} />
+      <Tab.Screen name="Collections" component={CollectionsScreen} />
+      <Tab.Screen name="Settings" component={SettingsScreen} />
     </Tab.Navigator>
   );
 }
 
 const styles = StyleSheet.create({
-  shell: { flex: 1 },
+  scene: { backgroundColor: theme.colors.background },
   tabBar: {
     backgroundColor: theme.colors.surface,
-    borderTopColor: theme.colors.outlineVariant,
-    height: 64,
-    paddingTop: 6,
+    borderTopWidth: 0,
+    paddingTop: theme.spacing.xs,
+    paddingBottom: 0,
+    ...theme.elevation.floating,
   },
-  tabLabel: { fontSize: 11.5, fontWeight: "600" },
-  tabIconWrap: {
-    width: 40,
-    height: 26,
-    borderRadius: 13,
+  tabItem: { minHeight: theme.layout.touch, justifyContent: "center" },
+  tabIconSlot: { height: theme.layout.icon + 8, width: theme.layout.touch },
+  tabLabel: {
+    fontSize: theme.type.size.caption2,
+    lineHeight: theme.type.leading.caption2,
+    fontWeight: theme.type.weight.semibold,
+    marginTop: 0,
+  },
+  iconBox: {
+    width: theme.layout.touch,
+    height: theme.layout.icon + 4,
     alignItems: "center",
     justifyContent: "center",
-  },
-  tabIconFocused: {
-    backgroundColor: theme.colors.primaryContainer,
   },
 });

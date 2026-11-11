@@ -1,14 +1,6 @@
 import React, { useCallback, useEffect, useState } from "react";
-import {
-  Alert,
-  Pressable,
-  StyleSheet,
-  Text,
-  View,
-} from "react-native";
+import { StyleSheet, View } from "react-native";
 import { FlashList } from "@shopify/flash-list";
-import { Image } from "expo-image";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import TdLib from "react-native-tdlib";
 import {
@@ -21,6 +13,20 @@ import {
 } from "../db/queries";
 import { TRASH_RETENTION_DAYS } from "../lib/trash";
 import { theme } from "../theme";
+import { t } from "../lib/i18n";
+import {
+  AppBar,
+  AppText,
+  EmptyState,
+  ErrorState,
+  IconButton,
+  ListRow,
+  MediaTile,
+  Screen,
+  Section,
+  Skeleton,
+  confirmDialog,
+} from "../ui";
 
 function daysLeft(trashedAt: number | null): number {
   if (!trashedAt) return TRASH_RETENTION_DAYS;
@@ -33,14 +39,25 @@ export function TrashScreen({
 }: {
   navigation: NativeStackNavigationProp<{ Tabs: undefined }>;
 }) {
-  const insets = useSafeAreaInsets();
   const [rows, setRows] = useState<MediaRow[]>([]);
   const [mergedCount, setMergedCount] = useState(0);
   const [tick, setTick] = useState(0);
+  const [loaded, setLoaded] = useState(false);
+  const [loadError, setLoadError] = useState(false);
 
   const reload = useCallback(() => {
-    void listTrashed().then(setRows);
-    void countMergedInTrash().then(setMergedCount);
+    setLoadError(false);
+    void (async () => {
+      try {
+        const [trashed, merged] = await Promise.all([listTrashed(), countMergedInTrash()]);
+        setRows(trashed);
+        setMergedCount(merged);
+      } catch {
+        setLoadError(true);
+      } finally {
+        setLoaded(true);
+      }
+    })();
   }, []);
 
   useEffect(() => {
@@ -48,22 +65,19 @@ export function TrashScreen({
   }, [reload, tick]);
 
   const undoMerge = useCallback(() => {
-    Alert.alert(
-      "Undo duplicate merge",
-      `Bring the ${mergedCount} merged duplicate${mergedCount === 1 ? "" : "s"} back to the gallery? Telegram keeps both copies either way.`,
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Restore",
-          onPress: () => {
-            void restoreMergedFromTrash().then(() => {
-              setMergedCount(0);
-              setTick((t) => t + 1);
-            });
-          },
-        },
-      ]
-    );
+    void confirmDialog({
+      title: "Undo duplicate merge",
+      message: `Bring the ${mergedCount} merged duplicate${
+        mergedCount === 1 ? "" : "s"
+      } back to the gallery? Telegram keeps both copies either way.`,
+      confirmLabel: "Restore",
+    }).then((ok) => {
+      if (!ok) return;
+      void restoreMergedFromTrash().then(() => {
+        setMergedCount(0);
+        setTick((t) => t + 1);
+      });
+    });
   }, [mergedCount]);
 
   const restore = useCallback(async (row: MediaRow) => {
@@ -72,114 +86,159 @@ export function TrashScreen({
   }, []);
 
   const deleteForever = useCallback((row: MediaRow) => {
-    Alert.alert("Delete forever?", `${row.file_name ?? "This item"} will be removed from Telegram too.`, [
-      { text: "Cancel", style: "cancel" },
-      {
-        text: "Delete",
-        style: "destructive",
-        onPress: () => {
-          void (async () => {
-            if (row.remote_chat_id && row.remote_message_id && row.remote_message_id !== "0") {
-              try {
-                await TdLib.deleteMessages(Number(row.remote_chat_id), [Number(row.remote_message_id)], false);
-              } catch {}
-            }
-            await deleteMediaRow(row.id);
-            setRows((prev) => prev.filter((r) => r.id !== row.id));
-          })();
-        },
-      },
-    ]);
+    void confirmDialog({
+      title: "Delete forever?",
+      message: `${row.file_name ?? "This item"} will be removed from Telegram too.`,
+      confirmLabel: t("common.delete"),
+      destructive: true,
+    }).then((ok) => {
+      if (!ok) return;
+      void (async () => {
+        if (row.remote_chat_id && row.remote_message_id && row.remote_message_id !== "0") {
+          try {
+            await TdLib.deleteMessages(Number(row.remote_chat_id), [Number(row.remote_message_id)], false);
+          } catch {}
+        }
+        await deleteMediaRow(row.id);
+        setRows((prev) => prev.filter((r) => r.id !== row.id));
+      })();
+    });
   }, []);
 
   return (
-    <View style={[styles.root, { paddingTop: insets.top }]}>
-      <View style={styles.header}>
-        <Pressable onPress={() => navigation.goBack()} hitSlop={12}>
-          <Text style={styles.back}>←</Text>
-        </Pressable>
-        <Text style={styles.title}>Trash</Text>
-      </View>
-      <Text style={styles.note}>Items are permanently deleted after {TRASH_RETENTION_DAYS} days.</Text>
+    <Screen>
+      <AppBar
+        title={t("collections.trash")}
+        subtitle={`Items are permanently deleted after ${TRASH_RETENTION_DAYS} days.`}
+        large
+        onBack={() => navigation.goBack()}
+        backLabel={t("common.back")}
+      />
 
       {mergedCount > 0 ? (
-        <Pressable style={styles.undoBanner} onPress={undoMerge}>
-          <Text style={styles.undoText}>
-            {mergedCount} duplicate{mergedCount === 1 ? "" : "s"} hidden by duplicate-merge live here
-          </Text>
-          <Text style={styles.undoBtn}>Undo merge</Text>
-        </Pressable>
+        <View style={styles.section}>
+          <Section>
+            <ListRow
+              title="Undo duplicate merge"
+              subtitle={`${mergedCount} duplicate${
+                mergedCount === 1 ? "" : "s"
+              } hidden by duplicate-merge live here`}
+              icon="copy-outline"
+              accessory="chevron"
+              onPress={undoMerge}
+            />
+          </Section>
+        </View>
       ) : null}
 
-      <FlashList
-        data={rows}
-        numColumns={3}
-        masonry
-        keyExtractor={(r) => String(r.id)}
-        extraData={tick}
-        renderItem={({ item }) => {
-          const left = daysLeft((item as any).trashed_at ?? null);
-          return (
-            <View style={styles.cell}>
-              <Image source={{ uri: item.thumb_uri }} style={StyleSheet.absoluteFill} contentFit="cover" recyclingKey={`t-${item.id}`} />
-              <View style={styles.cellShade} />
-              <Text style={styles.days}>{left <= 1 ? "1 day" : `${left} days`}</Text>
-              <View style={styles.cellActions}>
-                <Pressable style={styles.miniBtn} onPress={() => void restore(item)}>
-                  <Text style={styles.miniBtnText}>Restore</Text>
-                </Pressable>
-                <Pressable style={[styles.miniBtn, styles.dangerBtn]} onPress={() => deleteForever(item)}>
-                  <Text style={[styles.miniBtnText, styles.dangerText]}>Delete</Text>
-                </Pressable>
+      {loadError ? (
+        <ErrorState
+          title={t("state.error")}
+          body="Photogram couldn't read the Trash on this phone. Nothing has been deleted."
+          retryLabel={t("common.retry")}
+          onRetry={reload}
+        />
+      ) : !loaded ? (
+        <View style={styles.skeletonGrid}>
+          {Array.from({ length: 9 }).map((_, i) => (
+            <Skeleton
+              key={i}
+              width="31%"
+              height={132}
+              radius={theme.radius.thumb}
+              style={styles.skeletonCell}
+              label={i === 0 ? t("common.loading") : undefined}
+            />
+          ))}
+        </View>
+      ) : (
+        <FlashList
+          data={rows}
+          numColumns={3}
+          keyExtractor={(r) => String(r.id)}
+          extraData={tick}
+          renderItem={({ item }) => {
+            const left = daysLeft(item.trashed_at ?? null);
+            const daysLabel = left <= 1 ? "1 day" : `${left} days`;
+            return (
+              <View style={styles.cell}>
+                <MediaTile
+                  uri={item.thumb_uri}
+                  aspectRatio={0.8}
+                  video={item.mime_type.startsWith("video/")}
+                  accessibilityLabel={`${item.file_name ?? "Item"}, ${daysLabel} left in Trash`}
+                />
+                <View style={styles.daysPill}>
+                  <AppText
+                    variant="caption2"
+                    weight="semibold"
+                    color={left <= 1 ? theme.colors.error : theme.colors.onViewer}
+                  >
+                    {daysLabel}
+                  </AppText>
+                </View>
+                <View style={styles.cellActions}>
+                  <IconButton
+                    icon="arrow-undo-outline"
+                    label="Restore"
+                    variant="onMedia"
+                    size={40}
+                    onPress={() => void restore(item)}
+                  />
+                  <IconButton
+                    icon="trash-outline"
+                    label={t("common.delete")}
+                    variant="danger"
+                    size={40}
+                    onPress={() => deleteForever(item)}
+                  />
+                </View>
               </View>
-              {left === 0 ? <View style={styles.expiredFlag} /> : null}
-            </View>
-          );
-        }}
-        ListEmptyComponent={<Text style={styles.empty}>Trash is empty.</Text>}
-        contentContainerStyle={styles.listContent}
-      />
-    </View>
+            );
+          }}
+          contentContainerStyle={styles.listContent}
+          showsVerticalScrollIndicator={false}
+          ListEmptyComponent={
+            <EmptyState
+              icon="trash-outline"
+              title="Trash is empty"
+              body={`Deleted photos wait here for ${TRASH_RETENTION_DAYS} days, then they are removed from Telegram too.`}
+              actionLabel={t("common.back")}
+              onAction={() => navigation.goBack()}
+            />
+          }
+        />
+      )}
+    </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: theme.colors.background },
-  header: { flexDirection: "row", alignItems: "center", gap: theme.spacing.md, paddingHorizontal: theme.spacing.md, paddingBottom: 4 },
-  back: { color: theme.colors.onSurface, fontSize: 24 },
-  title: { color: theme.colors.onSurface, fontSize: 24, fontWeight: "700" },
-  note: { color: theme.colors.onSurfaceVariant, fontSize: 12.5, paddingHorizontal: theme.spacing.md, marginBottom: theme.spacing.sm },
-  undoBanner: {
+  section: { paddingHorizontal: theme.spacing.md },
+  listContent: { paddingBottom: theme.spacing.xl },
+  cell: { flex: 1, margin: 1 },
+  daysPill: {
+    position: "absolute",
+    top: theme.spacing.xs,
+    left: theme.spacing.xs,
+    backgroundColor: theme.colors.mediaScrim,
+    borderRadius: theme.radius.thumb,
+    paddingHorizontal: theme.spacing.xs,
+    paddingVertical: 1,
+  },
+  cellActions: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    bottom: theme.spacing.xs,
     flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: theme.spacing.md,
-    marginHorizontal: theme.spacing.md,
-    marginBottom: theme.spacing.sm,
-    backgroundColor: theme.colors.secondaryContainer,
-    borderRadius: theme.radius.lg,
-    paddingHorizontal: theme.spacing.md,
-    paddingVertical: theme.spacing.sm,
+    justifyContent: "center",
+    gap: theme.spacing.xs,
   },
-  undoText: { color: theme.colors.onSecondaryContainer, fontSize: 12.5, flex: 1 },
-  undoBtn: { color: theme.colors.primary, fontSize: 13, fontWeight: "700" },
-  listContent: { paddingBottom: 40 },
-  cell: {
-    flex: 1,
-    margin: 1,
-    aspectRatio: 0.8,
-    borderRadius: 6,
-    overflow: "hidden",
-    backgroundColor: theme.colors.surfaceHighest,
-    justifyContent: "flex-end",
+  skeletonGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    padding: theme.spacing.xs,
   },
-  cellShade: { ...StyleSheet.absoluteFill, backgroundColor: "#00000055" },
-  days: { color: "#FFFFFF", fontSize: 11, fontWeight: "700", textAlign: "center", marginBottom: 4 },
-  cellActions: { flexDirection: "row", justifyContent: "center", gap: 4, paddingBottom: 6 },
-  miniBtn: { backgroundColor: "#FFFFFF22", borderRadius: 999, paddingHorizontal: 9, paddingVertical: 4 },
-  dangerBtn: { backgroundColor: "#EA433533" },
-  miniBtnText: { color: "#FFFFFF", fontSize: 10.5, fontWeight: "600" },
-  dangerText: { color: theme.colors.error },
-  expiredFlag: { position: "absolute", top: 5, right: 5, width: 8, height: 8, borderRadius: 4, backgroundColor: theme.colors.error },
-  empty: { color: theme.colors.onSurfaceVariant, textAlign: "center", marginTop: 60 },
+  skeletonCell: { margin: 2 },
 });

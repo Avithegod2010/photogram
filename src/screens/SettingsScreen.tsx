@@ -1,59 +1,75 @@
 import React, { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
-  Alert,
-  Pressable,
   RefreshControl,
   ScrollView,
   Share,
   StyleSheet,
-  Switch,
-  Text,
-  TextInput,
   View,
 } from "react-native";
-import { StatusBar } from "expo-status-bar";
 import TdLib from "react-native-tdlib";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { fetchProfile } from "../lib/tdlib";
-import { formatBytes, getMonthlyBuckets, getStorageTotals, MonthBucket, StorageTotals } from "../lib/stats";
+import { formatBytes, getMonthlyBuckets, getStorageTotals, type MonthBucket, type StorageTotals } from "../lib/stats";
 import { composeBackupCard } from "../lib/heartbeatCard";
 import { canUseBiometrics } from "../lib/biometrics";
 import { countFreeableBytes } from "../lib/trash";
 import { freeUpDeviceSpace } from "../lib/space";
 import { restoreMediaToDevice } from "../lib/restorer";
-import { getSyncedWithoutLocal, RestorableRow, getHealthSnapshot } from "../db/queries";
+import { getSyncedWithoutLocal, type RestorableRow, getHealthSnapshot } from "../db/queries";
 import { computeHealth, type HealthGrade, type HealthResult } from "../lib/healthScore";
 import { runRestoreDrill, DEFAULT_DRILL_COUNT } from "../lib/restoreDrill";
 import { pauseUploads, refreshCounts, resumeUploads, simulateRateLimitForTesting } from "../lib/uploader";
 import { useUploadStore } from "../store/uploadStore";
 import { safetyState, type SafetyStatus } from "../lib/uploadSafety";
-import { useSettingsStore, UploadQuality } from "../store/settingsStore";
+import { useSettingsStore, type UploadQuality } from "../store/settingsStore";
 import { enableNotifications } from "../lib/notify";
 import { useAuthStore } from "../auth/authStore";
 import { theme } from "../theme";
-import { t, getLocale, setLocale, Locale } from "../lib/i18n";
+import { t, getLocale, setLocale, type Locale } from "../lib/i18n";
+import {
+  AppBar,
+  AppText,
+  Badge,
+  Button,
+  Chip,
+  Input,
+  ListRow,
+  OfflineNotice,
+  ProgressBar,
+  Screen,
+  Section,
+  Skeleton,
+  Stat,
+  ToggleRow,
+  alertDialog,
+  confirmDialog,
+  type BadgeTone,
+} from "../ui";
 
-type SettingsNav = NativeStackNavigationProp<{ Migrate: undefined; JunkSweeper: undefined; Storage: undefined; Diagnostics: undefined; Export: undefined }>;
+type SettingsNav = NativeStackNavigationProp<{
+  Migrate: undefined;
+  JunkSweeper: undefined;
+  Storage: undefined;
+  Diagnostics: undefined;
+  Export: undefined;
+}>;
 
-// Green → amber → red, readable on the dark surface.
-function healthColor(grade: HealthGrade): string {
+function gradeTone(grade: HealthGrade): BadgeTone {
   switch (grade) {
     case "excellent":
-      return "#7BD88F";
+      return "success";
     case "good":
-      return "#A8C7FA";
+      return "accent";
     case "fair":
-      return "#FFC46B";
+      return "warning";
     default:
-      return "#FF8A80";
+      return "error";
   }
 }
 
 export function SettingsScreen() {
-  const insets = useSafeAreaInsets();
   const navigation = useNavigation<SettingsNav>();
   const [totals, setTotals] = useState<StorageTotals | null>(null);
   const [buckets, setBuckets] = useState<MonthBucket[]>([]);
@@ -109,7 +125,7 @@ export function SettingsScreen() {
   const setShowDateOnPhotos = useSettingsStore((s) => s.setShowDateOnPhotos);
   const storyMusic = useSettingsStore((s) => s.storyMusic);
   const setStoryMusic = useSettingsStore((s) => s.setStoryMusic);
-  const [localeTick, setLocaleTick] = useState(0);
+  const [, setLocaleTick] = useState(0);
   const uploadGapSeconds = useSettingsStore((s) => s.uploadGapSeconds);
   const setUploadGapSeconds = useSettingsStore((s) => s.setUploadGapSeconds);
   const dailyBudgetGb = useSettingsStore((s) => s.dailyBudgetGb);
@@ -139,10 +155,11 @@ export function SettingsScreen() {
           setNotificationsEnabled(true);
         } else {
           setNotificationsEnabled(false);
-          Alert.alert(
-            "Notifications blocked",
-            "Android denied notification permission. You can allow it in system settings → Apps → Photogram → Notifications."
-          );
+          void alertDialog({
+            title: "Notifications blocked",
+            message:
+              "Android denied notification permission. You can allow it in system settings → Apps → Photogram → Notifications.",
+          });
         }
       })();
     },
@@ -174,12 +191,15 @@ export function SettingsScreen() {
     })();
   }, [autoBackupEnabled, deviceAlbums.length]);
 
-  const toggleAutoFolder = useCallback((title: string) => {
-    const next = autoBackupFolders.includes(title)
-      ? autoBackupFolders.filter((f) => f !== title)
-      : [...autoBackupFolders, title];
-    setAutoBackupFolders(next);
-  }, [autoBackupFolders, setAutoBackupFolders]);
+  const toggleAutoFolder = useCallback(
+    (title: string) => {
+      const next = autoBackupFolders.includes(title)
+        ? autoBackupFolders.filter((f) => f !== title)
+        : [...autoBackupFolders, title];
+      setAutoBackupFolders(next);
+    },
+    [autoBackupFolders, setAutoBackupFolders]
+  );
   const boot = useAuthStore((s) => s.boot);
   const uploadActive = useUploadStore((s) => s.active);
   const uploadPending = useUploadStore((s) => s.pending);
@@ -199,13 +219,13 @@ export function SettingsScreen() {
       .then((s) => setHealth(computeHealth(s)))
       .catch(() => setHealth(null));
     try {
-      const [t, b, f, r] = await Promise.all([
+      const [tot, b, f, r] = await Promise.all([
         getStorageTotals(),
         getMonthlyBuckets(),
         countFreeableBytes(),
         getSyncedWithoutLocal(),
       ]);
-      setTotals(t);
+      setTotals(tot);
       setBuckets(b);
       setFreeable(f);
       setRestorable(r);
@@ -238,10 +258,10 @@ export function SettingsScreen() {
       try {
         const report = await runRestoreDrill();
         if (report.checked === 0) {
-          Alert.alert(
-            "Restore drill",
-            "Nothing to test yet — no backed-up item with a Telegram copy was found."
-          );
+          void alertDialog({
+            title: "Restore drill",
+            message: "Nothing to test yet — no backed-up item with a Telegram copy was found.",
+          });
           return;
         }
         const lines: string[] = [`${report.ok}/${report.checked} downloaded and verified.`];
@@ -263,9 +283,12 @@ export function SettingsScreen() {
         } else {
           lines.push("Everything came back intact. Your backup restores.");
         }
-        Alert.alert("Restore drill", lines.join("\n"));
+        void alertDialog({ title: "Restore drill", message: lines.join("\n") });
       } catch (e) {
-        Alert.alert("Restore drill failed", e instanceof Error ? e.message : String(e));
+        void alertDialog({
+          title: "Restore drill failed",
+          message: e instanceof Error ? e.message : String(e),
+        });
       } finally {
         setDrillRunning(false);
         void load();
@@ -275,730 +298,652 @@ export function SettingsScreen() {
 
   const restoreAll = useCallback(() => {
     if (restorable.length === 0) return;
-    Alert.alert(
-      "Restore originals?",
-      `Download ${restorable.length} item${restorable.length === 1 ? "" : "s"} (${formatBytes(
+    void confirmDialog({
+      title: "Restore originals?",
+      message: `Download ${restorable.length} item${restorable.length === 1 ? "" : "s"} (${formatBytes(
         restorable.reduce((s, r) => s + (r.byte_size || 0), 0)
       )}) from your Telegram cloud back onto this device?`,
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Restore",
-          onPress: () => {
-            void (async () => {
-              let restored = 0;
-              let failed = 0;
-              const errors: string[] = [];
-              for (let i = 0; i < restorable.length; i++) {
-                setRestoringText(`Restoring ${i + 1}/${restorable.length}…`);
-                const result = await restoreMediaToDevice(restorable[i].id);
-                if (result.outcome === "restored") restored++;
-                else {
-                  failed++;
-                  if (result.message) errors.push(result.message);
-                }
-              }
-              setRestoringText(null);
-              void load();
-              Alert.alert(
-                "Restore finished",
-                `${restored} item${restored === 1 ? "" : "s"} back on this device${
-                  failed > 0 ? ` · ${failed} failed` : ""
-                }${errors.length ? `\n\n${errors.slice(0, 2).join("\n\n")}` : ""}`
-              );
-            })();
-          },
-        },
-      ]
-    );
+      confirmLabel: "Restore",
+    }).then((ok) => {
+      if (!ok) return;
+      void (async () => {
+        let restored = 0;
+        let failed = 0;
+        const errors: string[] = [];
+        for (let i = 0; i < restorable.length; i++) {
+          setRestoringText(`Restoring ${i + 1}/${restorable.length}…`);
+          const result = await restoreMediaToDevice(restorable[i].id);
+          if (result.outcome === "restored") restored++;
+          else {
+            failed++;
+            if (result.message) errors.push(result.message);
+          }
+        }
+        setRestoringText(null);
+        void load();
+        void alertDialog({
+          title: "Restore finished",
+          message: `${restored} item${restored === 1 ? "" : "s"} back on this device${
+            failed > 0 ? ` · ${failed} failed` : ""
+          }${errors.length ? `\n\n${errors.slice(0, 2).join("\n\n")}` : ""}`,
+        });
+      })();
+    });
   }, [restorable, load]);
 
+  const freeSpace = useCallback(() => {
+    void confirmDialog({
+      title: "Free up space?",
+      message: `Remove ${formatBytes(freeable.bytes)} of local originals? They stay safe in your Telegram cloud; thumbnails remain on device.`,
+      confirmLabel: "Remove",
+      destructive: true,
+    }).then((ok) => {
+      if (!ok) return;
+      setFreeing(true);
+      void freeUpDeviceSpace()
+        .then(() => {
+          setFreeable({ count: 0, bytes: 0 });
+          void load();
+        })
+        .finally(() => setFreeing(false));
+    });
+  }, [freeable.bytes, load]);
+
+  const logout = useCallback(() => {
+    void confirmDialog({
+      title: "Log out of Telegram?",
+      message:
+        "Photogram will stop backing up and show the login screen. Your photos stay in Telegram and the local index stays on this phone.",
+      confirmLabel: "Log out",
+      destructive: true,
+    }).then((ok) => {
+      if (!ok) return;
+      void TdLib.logout().finally(() => void boot());
+    });
+  }, [boot]);
+
   return (
-    <View style={[styles.root, { paddingTop: insets.top }]}>
-      <StatusBar style="light" />
+    <Screen>
+      <AppBar title={t("tabs.settings")} large />
       <ScrollView
-        contentContainerStyle={styles.scroll}
+        contentContainerStyle={styles.content}
+        showsVerticalScrollIndicator={false}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
+            tintColor={theme.colors.accent}
+            colors={[theme.colors.accent]}
+            progressBackgroundColor={theme.colors.surfaceContainer}
             onRefresh={() => {
               setRefreshing(true);
               void load().finally(() => setRefreshing(false));
             }}
-            tintColor={theme.colors.primary}
           />
         }
       >
-        <Text style={styles.screenTitle}>Settings</Text>
-
-        <Section title="Uploads">
+        <OfflineNotice detail={t("state.offlineBackup")} inset={false} />
+        <Section title={t("settings.section.uploads")} icon="cloud-upload-outline">
           {uploadActive ? (
             <View style={styles.uploadCard}>
-              <Text style={styles.uploadName} numberOfLines={1}>
+              <AppText variant="body" weight="medium" numberOfLines={2}>
                 {uploadActive.fileName}
-              </Text>
-              <View style={styles.uploadBarTrack}>
-                <View
-                  style={[
-                    styles.uploadBarFill,
-                    {
-                      width: `${uploadActive.byteSize > 0 ? Math.max(4, (uploadActive.uploadedBytes / uploadActive.byteSize) * 100) : 6}%`,
-                    },
-                  ]}
-                />
-              </View>
-              <Text style={styles.uploadMeta}>
-                {formatBytes(uploadActive.uploadedBytes)} / {formatBytes(uploadActive.byteSize)}
-              </Text>
+              </AppText>
+              <ProgressBar
+                progress={uploadActive.byteSize > 0 ? uploadActive.uploadedBytes / uploadActive.byteSize : 0}
+                label="Upload progress"
+                valueText={`${formatBytes(uploadActive.uploadedBytes)} / ${formatBytes(uploadActive.byteSize)}`}
+                live
+              />
             </View>
           ) : (
-            <Row
-              label="No active upload"
-              sub={uploadPaused ? "Uploads are paused" : uploadHoldReason ?? "Queue is idle"}
-              muted
+            <ListRow
+              title={t("settings.noActiveUpload")}
+              subtitle={uploadPaused ? "Uploads are paused" : uploadHoldReason ?? "Queue is idle"}
             />
           )}
-          <View style={styles.queueStats}>
-            <StatCard value={String(uploadPending)} caption="Queued" />
-            <StatCard value={String(uploadDone)} caption="Uploaded" />
-            <StatCard value={String(uploadFailed)} caption="Failed" />
-            <StatCard value={formatBytes(todayBytes)} caption="Backed up today" />
+          <View style={styles.statRow}>
+            <Stat style={styles.statCell} value={uploadPending.toLocaleString()} label="Queued" />
+            <Stat style={styles.statCell} value={uploadDone.toLocaleString()} label="Uploaded" />
+            <Stat style={styles.statCell} value={uploadFailed.toLocaleString()} label="Failed" tone={uploadFailed > 0 ? theme.colors.error : undefined} />
+            <Stat style={styles.statCell} value={formatBytes(todayBytes)} label={t("settings.uploadedToday")} />
           </View>
-          <Pressable
-            style={({ pressed }) => [styles.pauseBtn, pressed && styles.pressed]}
-            android_ripple={{ color: theme.colors.outlineVariant }}
-            onPress={() => void (uploadPaused ? resumeUploads() : pauseUploads())}
-          >
-            <Text style={styles.pauseText}>{uploadPaused ? "Resume uploads" : "Pause uploads"}</Text>
-          </Pressable>
+          <View style={styles.buttonRow}>
+            <Button
+              label={uploadPaused ? t("settings.resume") : t("settings.pause")}
+              icon={uploadPaused ? "play" : "pause"}
+              variant="secondary"
+              size="sm"
+              onPress={() => void (uploadPaused ? resumeUploads() : pauseUploads())}
+            />
+            {uploadPending > 0 ? (
+              <Button
+                label={t("settings.backupNow")}
+                icon="cloud-upload-outline"
+                size="sm"
+                onPress={() => void resumeUploads()}
+              />
+            ) : null}
+          </View>
         </Section>
 
-        <Section title="Backup health">
+        <Section title={t("settings.section.health")} icon="pulse-outline">
           {health === null ? (
-            <Row label="Checking backup health…" muted />
+            <View style={styles.skeletonBox}>
+              <Skeleton height={20} width="40%" />
+              <Skeleton height={14} width="80%" />
+              <Skeleton height={14} width="65%" />
+            </View>
           ) : (
             <View style={styles.healthCard}>
               <View style={styles.healthTop}>
-                <View style={[styles.healthBadge, { borderColor: healthColor(health.grade) }]}>
-                  <Text style={[styles.healthScore, { color: healthColor(health.grade) }]}>
-                    {health.score}
-                  </Text>
-                  <Text style={styles.healthOutOf}>/100</Text>
-                </View>
-                <View style={styles.healthTextCol}>
-                  <Text style={styles.healthHeadline}>{health.headline}</Text>
-                  <Text style={[styles.healthGrade, { color: healthColor(health.grade) }]}>
-                    {health.grade.toUpperCase()}
-                  </Text>
+                <AppText variant="display" tabular>
+                  {health.score}
+                </AppText>
+                <View style={styles.flex}>
+                  <Badge label={health.grade.toUpperCase()} tone={gradeTone(health.grade)} />
+                  <AppText variant="body" weight="medium" style={styles.healthHeadline}>
+                    {health.headline}
+                  </AppText>
                 </View>
               </View>
               {health.reasons.slice(0, 4).map((reason, i) => (
-                <Text key={i} style={styles.healthReason}>
+                <AppText key={i} variant="footnote" color={theme.colors.onSurfaceVariant}>
                   • {reason}
-                </Text>
+                </AppText>
               ))}
               {health.actions.length > 0 ? (
-                <Pressable
-                  style={({ pressed }) => [styles.healthBtn, pressed && styles.pressed]}
-                  android_ripple={{ color: theme.colors.outlineVariant }}
+                <Button
+                  label={health.actions[0].label}
+                  variant="ghost"
+                  size="sm"
                   onPress={() => navigation.navigate("Diagnostics")}
-                >
-                  <Text style={styles.healthBtnText}>
-                    {health.actions[0].label}
-                  </Text>
-                </Pressable>
+                  style={styles.healthAction}
+                />
               ) : null}
             </View>
           )}
         </Section>
 
-        <Section title="Backup preferences">
-          <View style={styles.qualityRow}>
-            <Text style={styles.rowLabel}>Upload quality</Text>
-            <View style={styles.qualityChips}>
-              {(["storage_saver", "original"] as UploadQuality[]).map((q) => (
-                <Pressable
-                  key={q}
-                  onPress={() => setUploadQuality(q)}
-                  style={[styles.qualityChip, uploadQuality === q && styles.qualityChipActive]}
-                >
-                  <Text
-                    style={[
-                      styles.qualityChipText,
-                      uploadQuality === q && styles.qualityChipTextActive,
-                    ]}
-                  >
-                    {q === "original" ? "Original" : "Storage saver"}
-                  </Text>
-                </Pressable>
+        <Section title={t("settings.section.preferences")} icon="options-outline">
+          <View style={styles.controlRow}>
+            <AppText variant="body" weight="medium">
+              Upload quality
+            </AppText>
+            <View style={styles.chipWrap}>
+              {(
+                [
+                  { value: "storage_saver" as const, label: "Storage saver" },
+                  { value: "original" as const, label: "Original" },
+                ] as const
+              ).map((q) => (
+                <Chip
+                  key={q.value}
+                  label={q.label}
+                  selected={uploadQuality === q.value}
+                  onPress={() => setUploadQuality(q.value as UploadQuality)}
+                />
               ))}
             </View>
-            <Text style={styles.rowSub}>
+            <AppText variant="footnote" color={theme.colors.onSurfaceVariant}>
               {uploadQuality === "original"
                 ? "Upload files exactly as they are"
                 : "Photos larger than 2048px are recompressed (~85% quality). Videos always stay original."}
-            </Text>
+            </AppText>
           </View>
           <ToggleRow
-            label="Preview first, file as reply"
-            sub="Send a small preview photo instantly, then upload the original as a reply to it. Keeps Saved Messages browsable while big files upload."
+            title="Preview first, file as reply"
+            subtitle="Send a small preview photo instantly, then upload the original as a reply to it. Keeps Saved Messages browsable while big files upload."
             value={previewReplyUploads}
-            onChange={setPreviewReplyUploads}
+            onValueChange={setPreviewReplyUploads}
           />
           <ToggleRow
-            label="Preserve EXIF metadata"
-            sub="Keep date, camera and GPS data when uploading"
+            title="Preserve EXIF metadata"
+            subtitle="Keep date, camera and GPS data when uploading"
             value={exifPreserve}
-            onChange={setExifPreserve}
+            onValueChange={setExifPreserve}
           />
           <ToggleRow
-            label={t("settings.wifiOnly")}
-            sub="Queue uploads until a Wi-Fi connection is available"
+            title={t("settings.wifiOnly")}
+            subtitle="Queue uploads until a Wi-Fi connection is available"
             value={wifiOnlyUpload}
-            onChange={setWifiOnlyUpload}
+            onValueChange={setWifiOnlyUpload}
           />
-          <ToggleRow
-            label={t("settings.chargeOnly")}
-            value={chargeOnlyUpload}
-            onChange={setChargeOnlyUpload}
-          />
-          <ToggleRow
-            label={t("settings.showDate")}
-            sub="Show the capture date on every photo tile in the gallery. Turn off for a cleaner grid."
-            value={showDateOnPhotos}
-            onChange={setShowDateOnPhotos}
-          />
-          <ToggleRow
-            label={t("settings.storyMusic")}
-            sub="A quiet, self-made ambient loop plays while photos play as a story. No third-party audio."
-            value={storyMusic}
-            onChange={setStoryMusic}
-          />
+          <ToggleRow title={t("settings.chargeOnly")} value={chargeOnlyUpload} onValueChange={setChargeOnlyUpload} />
         </Section>
 
-        <Section title={t("settings.section.language")}>
-          {(["en", "hi"] as Locale[]).map((loc) => (
-            <Pressable
-              key={loc}
-              style={styles.row}
-              onPress={() => {
-                setLocale(loc);
-                setLocaleTick((n) => n + 1);
-              }}
-            >
-              <Text style={styles.rowLabel}>
-                {loc === "en" ? "English" : "हिंदी"}
-              </Text>
-              <Text style={styles.rowLabel}>
-                {getLocale() === loc ? "✓" : ""}
-              </Text>
-            </Pressable>
-          ))}
-        </Section>
-
-        <Section title={t("settings.section.auto")}>
+        <Section title={t("settings.section.auto")} icon="refresh-outline">
           <ToggleRow
-            label={t("settings.autoBackup")}
-            sub="Photogram quietly rescans every 5 minutes and queues anything new. Wi-Fi/charging rules still apply."
+            title={t("settings.autoBackup")}
+            subtitle="Photogram quietly rescans every 5 minutes and queues anything new. Wi-Fi/charging rules still apply."
             value={autoBackupEnabled}
-            onChange={setAutoBackupEnabled}
+            onValueChange={setAutoBackupEnabled}
           />
           <ToggleRow
-            label="Upload in a time window only"
-            sub={`Upload only between ${fmtHour(uploadWindowStart)} and ${fmtHour(uploadWindowEnd)}. Outside the window uploads pause and auto-resume.${uploadWindowStart === uploadWindowEnd ? " Same start and end = always inside." : ""}`}
+            title="Upload in a time window only"
+            subtitle={`Only between ${fmtHour(uploadWindowStart)} and ${fmtHour(uploadWindowEnd)}. Outside the window uploads pause and auto-resume.`}
             value={uploadWindowEnabled}
-            onChange={setUploadWindowEnabled}
+            onValueChange={setUploadWindowEnabled}
           />
           {uploadWindowEnabled ? (
             <View style={styles.windowRow}>
-              <View style={styles.windowField}>
-                <Text style={styles.folderName}>From</Text>
-                <TextInput
-                  style={styles.windowInput}
-                  value={String(uploadWindowStart)}
-                  onChangeText={(t) => {
-                    const n = parseInt(t, 10);
-                    if (Number.isFinite(n)) setUploadWindowStart(n);
-                  }}
-                  keyboardType="number-pad"
-                  maxLength={2}
-                />
-              </View>
-              <View style={styles.windowField}>
-                <Text style={styles.folderName}>To</Text>
-                <TextInput
-                  style={styles.windowInput}
-                  value={String(uploadWindowEnd)}
-                  onChangeText={(t) => {
-                    const n = parseInt(t, 10);
-                    if (Number.isFinite(n)) setUploadWindowEnd(n);
-                  }}
-                  keyboardType="number-pad"
-                  maxLength={2}
-                />
-              </View>
+              <Input
+                label="From"
+                value={uploadWindowStart.toLocaleString()}
+                onChangeText={(v) => {
+                  const n = parseInt(v, 10);
+                  if (Number.isFinite(n)) setUploadWindowStart(n);
+                }}
+                keyboardType="number-pad"
+                maxLength={2}
+                containerStyle={styles.flex}
+              />
+              <Input
+                label="To"
+                value={uploadWindowEnd.toLocaleString()}
+                onChangeText={(v) => {
+                  const n = parseInt(v, 10);
+                  if (Number.isFinite(n)) setUploadWindowEnd(n);
+                }}
+                keyboardType="number-pad"
+                maxLength={2}
+                containerStyle={styles.flex}
+              />
             </View>
           ) : null}
           {autoBackupEnabled ? (
-            <>
-              <Text style={styles.rowSub}>
+            <View style={styles.folderBlock}>
+              <AppText variant="footnote" color={theme.colors.onSurfaceVariant} style={styles.folderHint}>
                 Choose which folders to watch (none selected = all folders):
-              </Text>
-              {(deviceAlbums ?? []).map((album) => (
-                <View key={album.id} style={styles.folderRow}>
-                  <Text style={styles.folderName} numberOfLines={1}>
-                    {album.title}
-                  </Text>
-                  <Switch
-                    value={autoBackupFolders.includes(album.title)}
-                    onValueChange={() => toggleAutoFolder(album.title)}
-                  />
-                </View>
+              </AppText>
+              {deviceAlbums.map((album) => (
+                <ToggleRow
+                  key={album.id}
+                  title={album.title}
+                  value={autoBackupFolders.includes(album.title)}
+                  onValueChange={() => toggleAutoFolder(album.title)}
+                />
               ))}
-              {deviceAlbums !== null && deviceAlbums.length === 0 ? (
-                <Text style={styles.rowSub}>
-                  {albumsError
-                    ? "Couldn't read device albums — check the Photos permission, then reopen this screen."
-                    : "No device albums found."}
-                </Text>
+              {deviceAlbums.length === 0 ? (
+                <ListRow
+                  title={albumsError ? "Couldn't read device albums" : "No device albums found"}
+                  subtitle={
+                    albumsError
+                      ? "Check the Photos permission, then reopen this screen."
+                      : "New photos are still picked up from the whole library."
+                  }
+                />
               ) : null}
-            </>
+            </View>
           ) : null}
         </Section>
 
-        <Section title="Notifications">
+        <Section title={t("settings.section.notifications")} icon="notifications-outline">
           <ToggleRow
-            label="Notify me"
-            sub="Photogram notifies you on this phone only. Turn off anytime."
+            title={t("settings.notifMaster")}
+            subtitle="Photogram notifies you on this phone only. Turn off anytime."
             value={notificationsEnabled}
-            onChange={toggleNotifications}
+            onValueChange={toggleNotifications}
           />
           {notificationsEnabled ? (
             <>
               <ToggleRow
-                label="Backup finished"
-                sub="A notification when the upload queue drains."
+                title="Backup finished"
+                subtitle="A notification when the upload queue drains."
                 value={notifyBackupFinished}
-                onChange={setNotifyBackupFinished}
+                onValueChange={setNotifyBackupFinished}
               />
               <ToggleRow
-                label="On this day"
-                sub="Once a day, if photos from this day exist in past years. Fires when the app is open after 09:00."
+                title="On this day"
+                subtitle="Once a day, if photos from this day exist in past years. Fires when the app is open after 09:00."
                 value={notifyOnThisDay}
-                onChange={setNotifyOnThisDay}
+                onValueChange={setNotifyOnThisDay}
               />
               <ToggleRow
-                label="Favorite anniversaries"
-                sub="Once a day, favorites from this day in past years (one year minimum)."
+                title="Favorite anniversaries"
+                subtitle="Once a day, favorites from this day in past years (one year minimum)."
                 value={notifyAnniversaries}
-                onChange={setNotifyAnniversaries}
+                onValueChange={setNotifyAnniversaries}
               />
             </>
           ) : null}
         </Section>
 
-        <Section title={t("settings.section.storage")}>
+        <Section title={t("settings.section.storage")} icon="server-outline">
           {totals === null ? (
-            <ActivityIndicator color={theme.colors.primary} style={{ padding: theme.spacing.lg }} />
+            <View style={styles.skeletonBox}>
+              <Skeleton height={18} width="70%" />
+              <Skeleton height={14} width="55%" />
+            </View>
           ) : (
             <>
-              <View style={styles.statGrid}>
-                <StatCard value={String(totals.photos)} caption="Local photos" />
-                <StatCard value={String(totals.videos)} caption="Local videos" />
+              <View style={styles.statRow}>
+                <Stat style={styles.statCell} value={totals.photos.toLocaleString()} label="Local photos" />
+                <Stat style={styles.statCell} value={totals.videos.toLocaleString()} label="Local videos" />
+                <Stat style={styles.statCell} value={formatBytes(totals.syncedBytes)} label="In cloud" />
               </View>
-              <View style={[styles.statGrid, styles.gridSecond]}>
-                <StatCard value={String(totals.cloudPhotos)} caption="Cloud photos" />
-                <StatCard value={String(totals.cloudVideos)} caption="Cloud videos" />
-                <StatCard value={formatBytes(totals.syncedBytes)} caption="In cloud" />
-                <StatCard value={String(totals.pendingCount)} caption="In queue" />
+              <View style={styles.statRow}>
+                <Stat style={styles.statCell} value={totals.cloudPhotos.toLocaleString()} label="Cloud photos" />
+                <Stat style={styles.statCell} value={totals.cloudVideos.toLocaleString()} label="Cloud videos" />
+                <Stat style={styles.statCell} value={totals.pendingCount.toLocaleString()} label="In queue" />
               </View>
-              <View style={[styles.statGrid, styles.gridSecond]}>
-                <StatCard value={String(totals.archived)} caption="Archived" />
-                <StatCard value={String(totals.trashed)} caption="Trash" />
-                <StatCard value={String(totals.hidden)} caption="Hidden" />
-                <StatCard value={String(totals.failedCount)} caption="Failed" />
+              <View style={styles.statRow}>
+                <Stat style={styles.statCell} value={totals.archived.toLocaleString()} label="Archived" />
+                <Stat style={styles.statCell} value={totals.trashed.toLocaleString()} label="Trash" />
+                <Stat style={styles.statCell} value={totals.hidden.toLocaleString()} label="Hidden" />
               </View>
-              <Text style={styles.chartTitle}>Last 6 months</Text>
-              <View style={styles.chart}>
-                {buckets.map((b) => (
-                  <View key={b.label + String(b.count)} style={styles.chartCol}>
-                    <View style={styles.barWrap}>
-                      <View
-                        style={[
-                          styles.bar,
-                          {
-                            height: Math.max(4, (b.count / maxBucketCount) * 72),
-                            opacity: b.count === 0 ? 0.25 : 1,
-                          },
-                        ]}
-                      />
+              <View style={styles.chartBlock}>
+                <AppText variant="caption" color={theme.colors.onSurfaceVariant}>
+                  Last 6 months
+                </AppText>
+                <View
+                  style={styles.chart}
+                  accessible
+                  accessibilityLabel={buckets.map((b) => `${b.label}: ${b.count}`).join(", ")}
+                >
+                  {buckets.map((b) => (
+                    <View key={b.label + String(b.count)} style={styles.chartCol}>
+                      <View style={styles.barWrap}>
+                        <View
+                          style={[
+                            styles.bar,
+                            {
+                              height: Math.max(4, (b.count / maxBucketCount) * 72),
+                              opacity: b.count === 0 ? 0.25 : 1,
+                            },
+                          ]}
+                        />
+                      </View>
+                      <AppText variant="caption2Regular" color={theme.colors.onSurfaceVariant} numberOfLines={1}>
+                        {b.label}
+                      </AppText>
                     </View>
-                    <Text style={styles.barLabel}>{b.label}</Text>
-                  </View>
-                ))}
-              </View>
-              <Pressable
-                style={styles.row}
-                onPress={() => navigation.navigate("Storage")}
-                android_ripple={{ color: theme.colors.outlineVariant }}
-              >
-                <View style={styles.toggleText}>
-                  <Text style={styles.rowLabel}>What's using space</Text>
-                  <Text style={styles.rowSub}>
-                    Biggest items, size per month, and category bloat — screenshots, WhatsApp, videos.
-                  </Text>
+                  ))}
                 </View>
-              </Pressable>
+              </View>
+              <ListRow
+                title="What's using space"
+                subtitle="Biggest items, size per month, and category bloat — screenshots, WhatsApp, videos."
+                accessory="chevron"
+                onPress={() => navigation.navigate("Storage")}
+              />
+              {cardPreview ? (
+                <ListRow
+                  title="Share backup status"
+                  subtitle={cardPreview}
+                  onPress={() => {
+                    void (async () => {
+                      const text = await composeBackupCard();
+                      if (!text) return;
+                      try {
+                        await Share.share({ message: text });
+                      } catch {}
+                    })();
+                  }}
+                />
+              ) : null}
             </>
           )}
-          {cardPreview ? (
-            <Pressable
-              style={styles.row}
-              onPress={() => {
-                void (async () => {
-                  const text = await composeBackupCard();
-                  if (!text) return;
-                  try {
-                    await Share.share({ message: text });
-                  } catch {}
-                })();
-              }}
-            >
-              <View style={styles.toggleText}>
-                <Text style={styles.rowLabel}>Share backup status</Text>
-                <Text style={styles.rowSub} numberOfLines={2}>
-                  {cardPreview}
-                </Text>
-              </View>
-            </Pressable>
-          ) : null}
         </Section>
 
-        <Section title="Device storage">
-          <View style={styles.row}>
-            <View style={styles.toggleText}>
-              <Text style={styles.rowLabel}>Rotate wallpaper from favorites</Text>
-              <Text style={styles.rowSub}>
-                Sets a favourite photo as your home and lock-screen wallpaper once a day.
-                Only photos already on this phone are used; open the app once after enabling.
-              </Text>
-            </View>
-            <Switch
-              value={wallpaperRotation}
-              onValueChange={(v) => {
-                setWallpaperRotation(v);
-                void import("../lib/wallpaper").then((m) => m.syncWallpaperConfig());
-              }}
-              trackColor={{ false: theme.colors.outline, true: theme.colors.primaryContainer }}
-              thumbColor={wallpaperRotation ? theme.colors.primary : theme.colors.onSurfaceVariant}
-            />
-          </View>
-          <View style={styles.row}>
-            <View style={styles.toggleText}>
-              <Text style={styles.rowLabel}>Free up device space</Text>
-              <Text style={styles.rowSub}>
-                {freeable.count > 0
-                  ? `${formatBytes(freeable.bytes)} of originals safely backed up — remove local copies`
-                  : "Nothing to free yet. Originals appear here once backed up."}
-              </Text>
-            </View>
-            <Pressable
-              disabled={freeing || freeable.count === 0}
-              onPress={() => {
-                Alert.alert(
-                  "Free up space?",
-                  `Remove ${formatBytes(freeable.bytes)} of local originals? They stay safe in your Telegram cloud; thumbnails remain on device.`,
-                  [
-                    { text: "Cancel", style: "cancel" },
-                    {
-                      text: "Remove",
-                      style: "destructive",
-                      onPress: () => {
-                        setFreeing(true);
-                        void freeUpDeviceSpace()
-                          .then((r) => {
-                            setFreeable({ count: 0, bytes: 0 });
-                            void load();
-                          })
-                          .finally(() => setFreeing(false));
-                      },
-                    },
-                  ]
-                );
-              }}
-              style={[styles.freeBtn, (freeing || freeable.count === 0) && styles.btnDisabledStyle]}
-            >
-              <Text style={styles.freeBtnText}>{freeing ? "Removing…" : "Remove"}</Text>
-            </Pressable>
-          </View>
-          {restorable.length > 0 ? (
-            <View style={styles.row}>
-              <View style={styles.toggleText}>
-                <Text style={styles.rowLabel}>Restore missing originals</Text>
-                <Text style={styles.rowSub}>
-                  {restoringText ??
-                    `${restorable.length} item${restorable.length === 1 ? "" : "s"} (${formatBytes(
-                      restorable.reduce((s, r) => s + (r.byte_size || 0), 0)
-                    )}) live in your Telegram cloud but not on this device.`}
-                </Text>
-              </View>
-              <Pressable
-                disabled={!!restoringText}
-                onPress={restoreAll}
-                style={[styles.freeBtn, restoringText && styles.btnDisabledStyle]}
-              >
-                <Text style={styles.freeBtnText}>Restore</Text>
-              </Pressable>
-            </View>
-          ) : null}
-        </Section>
-
-        <Section title="Junk sweeper">
+        <Section title={t("settings.section.search")} icon="search-outline">
           <ToggleRow
-            label="Find junk photos automatically"
-            sub="Photogram looks at thumbnails on this phone only and suggests blurry shots, pocket pictures, near-duplicates and old screenshots. Nothing is deleted without your review — Telegram keeps the original. A sweep runs about once a week."
+            title="Read text in photos (OCR)"
+            subtitle="Lets search find words inside screenshots and receipts. Applies to new scans and backfills older photos."
+            value={ocrSearchEnabled}
+            onValueChange={setOcrSearchEnabled}
+          />
+          <ToggleRow
+            title="Smart tags (on-device)"
+            subtitle="Labels what photos show — beach, food, dog — so search can find them by content. Runs on this phone only."
+            value={smartTagsEnabled}
+            onValueChange={setSmartTagsEnabled}
+          />
+          <ToggleRow
+            title="Find faces (People & Pets)"
+            subtitle="Detects faces during scans so photos can be grouped by who is in them. Manage the model under Collections → People & Pets."
+            value={peopleTagsEnabled}
+            onValueChange={setPeopleTagsEnabled}
+          />
+        </Section>
+
+        <Section title={t("settings.section.library")} icon="images-outline">
+          <ToggleRow
+            title={t("settings.showDate")}
+            subtitle="Show the capture date on every photo tile. Turn off for a cleaner grid."
+            value={showDateOnPhotos}
+            onValueChange={setShowDateOnPhotos}
+          />
+          <ToggleRow
+            title={t("settings.storyMusic")}
+            subtitle="A quiet, self-made ambient loop plays while photos play as a story."
+            value={storyMusic}
+            onValueChange={setStoryMusic}
+          />
+          <ToggleRow
+            title="Find junk photos automatically"
+            subtitle="Suggests blurry shots, pocket pictures, near-duplicates and old screenshots. Nothing is deleted without your review."
             value={junkSweeperEnabled}
-            onChange={(v) => {
+            onValueChange={(v) => {
               setJunkSweeperEnabled(v);
               if (v) {
-                Alert.alert(
-                  "Junk sweeper on",
-                  "Photogram will scan your thumbnails on this phone only. Nothing is deleted without your review, and your Telegram backup always keeps the original."
-                );
+                void alertDialog({
+                  title: "Junk sweeper on",
+                  message:
+                    "Photogram will scan your thumbnails on this phone only. Nothing is deleted without your review, and your Telegram backup always keeps the original.",
+                });
               }
             }}
           />
-          <View style={styles.row}>
-            <View style={styles.toggleText}>
-              <Text style={styles.rowLabel}>Review junk findings</Text>
-              <Text style={styles.rowSub}>
-                See what the sweep found and choose what to delete — locally, from Telegram, or both.
-              </Text>
-            </View>
-            <Pressable
-              style={[styles.freeBtn, junkSweeperEnabled ? null : styles.btnDisabledStyle]}
-              disabled={!junkSweeperEnabled}
+          {junkSweeperEnabled ? (
+            <ListRow
+              title="Review junk findings"
+              subtitle="See what the sweep found and choose what to delete — locally, from Telegram, or both."
+              accessory="chevron"
               onPress={() => navigation.navigate("JunkSweeper")}
-            >
-              <Text style={styles.freeBtnText}>Sweep now</Text>
-            </Pressable>
-          </View>
+            />
+          ) : null}
         </Section>
 
-        <Section title="Search">
+        <Section title={t("settings.section.device")} icon="phone-portrait-outline">
           <ToggleRow
-            label="Read text in photos (OCR)"
-            sub="Lets search find words inside screenshots and receipts. Adds a few minutes to a full scan; applies to new scans and backfills older photos."
-            value={ocrSearchEnabled}
-            onChange={setOcrSearchEnabled}
+            title="Rotate wallpaper from favorites"
+            subtitle="Sets a favourite photo as your home and lock-screen wallpaper once a day. Only photos already on this phone are used."
+            value={wallpaperRotation}
+            onValueChange={(v) => {
+              setWallpaperRotation(v);
+              void import("../lib/wallpaper").then((m) => m.syncWallpaperConfig());
+            }}
           />
-          <ToggleRow
-            label="Smart tags (on-device)"
-            sub="Labels what photos show — 'beach', 'food', 'dog' — so search can find them by content. Runs on this phone only; applies to new scans and backfills older photos."
-            value={smartTagsEnabled}
-            onChange={setSmartTagsEnabled}
+          <ListRow
+            title="Free up device space"
+            subtitle={
+              freeable.count > 0
+                ? `${formatBytes(freeable.bytes)} of originals safely backed up — remove local copies`
+                : "Nothing to free yet. Originals appear here once backed up."
+            }
+            trailing={
+              <Button
+                label={freeing ? "Removing…" : "Remove"}
+                size="sm"
+                variant="secondary"
+                disabled={freeing || freeable.count === 0}
+                onPress={freeSpace}
+              />
+            }
           />
-          <ToggleRow
-            label="Find faces (People & Pets)"
-            sub="Detects faces during scans so photos can be grouped by who is in them. On-device only; manage the model under Collections → People & Pets."
-            value={peopleTagsEnabled}
-            onChange={setPeopleTagsEnabled}
-          />
+          {restorable.length > 0 ? (
+            <ListRow
+              title="Restore missing originals"
+              subtitle={
+                restoringText ??
+                `${restorable.length} item${restorable.length === 1 ? "" : "s"} (${formatBytes(
+                  restorable.reduce((s, r) => s + (r.byte_size || 0), 0)
+                )}) live in your Telegram cloud but not on this device.`
+              }
+              trailing={
+                <Button
+                  label="Restore"
+                  size="sm"
+                  variant="secondary"
+                  disabled={!!restoringText}
+                  onPress={restoreAll}
+                />
+              }
+            />
+          ) : null}
         </Section>
 
-        <Section title="Diagnostics">
-          <Pressable
-            style={styles.row}
+        <Section title={t("settings.section.diagnostics")} icon="build-outline">
+          <ListRow
+            title="Export library"
+            subtitle="Every photo's index — dates, tags, notes, people, Telegram ids — as JSON/CSV you can keep anywhere."
+            accessory="chevron"
             onPress={() => navigation.navigate("Export")}
-            android_ripple={{ color: theme.colors.outlineVariant }}
-          >
-            <View style={styles.toggleText}>
-              <Text style={styles.rowLabel}>Export library</Text>
-              <Text style={styles.rowSub}>
-                Every photo's index — dates, tags, notes, people, Telegram ids — as a JSON/CSV file
-                you can keep anywhere. An escape hatch for the cloud-warehouse design.
-              </Text>
-            </View>
-          </Pressable>
-          <Pressable
-            style={styles.row}
-            onPress={() => navigation.navigate("Diagnostics")}
-            android_ripple={{ color: theme.colors.outlineVariant }}
-          >
-            <View style={styles.toggleText}>
-              <Text style={styles.rowLabel}>Self-check</Text>
-              <Text style={styles.rowSub}>
-                Schema version, database size, queue state, TDLib login state and last scan errors — no computer needed.
-              </Text>
-            </View>
-          </Pressable>
-          <Pressable
-            style={styles.row}
-            onPress={runDrill}
-            android_ripple={{ color: theme.colors.outlineVariant }}
-          >
-            <View style={styles.toggleText}>
-              <Text style={styles.rowLabel}>
-                {drillRunning ? "Restore drill running…" : "Restore drill"}
-              </Text>
-              <Text style={styles.rowSub}>
-                Downloads {DEFAULT_DRILL_COUNT} random photos straight from Telegram, checks they
-                really arrive, then deletes the temporary copies. Proves your backup restores.
-              </Text>
-            </View>
-            {drillRunning ? <ActivityIndicator color={theme.colors.primary} /> : null}
-          </Pressable>
-        </Section>
-
-        <Section title="Shared albums">
-          <Row
-            label="Show shared albums in my timeline"
-            sub="Master switch — each album has its own toggle too. Default: album-only."
-            muted
           />
-          <View style={styles.qualityRow}>
-            <Text style={styles.rowLabel}>
-              {sharedTimelineMaster ? "Family photos appear in your Days/Months/Years" : "Family photos stay inside their albums"}
-            </Text>
-            <Switch value={sharedTimelineMaster} onValueChange={setSharedTimelineMaster} />
-          </View>
+          <ListRow
+            title="Self-check"
+            subtitle="Schema version, database size, queue state, TDLib login state and last scan errors."
+            accessory="chevron"
+            onPress={() => navigation.navigate("Diagnostics")}
+          />
+          <ListRow
+            title={drillRunning ? "Restore drill running…" : "Restore drill"}
+            subtitle={`Downloads ${DEFAULT_DRILL_COUNT} random photos from Telegram, checks they arrive, then deletes the temporary copies.`}
+            trailing={drillRunning ? <ActivityIndicator color={theme.colors.accent} /> : undefined}
+            onPress={runDrill}
+            disabled={drillRunning}
+          />
+          <ListRow
+            title="Migrate from another phone"
+            subtitle="Rebuild this phone's library from your Telegram backup — index, originals and shared albums."
+            accessory="chevron"
+            onPress={() => navigation.navigate("Migrate")}
+          />
         </Section>
 
-        <Section title="Privacy">
+        <Section title={t("settings.section.shared")} icon="people-outline">
           <ToggleRow
-            label="Biometric lock for Hidden"
-            sub={
+            title="Show shared albums in my timeline"
+            subtitle="Master switch — each album has its own toggle too. Default: album-only."
+            value={sharedTimelineMaster}
+            onValueChange={setSharedTimelineMaster}
+          />
+        </Section>
+
+        <Section title={t("settings.section.privacy")} icon="lock-closed-outline">
+          <ToggleRow
+            title="Biometric lock for Hidden"
+            subtitle={
               bioInfo && !(bioInfo.hardware && bioInfo.enrolled)
                 ? "Requires fingerprint or face enrolled in device settings"
                 : "Ask for fingerprint or face before opening Hidden photos"
             }
             disabled={!bioInfo || !bioInfo.hardware || !bioInfo.enrolled}
             value={hiddenLockEnabled}
-            onChange={setHiddenLockEnabled}
+            onValueChange={setHiddenLockEnabled}
           />
         </Section>
 
-        <Section title="Account">
-          <Row label={profileName ?? "Loading…"} sub="Logged in via Telegram" />
-          <Pressable
-            style={({ pressed }) => [styles.logoutBtn, pressed && styles.pressed]}
-            android_ripple={{ color: theme.colors.errorContainer }}
-            onPress={() => {
-              void TdLib.logout().finally(() => void boot());
-            }}
-          >
-            <Text style={styles.logoutText}>Log out of Telegram</Text>
-          </Pressable>
+        <Section title={t("settings.section.language")} icon="language-outline">
+          {(["en", "hi"] as Locale[]).map((loc) => (
+            <ListRow
+              key={loc}
+              title={loc === "en" ? "English" : "हिंदी"}
+              accessory="check"
+              selected={getLocale() === loc}
+              onPress={() => {
+                setLocale(loc);
+                setLocaleTick((n) => n + 1);
+              }}
+            />
+          ))}
         </Section>
 
-        <Section title="Migration">
-          <Pressable
-            style={({ pressed }) => [styles.row, pressed && styles.pressed]}
-            android_ripple={{ color: theme.colors.outlineVariant }}
-            onPress={() => navigation.navigate("Migrate")}
-          >
-            <View style={styles.toggleText}>
-              <Text style={styles.rowLabel}>Migrate from another phone</Text>
-              <Text style={styles.rowSub}>
-                Rebuild this phone's library from your Telegram backup — index, originals and
-                shared albums.
-              </Text>
-            </View>
-            <Text style={styles.chevron}>›</Text>
-          </Pressable>
+        <Section title={t("settings.section.account")} icon="person-circle-outline">
+          <ListRow title={profileName ?? "Loading…"} subtitle="Logged in via Telegram" />
+          <View style={styles.accountAction}>
+            <Button label="Log out of Telegram" variant="danger" icon="log-out-outline" onPress={logout} fullWidth />
+          </View>
         </Section>
 
-        <Section title="Danger zone" danger>
-          <View style={styles.qualityRow}>
-            <Text style={styles.rowLabel}>Inter-message gap</Text>
-            <View style={styles.qualityChips}>
+        <Section title={t("settings.section.danger")} icon="warning-outline" danger>
+          <View style={styles.controlRow}>
+            <AppText variant="body" weight="medium">
+              Inter-message gap
+            </AppText>
+            <View style={styles.chipWrap}>
               {[0, 1, 2, 3, 4].map((s) => (
-                <Pressable
+                <Chip
                   key={s}
+                  label={s === 0 ? "Off" : `${s}s`}
+                  selected={uploadGapSeconds === s}
                   onPress={() => setUploadGapSeconds(s)}
-                  style={[styles.qualityChip, uploadGapSeconds === s && styles.qualityChipActive]}
-                >
-                  <Text
-                    style={[
-                      styles.qualityChipText,
-                      uploadGapSeconds === s && styles.qualityChipTextActive,
-                    ]}
-                  >
-                    {s === 0 ? "Off" : `${s}s`}
-                  </Text>
-                </Pressable>
+                  accessibilityLabel={s === 0 ? "No gap between messages" : `${s} second gap between messages`}
+                />
               ))}
             </View>
-            <Text style={styles.rowSub}>
-              Pause between every message sent to Telegram. Higher is safer and slower. Safety
-              pauses can force a bigger gap temporarily.
-            </Text>
+            <AppText variant="footnote" color={theme.colors.onSurfaceVariant}>
+              Pause between every message sent to Telegram. Higher is safer and slower. Safety pauses can force a bigger gap temporarily.
+            </AppText>
           </View>
-          <View style={styles.qualityRow}>
-            <Text style={styles.rowLabel}>Daily upload budget</Text>
-            <View style={styles.qualityChips}>
+          <View style={styles.controlRow}>
+            <AppText variant="body" weight="medium">
+              Daily upload budget
+            </AppText>
+            <View style={styles.chipWrap}>
               {[5, 10, 25, 50, 0].map((gb) => (
-                <Pressable
+                <Chip
                   key={gb}
+                  label={gb === 0 ? "No cap" : `${gb} GB`}
+                  selected={dailyBudgetGb === gb}
                   onPress={() => setDailyBudgetGb(gb)}
-                  style={[styles.qualityChip, dailyBudgetGb === gb && styles.qualityChipActive]}
-                >
-                  <Text
-                    style={[
-                      styles.qualityChipText,
-                      dailyBudgetGb === gb && styles.qualityChipTextActive,
-                    ]}
-                  >
-                    {gb === 0 ? "∞" : `${gb} GB`}
-                  </Text>
-                </Pressable>
+                  accessibilityLabel={gb === 0 ? "No daily upload cap" : `${gb} gigabytes per day`}
+                />
               ))}
             </View>
-            <Text style={styles.rowSub}>
+            <AppText variant="footnote" color={theme.colors.onSurfaceVariant}>
               {formatBytes(safety.todayBytes)} used today
-              {dailyBudgetGb > 0 ? ` of ${dailyBudgetGb} GB` : " — no cap"}. When the budget is
-              reached, uploads pause until midnight (local time).
-            </Text>
+              {dailyBudgetGb > 0 ? ` of ${dailyBudgetGb} GB` : " — no cap"}. When the budget is reached, uploads pause until midnight.
+            </AppText>
           </View>
-          <Row
-            label="Status"
-            sub={safety.modeDetail || `Normal — uploads running${uploadGapSeconds > 0 ? ` with a ${uploadGapSeconds}s gap` : ""}`}
-            muted={!safety.modeDetail}
+          <ListRow
+            title="Status"
+            subtitle={safety.modeDetail || `Normal — uploads running${uploadGapSeconds > 0 ? ` with a ${uploadGapSeconds}s gap` : ""}`}
           />
-          <Row label="Last rate limit" sub={safety.lastHit || "None recorded"} muted={!safety.lastHit} />
-          <Row label="Rate-limit hits" sub={`${safety.hits1h} in the last hour · ${safety.hits24h} in the last 24 h`} />
-          <Row
-            label="Budget used"
-            sub={`${formatBytes(safety.todayBytes)} today · ${formatBytes(safety.hourBytes)} this hour`}
+          <ListRow title="Last rate limit" subtitle={safety.lastHit || "None recorded"} />
+          <ListRow title="Rate-limit hits" subtitle={`${safety.hits1h} in the last hour · ${safety.hits24h} in the last 24 h`} />
+          <ListRow
+            title="Budget used"
+            subtitle={`${formatBytes(safety.todayBytes)} today · ${formatBytes(safety.hourBytes)} this hour`}
           />
-          <Pressable
-            style={({ pressed }) => [styles.dangerBtn, pressed && styles.pressed]}
-            android_ripple={{ color: theme.colors.errorContainer }}
-            onPress={() => {
-              Alert.alert(
-                "Simulate rate limit?",
-                "Injects a fake 30-second FLOOD_WAIT through the real safety ladder: the worker will pause and the escalation counters will count it as a real hit.",
-                [
-                  { text: "Cancel", style: "cancel" },
-                  {
-                    text: "Simulate",
-                    style: "destructive",
-                    onPress: () => {
-                      simulateRateLimitForTesting(30_000);
-                      setSafety(safetyState());
-                    },
-                  },
-                ]
-              );
-            }}
-          >
-            <Text style={styles.dangerBtnText}>Simulate rate limit (testing)</Text>
-          </Pressable>
+          <View style={styles.accountAction}>
+            <Button
+              label="Simulate rate limit (testing)"
+              variant="danger"
+              icon="flask-outline"
+              onPress={() => {
+                void confirmDialog({
+                  title: "Simulate rate limit?",
+                  message:
+                    "Injects a fake 30-second FLOOD_WAIT through the real safety ladder: the worker will pause and the escalation counters will count it as a real hit.",
+                  confirmLabel: "Simulate",
+                  destructive: true,
+                }).then((ok) => {
+                  if (!ok) return;
+                  simulateRateLimitForTesting(30_000);
+                  setSafety(safetyState());
+                });
+              }}
+              fullWidth
+            />
+          </View>
         </Section>
 
-        <Text style={styles.footer}>Photogram 0.1.0 · Your cloud is your Telegram</Text>
+        <AppText variant="captionRegular" color={theme.colors.onSurfaceFaint} align="center" style={styles.footer}>
+          Photogram · Your cloud is your Telegram
+        </AppText>
       </ScrollView>
-    </View>
+    </Screen>
   );
 }
 
@@ -1006,217 +951,52 @@ function fmtHour(h: number): string {
   return `${String(h).padStart(2, "0")}:00`;
 }
 
-function Section({
-  title,
-  children,
-  danger,
-}: {
-  title: string;
-  children: React.ReactNode;
-  danger?: boolean;
-}) {
-  return (
-    <View style={styles.section}>
-      <Text style={[styles.sectionTitle, danger && styles.sectionTitleDanger]}>{title}</Text>
-      <View style={styles.sectionCard}>{children}</View>
-    </View>
-  );
-}
-
-function Row({ label, sub, muted }: { label: string; sub?: string; muted?: boolean }) {
-  return (
-    <View style={styles.row}>
-      <View style={styles.toggleText}>
-        <Text style={[styles.rowLabel, muted && styles.muted]}>{label}</Text>
-        {sub ? <Text style={[styles.rowSub, muted && styles.muted]}>{sub}</Text> : null}
-      </View>
-    </View>
-  );
-}
-
-function ToggleRow(props: { label: string; sub?: string; value: boolean; onChange: (v: boolean) => void; disabled?: boolean }) {
-  return (
-    <View style={styles.row}>
-      <View style={styles.toggleText}>
-        <Text style={styles.rowLabel}>{props.label}</Text>
-        {props.sub ? <Text style={styles.rowSub}>{props.sub}</Text> : null}
-      </View>
-      <Switch
-        value={props.value}
-        onValueChange={props.onChange}
-        disabled={props.disabled}
-        trackColor={{ false: theme.colors.outline, true: theme.colors.primaryContainer }}
-        thumbColor={props.value ? theme.colors.primary : "#8E8E93"}
-      />
-    </View>
-  );
-}
-
-function StatCard({ value, caption }: { value: string; caption: string }) {
-  return (
-    <View style={styles.statCard}>
-      <Text style={styles.statValue} numberOfLines={1} adjustsFontSizeToFit>
-        {value}
-      </Text>
-      <Text style={styles.statCaption}>{caption}</Text>
-    </View>
-  );
-}
-
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: theme.colors.background },
-  scroll: { padding: theme.spacing.md, paddingBottom: 48 },
-  screenTitle: { color: theme.colors.onSurface, fontSize: 28, fontWeight: "700", marginBottom: theme.spacing.md },
-  section: { marginBottom: theme.spacing.lg },
-  sectionTitle: {
-    color: theme.colors.primary,
-    fontSize: 13,
-    fontWeight: "700",
-    letterSpacing: 0.8,
-    textTransform: "uppercase",
-    marginLeft: theme.spacing.sm,
-    marginBottom: theme.spacing.sm,
-  },
-  sectionTitleDanger: { color: theme.colors.error },
-  sectionCard: {
-    backgroundColor: theme.colors.surfaceContainer,
-    borderRadius: theme.radius.xl,
-    borderWidth: 1,
-    borderColor: theme.colors.outlineVariant,
-    overflow: "hidden",
-  },
-  row: {
+  content: { paddingHorizontal: theme.spacing.md, paddingBottom: theme.spacing.xl },
+  flex: { flex: 1 },
+  uploadCard: { padding: theme.spacing.md, gap: theme.spacing.sm },
+  statRow: {
     flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
+    flexWrap: "wrap",
+    gap: theme.spacing.sm,
     paddingHorizontal: theme.spacing.md,
-    paddingVertical: 14,
-    gap: theme.spacing.md,
+    paddingVertical: theme.spacing.xs,
   },
-  toggleText: { flex: 1, paddingRight: theme.spacing.sm },
-  rowLabel: { color: theme.colors.onSurface, fontSize: 15, fontWeight: "500" },
-  rowSub: { color: theme.colors.onSurfaceVariant, fontSize: 12.5, lineHeight: 17, marginTop: 2 },
-  muted: { opacity: 0.6 },
-  logoutBtn: {
-    marginHorizontal: theme.spacing.md,
-    marginTop: 4,
-    marginBottom: theme.spacing.md,
-    borderRadius: theme.radius.full,
-    borderWidth: 1,
-    borderColor: theme.colors.outline,
-    paddingVertical: 10,
-    alignItems: "center",
-  },
-  logoutText: { color: theme.colors.error, fontWeight: "600", fontSize: 14 },
-  pressed: { opacity: 0.85 },
-  uploadCard: {
+  buttonRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: theme.spacing.sm,
     paddingHorizontal: theme.spacing.md,
-    paddingTop: theme.spacing.md,
-    gap: 8,
+    paddingBottom: theme.spacing.md,
+    paddingTop: theme.spacing.xs,
   },
-  uploadName: { color: theme.colors.onSurface, fontSize: 14, fontWeight: "600" },
-  uploadBarTrack: {
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: theme.colors.surfaceHighest,
-    overflow: "hidden",
+  statCell: { flexBasis: "46%", flexGrow: 1 },
+  skeletonBox: { padding: theme.spacing.md, gap: theme.spacing.sm },
+  healthCard: { padding: theme.spacing.md, gap: theme.spacing.xs },
+  healthTop: { flexDirection: "row", alignItems: "center", gap: theme.spacing.md },
+  healthHeadline: { marginTop: theme.spacing.xs },
+  healthAction: { marginTop: theme.spacing.xs, alignSelf: "flex-start" },
+  controlRow: {
+    paddingHorizontal: theme.spacing.md,
+    paddingVertical: theme.spacing.compact,
+    gap: theme.spacing.sm,
   },
-  uploadBarFill: { height: "100%", backgroundColor: theme.colors.primary, borderRadius: 4 },
-  uploadMeta: { color: theme.colors.onSurfaceVariant, fontSize: 12 },
-  queueStats: {
+  chipWrap: { flexDirection: "row", flexWrap: "wrap", gap: theme.spacing.sm },
+  windowRow: {
     flexDirection: "row",
     gap: theme.spacing.sm,
-    padding: theme.spacing.md,
-    paddingBottom: theme.spacing.sm,
+    paddingHorizontal: theme.spacing.md,
+    paddingBottom: theme.spacing.md,
   },
-  pauseBtn: {
-    marginHorizontal: theme.spacing.md,
-    marginBottom: theme.spacing.md,
-    borderRadius: theme.radius.full,
-    borderWidth: 1,
-    borderColor: theme.colors.outline,
-    paddingVertical: 10,
-    alignItems: "center",
-  },
-  pauseText: { color: theme.colors.onSurface, fontWeight: "600", fontSize: 14 },
-  dangerBtn: {
-    marginHorizontal: theme.spacing.md,
-    marginTop: 4,
-    marginBottom: theme.spacing.md,
-    borderRadius: theme.radius.full,
-    borderWidth: 1,
-    borderColor: theme.colors.error,
-    paddingVertical: 10,
-    alignItems: "center",
-  },
-  dangerBtnText: { color: theme.colors.error, fontWeight: "600", fontSize: 14 },
-  qualityRow: { paddingHorizontal: theme.spacing.md, paddingVertical: 14 },
-  qualityChips: { flexDirection: "row", gap: theme.spacing.sm, marginTop: 10, marginBottom: 8 },
-  qualityChip: {
-    flex: 1,
-    borderRadius: theme.radius.full,
-    borderWidth: 1,
-    borderColor: theme.colors.outline,
-    paddingVertical: 9,
-    alignItems: "center",
-  },
-  qualityChipActive: { backgroundColor: theme.colors.primaryContainer, borderColor: theme.colors.primary },
-  qualityChipText: { color: theme.colors.onSurfaceVariant, fontSize: 13, fontWeight: "600" },
-  qualityChipTextActive: { color: theme.colors.onPrimaryContainer },
-  freeBtn: {
-    borderRadius: theme.radius.full,
-    backgroundColor: theme.colors.primary,
-    paddingVertical: 8,
-    paddingHorizontal: 16,
-  },
-  freeBtnText: { color: theme.colors.onPrimary, fontWeight: "700", fontSize: 13 },
-  chevron: { color: theme.colors.onSurfaceVariant, fontSize: 22, fontWeight: "600" },
-  btnDisabledStyle: { opacity: 0.45 },
-  folderRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingVertical: 6,
-  },
-  folderName: { color: theme.colors.onSurface, fontSize: 13.5, flex: 1, marginRight: 12 },
-  windowRow: { flexDirection: "row", gap: 12, paddingHorizontal: theme.spacing.md, paddingVertical: 6 },
-  windowField: { flex: 1 },
-  windowInput: {
-    color: theme.colors.onSurface,
-    backgroundColor: theme.colors.surfaceContainer,
-    borderRadius: theme.radius.lg,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: theme.colors.outlineVariant,
-    paddingHorizontal: 14,
-    paddingVertical: 9,
-    fontSize: 15,
-    marginTop: 4,
-  },
-  statGrid: { flexDirection: "row", gap: theme.spacing.sm, padding: theme.spacing.md, paddingBottom: 0 },
-  gridSecond: { paddingBottom: theme.spacing.md, paddingTop: theme.spacing.sm },
-  statCard: {
-    flex: 1,
-    backgroundColor: theme.colors.surfaceHighest,
-    borderRadius: theme.radius.lg,
-    paddingVertical: 12,
-    paddingHorizontal: 8,
-    alignItems: "center",
-  },
-  statValue: { color: theme.colors.onSurface, fontSize: 17, fontWeight: "700" },
-  statCaption: { color: theme.colors.onSurfaceVariant, fontSize: 11.5, marginTop: 2 },
-  chartTitle: {
-    color: theme.colors.onSurfaceVariant,
-    fontSize: 12.5,
-    marginTop: theme.spacing.sm,
-    marginBottom: 4,
-    marginHorizontal: theme.spacing.md,
-  },
+  folderBlock: { paddingBottom: theme.spacing.xs },
+  folderHint: { paddingHorizontal: theme.spacing.md, paddingVertical: theme.spacing.xs },
+  chartBlock: { paddingHorizontal: theme.spacing.md, paddingTop: theme.spacing.sm },
   chart: {
     flexDirection: "row",
     alignItems: "flex-end",
-    paddingHorizontal: theme.spacing.md,
+    paddingTop: theme.spacing.sm,
     paddingBottom: theme.spacing.md,
-    height: 96,
+    height: 104,
     gap: theme.spacing.sm,
   },
   chartCol: { flex: 1, alignItems: "center", justifyContent: "flex-end", height: "100%" },
@@ -1224,48 +1004,10 @@ const styles = StyleSheet.create({
   bar: {
     width: "62%",
     maxHeight: 72,
-    backgroundColor: theme.colors.primary,
-    borderTopLeftRadius: 6,
-    borderTopRightRadius: 6,
+    backgroundColor: theme.colors.accent,
+    borderTopLeftRadius: theme.radius.thumb,
+    borderTopRightRadius: theme.radius.thumb,
   },
-  barLabel: { color: theme.colors.onSurfaceVariant, fontSize: 10.5, marginTop: 6 },
-  // v0.55 backup health card
-  healthCard: {
-    backgroundColor: theme.colors.surface,
-    borderRadius: theme.radius.lg,
-    padding: theme.spacing.md,
-    gap: 6,
-  },
-  healthTop: { flexDirection: "row", alignItems: "center", gap: theme.spacing.md },
-  healthBadge: {
-    width: 74,
-    height: 74,
-    borderRadius: 37,
-    borderWidth: 3,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: theme.colors.surfaceContainer,
-  },
-  healthScore: { fontSize: 26, fontWeight: "800", lineHeight: 30 },
-  healthOutOf: { color: theme.colors.onSurfaceVariant, fontSize: 10.5 },
-  healthTextCol: { flex: 1, gap: 2 },
-  healthHeadline: { color: theme.colors.onSurface, fontSize: 15.5, fontWeight: "700" },
-  healthGrade: { fontSize: 11, fontWeight: "800", letterSpacing: 1 },
-  healthReason: { color: theme.colors.onSurfaceVariant, fontSize: 12.5, lineHeight: 18 },
-  healthBtn: {
-    marginTop: 6,
-    alignSelf: "flex-start",
-    paddingHorizontal: theme.spacing.md,
-    paddingVertical: 8,
-    borderRadius: theme.radius.full,
-    backgroundColor: theme.colors.surfaceHighest,
-  },
-  healthBtnText: { color: theme.colors.primary, fontSize: 13, fontWeight: "600" },
-  footer: {
-    color: theme.colors.onSurfaceVariant,
-    fontSize: 12,
-    textAlign: "center",
-    opacity: 0.7,
-    marginTop: theme.spacing.sm,
-  },
+  accountAction: { paddingHorizontal: theme.spacing.md, paddingBottom: theme.spacing.md, paddingTop: theme.spacing.xs },
+  footer: { marginTop: theme.spacing.xs, marginBottom: theme.spacing.md },
 });

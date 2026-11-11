@@ -1,19 +1,29 @@
-import React, { useEffect, useState } from "react";
-import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
-import { StatusBar } from "expo-status-bar";
+import React, { useCallback, useEffect, useState } from "react";
+import { ScrollView, StyleSheet, View } from "react-native";
 import { Image } from "expo-image";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import {
   formatBytes,
   getCategoryUsage,
   getLargestItems,
   getMonthlyBuckets,
-  CategoryUsage,
-  LargeItem,
-  MonthBucket,
+  type CategoryUsage,
+  type LargeItem,
+  type MonthBucket,
 } from "../lib/stats";
 import { theme } from "../theme";
+import { t } from "../lib/i18n";
+import {
+  AppBar,
+  AppText,
+  EmptyState,
+  ErrorState,
+  ListRow,
+  ProgressBar,
+  Screen,
+  Section,
+  Skeleton,
+} from "../ui";
 
 // v0.29 Storage deep-dive: "what's eating my phone". Biggest items, bytes per
 // month (12) and per-category bloat — all read-only aggregations over the
@@ -23,22 +33,41 @@ export function StorageScreen({
 }: {
   navigation: NativeStackNavigationProp<{ Viewer: { ids: number[]; index: number }; FreeUpSpace: undefined; DuplicateMerge: undefined }>;
 }) {
-  const insets = useSafeAreaInsets();
   const [largest, setLargest] = useState<LargeItem[] | null>(null);
   const [months, setMonths] = useState<MonthBucket[]>([]);
   const [categories, setCategories] = useState<CategoryUsage[]>([]);
+  const [loadError, setLoadError] = useState(false);
+
+  const load = useCallback(() => {
+    setLoadError(false);
+    let failed = false;
+    void Promise.all([
+      getLargestItems(12)
+        .then(setLargest)
+        .catch(() => {
+          setLargest([]);
+          failed = true;
+        }),
+      getMonthlyBuckets(12)
+        .then(setMonths)
+        .catch(() => {
+          setMonths([]);
+          failed = true;
+        }),
+      getCategoryUsage()
+        .then(setCategories)
+        .catch(() => {
+          setCategories([]);
+          failed = true;
+        }),
+    ]).then(() => {
+      if (failed) setLoadError(true);
+    });
+  }, []);
 
   useEffect(() => {
-    void getLargestItems(12)
-      .then(setLargest)
-      .catch(() => setLargest([]));
-    void getMonthlyBuckets(12)
-      .then(setMonths)
-      .catch(() => setMonths([]));
-    void getCategoryUsage()
-      .then(setCategories)
-      .catch(() => setCategories([]));
-  }, []);
+    load();
+  }, [load]);
 
   const maxBytes = Math.max(1, ...months.map((m) => m.bytes));
   const screenshots = categories.find((c) => c.key === "screenshots");
@@ -49,182 +78,204 @@ export function StorageScreen({
   };
 
   return (
-    <View style={[styles.root, { paddingTop: insets.top }]}>
-      <StatusBar style="light" />
-      <View style={styles.header}>
-        <Pressable onPress={() => navigation.goBack()} hitSlop={12}>
-          <Text style={styles.back}>←</Text>
-        </Pressable>
-        <Text style={styles.title}>What's using space</Text>
-      </View>
-      <ScrollView contentContainerStyle={styles.content}>
-        <Text style={styles.sectionTitle}>Biggest items</Text>
-        {largest === null ? (
-          <Text style={styles.hint}>Counting…</Text>
-        ) : largest.length === 0 ? (
-          <Text style={styles.hint}>Nothing scanned yet.</Text>
+    <Screen>
+      <AppBar
+        title="What's using space"
+        subtitle="Sizes are read from this phone's index — nothing is uploaded or deleted here."
+        large
+        onBack={() => navigation.goBack()}
+        backLabel={t("common.back")}
+      />
+
+      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+        {loadError ? (
+          <ErrorState
+            title={t("state.error")}
+            body="Photogram couldn't read the storage counts. Your photos are still on this phone."
+            retryLabel={t("common.retry")}
+            onRetry={load}
+          />
         ) : (
-          largest.map((item, i) => (
-            <Pressable
-              key={String(item.id)}
-              style={styles.itemRow}
-              onPress={() =>
-                navigation.navigate("Viewer", {
-                  ids: largest.map((l) => l.id),
-                  index: i,
-                })
-              }
-              android_ripple={{ color: theme.colors.outlineVariant }}
-            >
-              <Image source={{ uri: item.thumb_uri }} style={styles.itemThumb} contentFit="cover" recyclingKey={`big-${item.id}`} />
-              <View style={{ flex: 1 }}>
-                <Text style={styles.itemName} numberOfLines={1}>
-                  {item.file_name ?? "Untitled"}
-                </Text>
-                <Text style={styles.itemSub}>
-                  {item.mime_type?.startsWith("video/") ? "Video" : "Photo"}
-                </Text>
-              </View>
-              <Text style={styles.itemBytes}>{formatBytes(item.byte_size)}</Text>
-            </Pressable>
-          ))
-        )}
-
-        <Text style={styles.sectionTitle}>By month</Text>
-        <View style={styles.card}>
-          {months.map((m) => (
-            <View key={m.ym} style={styles.monthRow}>
-              <Text style={styles.monthLabel}>{monthLabel(m.ym)}</Text>
-              <View style={styles.barTrack}>
-                <View
-                  style={[
-                    styles.barFill,
-                    { flex: m.bytes > 0 ? Math.max(0.02, m.bytes / maxBytes) : 0 },
-                  ]}
+          <>
+            <Section title="Biggest items" icon="images-outline">
+              {largest === null ? (
+                <View style={styles.skeletonList}>
+                  {Array.from({ length: 4 }).map((_, i) => (
+                    <View key={i} style={styles.skeletonRow}>
+                      <Skeleton width={52} height={52} radius={theme.radius.control} />
+                      <View style={styles.flex}>
+                        <Skeleton width="60%" height={16} />
+                        <Skeleton width="35%" height={12} style={styles.skeletonGap} />
+                      </View>
+                    </View>
+                  ))}
+                </View>
+              ) : largest.length === 0 ? (
+                <EmptyState
+                  compact
+                  icon="images-outline"
+                  title="Nothing scanned yet"
+                  body="Run a scan from Gallery — item sizes appear here once the index knows your library."
+                  actionLabel={t("common.back")}
+                  onAction={() => navigation.goBack()}
                 />
-              </View>
-              <Text style={styles.monthBytes}>{m.bytes > 0 ? formatBytes(m.bytes) : "—"}</Text>
-            </View>
-          ))}
-        </View>
+              ) : (
+                largest.map((item, i) => (
+                  <ListRow
+                    key={String(item.id)}
+                    leading={
+                      <Image
+                        source={{ uri: item.thumb_uri }}
+                        style={styles.thumb}
+                        contentFit="cover"
+                        recyclingKey={`big-${item.id}`}
+                        accessible={false}
+                      />
+                    }
+                    title={item.file_name ?? "Untitled"}
+                    subtitle={`${item.mime_type?.startsWith("video/") ? "Video" : "Photo"} · ${formatBytes(
+                      item.byte_size
+                    )}`}
+                    accessory="chevron"
+                    onPress={() =>
+                      navigation.navigate("Viewer", {
+                        ids: largest.map((l) => l.id),
+                        index: i,
+                      })
+                    }
+                  />
+                ))
+              )}
+            </Section>
 
-        <Text style={styles.sectionTitle}>By category</Text>
-        <View style={styles.card}>
-          {categories.map((c) => (
-            <View key={c.key} style={styles.catRow}>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.catLabel}>{c.label}</Text>
-                <Text style={styles.catSub}>
-                  {c.count} item{c.count === 1 ? "" : "s"}
-                </Text>
-              </View>
-              <Text style={styles.catBytes}>{formatBytes(c.bytes)}</Text>
-            </View>
-          ))}
-          {screenshots && screenshots.count > 0 ? (
-            <Text style={styles.insight}>
-              Screenshots pile up fast — the Junk Sweeper flags ones older than 90 days.
-            </Text>
-          ) : null}
-        </View>
-        <Text style={styles.footnote}>
-          Categories can overlap (a WhatsApp video is both). Trash and edited copies are never counted.
-        </Text>
+            <Section title="By month" icon="calendar-outline">
+              {largest === null ? (
+                <View>
+                  {Array.from({ length: 4 }).map((_, i) => (
+                    <View key={i} style={styles.monthRow}>
+                      <Skeleton width={56} height={12} />
+                      <Skeleton width="55%" height={6} radius={3} />
+                      <Skeleton width={48} height={12} />
+                    </View>
+                  ))}
+                </View>
+              ) : months.length === 0 ? (
+                <EmptyState compact icon="calendar-outline" title="No months yet" />
+              ) : (
+                months.map((m) => (
+                  <View
+                    key={m.ym}
+                    style={styles.monthRow}
+                    accessible
+                    accessibilityLabel={`${monthLabel(m.ym)}: ${
+                      m.bytes > 0 ? formatBytes(m.bytes) : "no items"
+                    }`}
+                  >
+                    <AppText
+                      variant="caption"
+                      color={theme.colors.onSurfaceVariant}
+                      style={styles.monthLabel}
+                    >
+                      {monthLabel(m.ym)}
+                    </AppText>
+                    <ProgressBar
+                      progress={m.bytes > 0 ? m.bytes / maxBytes : 0}
+                      label={monthLabel(m.ym)}
+                      style={styles.flex}
+                    />
+                    <AppText variant="caption" weight="medium" tabular style={styles.monthBytes}>
+                      {m.bytes > 0 ? formatBytes(m.bytes) : "—"}
+                    </AppText>
+                  </View>
+                ))
+              )}
+            </Section>
 
-        {/* v0.51 free-up-space */}
-        <Pressable
-          style={styles.card}
-          onPress={() => navigation.navigate("FreeUpSpace")}
-          android_ripple={{ color: theme.colors.outlineVariant }}
-        >
-          <View style={{ flex: 1 }}>
-            <Text style={styles.catLabel}>🗑️ Free up space</Text>
-            <Text style={styles.catSub}>
-              Delete originals already safe in Telegram — 7+ day-old, non-favorite, fully synced
-              items only.
-            </Text>
-          </View>
-          <Text style={styles.catBytes}>›</Text>
-        </Pressable>
-        <Pressable
-          style={styles.card}
-          onPress={() => navigation.navigate("DuplicateMerge")}
-          android_ripple={{ color: theme.colors.outlineVariant }}
-        >
-          <View style={{ flex: 1 }}>
-            <Text style={styles.catLabel}>🧬 Merge duplicates</Text>
-            <Text style={styles.catSub}>
-              Group near-identical shots and keep one — the rest go to Trash (restorable).
-            </Text>
-          </View>
-          <Text style={styles.catBytes}>›</Text>
-        </Pressable>
+            <Section
+              title="By category"
+              icon="pie-chart-outline"
+              footer={
+                screenshots && screenshots.count > 0
+                  ? "Screenshots pile up fast — the Junk Sweeper flags ones older than 90 days.\n\nCategories can overlap (a WhatsApp video is both). Trash and edited copies are never counted."
+                  : "Categories can overlap (a WhatsApp video is both). Trash and edited copies are never counted."
+              }
+            >
+              {largest === null ? (
+                <View style={styles.skeletonList}>
+                  {Array.from({ length: 3 }).map((_, i) => (
+                    <View key={i} style={styles.skeletonRow}>
+                      <View style={styles.flex}>
+                        <Skeleton width="45%" height={16} />
+                        <Skeleton width="25%" height={12} style={styles.skeletonGap} />
+                      </View>
+                      <Skeleton width={56} height={16} />
+                    </View>
+                  ))}
+                </View>
+              ) : categories.length === 0 ? (
+                <EmptyState compact icon="pie-chart-outline" title="No categories to show yet" />
+              ) : (
+                categories.map((c) => (
+                  <ListRow
+                    key={c.key}
+                    title={c.label}
+                    subtitle={`${c.count} item${c.count === 1 ? "" : "s"}`}
+                    trailing={
+                      <AppText variant="body" weight="semibold" tabular>
+                        {formatBytes(c.bytes)}
+                      </AppText>
+                    }
+                  />
+                ))
+              )}
+            </Section>
+
+            <Section title="Clean up" icon="sparkles-outline">
+              <ListRow
+                title="Free up space"
+                subtitle="Delete originals already safe in Telegram — 7+ day-old, non-favorite, fully synced items only."
+                icon="trash-outline"
+                accessory="chevron"
+                onPress={() => navigation.navigate("FreeUpSpace")}
+              />
+              <ListRow
+                title="Merge duplicates"
+                subtitle="Group near-identical shots and keep one — the rest go to Trash (restorable)."
+                icon="git-merge-outline"
+                accessory="chevron"
+                onPress={() => navigation.navigate("DuplicateMerge")}
+              />
+            </Section>
+          </>
+        )}
       </ScrollView>
-    </View>
+    </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: theme.colors.background },
-  header: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: theme.spacing.md,
-    paddingHorizontal: theme.spacing.lg,
-    paddingTop: theme.spacing.md,
-    paddingBottom: theme.spacing.sm,
+  content: {
+    paddingHorizontal: theme.spacing.md,
+    paddingBottom: theme.spacing.xl,
   },
-  back: { color: theme.colors.onSurface, fontSize: 24 },
-  title: { color: theme.colors.onSurface, fontSize: 22, fontWeight: "700" },
-  content: { paddingBottom: 40, paddingHorizontal: theme.spacing.lg },
-  sectionTitle: {
-    color: theme.colors.onSurface,
-    fontSize: 16,
-    fontWeight: "700",
-    marginTop: theme.spacing.lg,
-    marginBottom: theme.spacing.sm,
-  },
-  hint: { color: theme.colors.onSurfaceVariant, fontSize: 13 },
-  itemRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: theme.spacing.md,
-    paddingVertical: 8,
-  },
-  itemThumb: { width: 52, height: 52, borderRadius: theme.radius.md, backgroundColor: theme.colors.surfaceHighest },
-  itemName: { color: theme.colors.onSurface, fontSize: 14, fontWeight: "600" },
-  itemSub: { color: theme.colors.onSurfaceVariant, fontSize: 12, marginTop: 2 },
-  itemBytes: { color: theme.colors.onSurface, fontSize: 13, fontWeight: "600" },
-  card: {
-    backgroundColor: theme.colors.surfaceContainer,
-    borderRadius: theme.radius.lg,
-    borderWidth: 1,
-    borderColor: theme.colors.outlineVariant,
-    padding: theme.spacing.md,
-  },
-  monthRow: { flexDirection: "row", alignItems: "center", gap: theme.spacing.md, paddingVertical: 4 },
-  monthLabel: { color: theme.colors.onSurfaceVariant, fontSize: 12, width: 52 },
-  barTrack: {
-    flex: 1,
-    height: 10,
-    borderRadius: 5,
+  flex: { flex: 1, minWidth: 0 },
+  thumb: {
+    width: 52,
+    height: 52,
+    borderRadius: theme.radius.control,
     backgroundColor: theme.colors.surfaceHighest,
-    overflow: "hidden",
+  },
+  skeletonList: { padding: theme.spacing.md, gap: theme.spacing.md },
+  skeletonRow: { flexDirection: "row", alignItems: "center", gap: theme.spacing.compact },
+  skeletonGap: { marginTop: theme.spacing.xs },
+  monthRow: {
     flexDirection: "row",
+    alignItems: "center",
+    gap: theme.spacing.compact,
+    paddingHorizontal: theme.spacing.md,
+    paddingVertical: theme.spacing.compact,
+    minHeight: theme.layout.touch,
   },
-  barFill: { backgroundColor: theme.colors.primary, borderRadius: 5 },
-  monthBytes: { color: theme.colors.onSurface, fontSize: 12, width: 64, textAlign: "right" },
-  catRow: { flexDirection: "row", alignItems: "center", paddingVertical: 8 },
-  catLabel: { color: theme.colors.onSurface, fontSize: 14, fontWeight: "600" },
-  catSub: { color: theme.colors.onSurfaceVariant, fontSize: 12, marginTop: 2 },
-  catBytes: { color: theme.colors.onSurface, fontSize: 13.5, fontWeight: "600" },
-  insight: {
-    color: theme.colors.onSurfaceVariant,
-    fontSize: 12.5,
-    marginTop: theme.spacing.sm,
-    paddingTop: theme.spacing.sm,
-    borderTopWidth: 1,
-    borderTopColor: theme.colors.outlineVariant,
-  },
-  footnote: { color: theme.colors.onSurfaceVariant, fontSize: 11.5, marginTop: theme.spacing.md },
+  monthLabel: { width: 56 },
+  monthBytes: { width: 68, textAlign: "right" },
 });

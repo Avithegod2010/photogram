@@ -1,11 +1,21 @@
-import React, { useEffect, useState } from "react";
-import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
-import { StatusBar } from "expo-status-bar";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { RefreshControl, ScrollView, StyleSheet, View } from "react-native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
-import { listSavedSearches, SavedSearchRow } from "../db/queries";
-import { getDocOverview, DocOverviewEntry } from "../lib/docAlbums";
+import { listSavedSearches, type SavedSearchRow } from "../db/queries";
+import { getDocOverview, type DocOverviewEntry } from "../lib/docAlbums";
 import { theme } from "../theme";
+import { t, tCount, tf } from "../lib/i18n";
+import {
+  AppBar,
+  AppText,
+  EmptyState,
+  IconButton,
+  Input,
+  ListRow,
+  Screen,
+  Section,
+  Skeleton,
+} from "../ui";
 
 type CollectionsNav = NativeStackNavigationProp<{
   Trash: undefined;
@@ -27,194 +37,318 @@ type CollectionsNav = NativeStackNavigationProp<{
   AlbumRules: undefined;
 }>;
 
-const SECTIONS = [
-  { key: "albums", label: "Albums", sub: "Camera, Screenshots, WhatsApp, Downloads & more", enabled: true, route: "Albums" },
-  { key: "shared", label: "Shared albums", sub: "Family photos from a private Telegram group", enabled: true, route: "SharedAlbums" },
-  { key: "favorites", label: "Favorites", sub: "Every photo you marked with a ♥", enabled: true, route: "Favorites" },
-  { key: "wrapped", label: "2026 Wrapped", sub: "Your year in photos — totals, top days, favorites", enabled: true, route: "Wrapped" },
-  { key: "journal", label: "Journal", sub: "Every note you wrote, as a diary across the years", enabled: true, route: "Journal" },
-  { key: "highlights", label: "Highlights", sub: "The sharpest shots of each month, auto-curated", enabled: true, route: "Highlights" },
-  { key: "duplicates", label: "Find duplicates", sub: "Near-identical photos — bursts, forwards and re-saves", enabled: true, route: "Similar" },
-  { key: "scenes", label: "Scene albums", sub: "Beach, food, pets — auto-built from photo tags", enabled: true, route: "Scenes" },
-  { key: "people", label: "People & Pets", sub: "Face grouping — pick a model to start (on-device)", enabled: true, route: "PeopleSetup" },
-  { key: "archive", label: "Archive", sub: "Decluttered media — hidden from the main timeline", enabled: true, route: "Archive" },
-  { key: "trash", label: "Trash", sub: "Deleted items · 30-day countdown", enabled: true, route: "Trash" },
-  { key: "map", label: "Map", sub: "Photos placed on the world by GPS data", enabled: true, route: "Map" },
-  { key: "hidden", label: "Hidden", sub: "Locked behind your fingerprint or face", enabled: true, route: "Hidden" },
-  { key: "safety", label: "Safety check", sub: "What exists only on this phone?", enabled: true, route: "SafetyCheck" },
-] as const;
+type CollectionRow = {
+  key: string;
+  label: string;
+  sub: string;
+  route:
+    | "Trash"
+    | "Map"
+    | "Albums"
+    | "Archive"
+    | "Hidden"
+    | "SharedAlbums"
+    | "SafetyCheck"
+    | "Favorites"
+    | "Wrapped"
+    | "Journal"
+    | "Highlights"
+    | "Similar"
+    | "SavedSearch"
+    | "Scenes"
+    | "PeopleSetup"
+    | "DocAlbum"
+    | "AlbumRules";
+};
+
+/** The 14 destinations, grouped by what the owner is trying to do. */
+function buildGroups(): Array<{
+  key: string;
+  title: string;
+  icon: React.ComponentProps<typeof Section>["icon"];
+  rows: CollectionRow[];
+}> {
+  const year = new Date().getFullYear();
+  return [
+      {
+        key: "library",
+        title: t("collections.group.library"),
+        icon: "albums-outline",
+        rows: [
+          { key: "albums", label: t("collections.albums"), sub: t("collections.albumsSub"), route: "Albums" },
+          { key: "shared", label: t("collections.shared"), sub: t("collections.sharedSub"), route: "SharedAlbums" },
+          { key: "favorites", label: t("collections.favorites"), sub: t("collections.favoritesSub"), route: "Favorites" },
+          { key: "map", label: t("collections.map"), sub: t("collections.mapSub"), route: "Map" },
+        ],
+      },
+      {
+        key: "organize",
+        title: t("collections.group.organize"),
+        icon: "sparkles-outline",
+        rows: [
+          { key: "scenes", label: t("collections.scenes"), sub: t("collections.scenesSub"), route: "Scenes" },
+          { key: "people", label: t("collections.people"), sub: t("collections.peopleSub"), route: "PeopleSetup" },
+          { key: "highlights", label: t("collections.highlights"), sub: t("collections.highlightsSub"), route: "Highlights" },
+          { key: "journal", label: t("collections.journal"), sub: t("collections.journalSub"), route: "Journal" },
+          {
+            key: "wrapped",
+            label: tf("collections.wrapped", { year }),
+            sub: t("collections.wrappedSub"),
+            route: "Wrapped",
+          },
+          { key: "duplicates", label: t("collections.duplicates"), sub: t("collections.duplicatesSub"), route: "Similar" },
+        ],
+      },
+      {
+        key: "privacy",
+        title: t("collections.group.privacy"),
+        icon: "lock-closed-outline",
+        rows: [
+          { key: "archive", label: t("collections.archive"), sub: t("collections.archiveSub"), route: "Archive" },
+          { key: "hidden", label: t("collections.hidden"), sub: t("collections.hiddenSub"), route: "Hidden" },
+          { key: "trash", label: t("collections.trash"), sub: t("collections.trashSub"), route: "Trash" },
+        ],
+      },
+      {
+        key: "advanced",
+        title: t("collections.group.advanced"),
+        icon: "construct-outline",
+        rows: [
+          { key: "safety", label: t("collections.safety"), sub: t("collections.safetySub"), route: "SafetyCheck" },
+        ],
+      },
+    ];
+}
 
 export function CollectionsScreen({ navigation }: { navigation: CollectionsNav }) {
-  const insets = useSafeAreaInsets();
   // v0.27 Smart albums: saved searches refresh on every visit to this tab.
   const [saved, setSaved] = useState<SavedSearchRow[] | null>(null);
+  const [savedError, setSavedError] = useState(false);
   // v0.39 Doc albums: receipt/document auto-groups found by scanning OCR text
   // captured in v0.23–v0.28 (receipts, certificates, ids).
   const [docs, setDocs] = useState<DocOverviewEntry[] | null>(null);
+  const [search, setSearch] = useState("");
+  const [refreshing, setRefreshing] = useState(false);
+
+  const load = useCallback(async () => {
+    setSavedError(false);
+    await Promise.all([
+      listSavedSearches()
+        .then(setSaved)
+        .catch(() => {
+          setSaved([]);
+          setSavedError(true);
+        }),
+      getDocOverview()
+        .then(setDocs)
+        .catch(() => setDocs([])),
+    ]);
+  }, []);
 
   useEffect(() => {
     const unsub = navigation.addListener("focus", () => {
-      void listSavedSearches()
-        .then(setSaved)
-        .catch(() => setSaved([]));
-      void getDocOverview()
-        .then(setDocs)
-        .catch(() => setDocs([]));
+      void load();
     });
     return unsub;
-  }, [navigation]);
+  }, [navigation, load]);
+
+  const groups = buildGroups();
+  const q = search.trim().toLocaleLowerCase();
+
+  const filteredGroups = useMemo(
+    () =>
+      groups
+        .map((g) => ({ ...g, rows: g.rows.filter((r) => !q || `${r.label} ${r.sub}`.toLocaleLowerCase().includes(q)) }))
+        .filter((g) => g.rows.length > 0),
+    [groups, q]
+  );
+
+  const filteredSaved = useMemo(
+    () =>
+      (saved ?? []).filter(
+        (s) => !q || `${s.name} ${s.query ?? ""}`.toLocaleLowerCase().includes(q)
+      ),
+    [saved, q]
+  );
+
+  const filteredDocs = useMemo(
+    () => (docs ?? []).filter((d) => d.count > 0 && (!q || d.def.label.toLocaleLowerCase().includes(q))),
+    [docs, q]
+  );
+
+  const showSmartSection = !q || filteredSaved.length > 0 || t("collections.smartAlbums").toLocaleLowerCase().includes(q);
+  const showDocsSection = filteredDocs.length > 0;
+  const nothingMatches =
+    q.length > 0 &&
+    filteredGroups.length === 0 &&
+    filteredSaved.length === 0 &&
+    !showDocsSection &&
+    !showSmartSection;
 
   return (
-    <View style={[styles.root, { paddingTop: insets.top }]}>
-      <StatusBar style="light" />
-      <Text style={styles.title}>Collections</Text>
-      <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent}>
-        <View style={[styles.card, { marginBottom: theme.spacing.md }]}>
-          <View style={styles.row}>
-            <View style={styles.rowText}>
-              <Text style={styles.rowLabel}>Smart albums</Text>
-              <Text style={styles.rowSub}>
-                Searches you pinned — they update automatically
-              </Text>
-            </View>
-          </View>
-          {(saved ?? []).map((s) => (
-            <Pressable
-              key={s.id}
-              style={styles.row}
-              android_ripple={{ color: theme.colors.outlineVariant }}
-              onPress={() => navigation.navigate("SavedSearch", { id: s.id })}
-            >
-              <View style={styles.dot} />
-              <View style={styles.rowText}>
-                <Text style={styles.rowLabel} numberOfLines={1}>
-                  {s.name}
-                </Text>
-                <Text style={styles.rowSub} numberOfLines={1}>
-                  {s.rules ? "Rules album" : `Search "${s.query}"`}
-                </Text>
-              </View>
-              <Text style={styles.chevron}>›</Text>
-            </Pressable>
-          ))}
-          {saved !== null && saved.length === 0 ? (
-            <View style={[styles.row, styles.disabled]}>
-              <View style={styles.rowText}>
-                <Text style={styles.rowSub}>
-                  Nothing pinned yet — search in the gallery and tap 🔖 to save it here.
-                </Text>
-              </View>
-            </View>
-          ) : null}
-          <Pressable
-            style={styles.row}
-            android_ripple={{ color: theme.colors.outlineVariant }}
-            onPress={() => navigation.navigate("AlbumRules")}
-          >
-            <Text style={styles.plus}>＋</Text>
-            <View style={styles.rowText}>
-              <Text style={styles.rowLabel}>Build a smart album</Text>
-              <Text style={styles.rowSub}>Stack filters: favorites, tags, dates, words</Text>
-            </View>
-            <Text style={styles.chevron}>›</Text>
-          </Pressable>
-        </View>
-        {docs !== null && docs.some((d) => d.count > 0) ? (
-          <View style={[styles.card, { marginTop: theme.spacing.md }]}>
-            <View style={styles.row}>
-              <View style={styles.rowText}>
-                <Text style={styles.rowLabel}>Documents</Text>
-                <Text style={styles.rowSub}>
-                  Receipts and scanned papers found by on-device text recognition
-                </Text>
-              </View>
-            </View>
-            {docs
-              .filter((d) => d.count > 0)
-              .map((d) => (
-                <Pressable
-                  key={d.def.key}
-                  style={styles.row}
-                  android_ripple={{ color: theme.colors.outlineVariant }}
-                  onPress={() => navigation.navigate("DocAlbum", { key: d.def.key as "receipts" | "documents" })}
-                >
-                  <View style={styles.dot} />
-                  <View style={styles.rowText}>
-                    <Text style={styles.rowLabel} numberOfLines={1}>
-                      {d.def.label}
-                    </Text>
-                    <Text style={styles.rowSub}>
-                      {d.count} item{d.count === 1 ? "" : "s"} · tap to browse
-                    </Text>
-                  </View>
-                  <Text style={styles.chevron}>›</Text>
-                </Pressable>
-              ))}
-          </View>
-        ) : null}
-        <View style={styles.card}>
-          {SECTIONS.map((s) => {
-            const content = (
-              <>
-                <View style={[styles.dot, s.key === "hidden" && styles.dotAccent]} />
-                <View style={styles.rowText}>
-                  <Text style={styles.rowLabel}>{s.label}</Text>
-                  <Text style={styles.rowSub}>{s.sub}</Text>
-                </View>
-                {s.enabled ? <Text style={styles.chevron}>›</Text> : null}
-              </>
-            );
-            if (s.enabled) {
-              return (
-                <Pressable
-                  key={s.key}
-                  onPress={() => navigation.navigate(s.route as never)}
-                  android_ripple={{ color: theme.colors.outlineVariant }}
-                  style={styles.row}
-                >
-                  {content}
-                </Pressable>
-              );
+    <Screen>
+      <AppBar
+        title={t("collections.title")}
+        large
+        bottom={
+          <Input
+            value={search}
+            onChangeText={setSearch}
+            placeholder={t("collections.searchPlaceholder")}
+            icon="search"
+            returnKeyType="search"
+            accessibilityLabel={t("collections.searchPlaceholder")}
+            trailing={
+              search.length > 0 ? (
+                <IconButton
+                  icon="close-circle"
+                  label={t("common.clear")}
+                  size={40}
+                  variant="plain"
+                  onPress={() => setSearch("")}
+                />
+              ) : undefined
             }
-            return (
-              <View key={s.key} style={[styles.row, styles.disabled]}>
-                {content}
+          />
+        }
+      />
+      <ScrollView
+        contentContainerStyle={styles.content}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            tintColor={theme.colors.accent}
+            colors={[theme.colors.accent]}
+            progressBackgroundColor={theme.colors.surfaceContainer}
+            onRefresh={() => {
+              setRefreshing(true);
+              void load().finally(() => setRefreshing(false));
+            }}
+          />
+        }
+      >
+        {nothingMatches ? (
+          <EmptyState
+            compact
+            icon="search-outline"
+            title={tf("collections.noResults", { query: search.trim().slice(0, 40) + (search.trim().length > 40 ? "…" : "") })}
+            actionLabel={t("common.clear")}
+            onAction={() => setSearch("")}
+          />
+        ) : null}
+
+        {filteredGroups
+          .filter((g) => g.key === "library")
+          .map((g) => (
+            <Section key={g.key} title={g.title} icon={g.icon}>
+              {g.rows.map((r) => (
+                <ListRow
+                  key={r.key}
+                  title={r.label}
+                  subtitle={r.sub}
+                  accessory="chevron"
+                  onPress={() => navigation.navigate(r.route as never)}
+                />
+              ))}
+            </Section>
+          ))}
+
+        {showSmartSection ? (
+          <Section
+            title={t("collections.smartAlbums")}
+            subtitle={t("collections.smartAlbumsSub")}
+            icon="bookmark-outline"
+            footer={
+              saved !== null && filteredSaved.length === 0 && !q
+                ? t("collections.smartAlbumsEmpty")
+                : savedError
+                  ? t("state.partial")
+                  : undefined
+            }
+          >
+            {saved === null ? (
+              <View style={styles.skeletonRows}>
+                <Skeleton height={16} width="55%" />
+                <Skeleton height={12} width="80%" />
+                <Skeleton height={16} width="45%" style={styles.skeletonGap} />
+                <Skeleton height={12} width="70%" />
               </View>
-            );
-          })}
-        </View>
+            ) : (
+              filteredSaved.map((s) => (
+                <ListRow
+                  key={s.id}
+                  title={s.name}
+                  subtitle={s.rules ? t("collections.smartAlbumsSub") : `“${s.query}”`}
+                  accessory="chevron"
+                  onPress={() => navigation.navigate("SavedSearch", { id: s.id })}
+                />
+              ))
+            )}
+            <ListRow
+              title={t("collections.buildSmartAlbum")}
+              subtitle={t("collections.buildSmartAlbumSub")}
+              accessory="chevron"
+              leading={
+                <View style={styles.plusBox}>
+                  <AppText variant="title3" color={theme.colors.accent}>
+                    +
+                  </AppText>
+                </View>
+              }
+              onPress={() => navigation.navigate("AlbumRules")}
+            />
+          </Section>
+        ) : null}
+
+        {showDocsSection ? (
+          <Section title={t("collections.documents")} subtitle={t("collections.documentsSub")} icon="document-text-outline">
+            {filteredDocs.map((d) => (
+              <ListRow
+                key={d.def.key}
+                title={d.def.label}
+                subtitle={tCount("gallery.itemsCount", d.count)}
+                accessory="chevron"
+                onPress={() => navigation.navigate("DocAlbum", { key: d.def.key as "receipts" | "documents" })}
+              />
+            ))}
+          </Section>
+        ) : null}
+
+        {filteredGroups
+          .filter((g) => g.key !== "library")
+          .map((g) => (
+            <Section key={g.key} title={g.title} icon={g.icon}>
+              {g.rows.map((r) => (
+                <ListRow
+                  key={r.key}
+                  title={r.label}
+                  subtitle={r.sub}
+                  accessory="chevron"
+                  onPress={() => navigation.navigate(r.route as never)}
+                />
+              ))}
+            </Section>
+          ))}
       </ScrollView>
-    </View>
+    </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: theme.colors.background, padding: theme.spacing.md },
-  scroll: { flex: 1 },
-  scrollContent: { paddingBottom: 32 },
-  title: { color: theme.colors.onSurface, fontSize: 28, fontWeight: "700", marginBottom: theme.spacing.md },
-  card: {
-    backgroundColor: theme.colors.surfaceContainer,
-    borderRadius: theme.radius.xl,
-    borderWidth: 1,
-    borderColor: theme.colors.outlineVariant,
-    overflow: "hidden",
+  content: {
+    paddingHorizontal: theme.spacing.md,
+    paddingBottom: theme.spacing.xl,
   },
-  row: {
-    flexDirection: "row",
+  skeletonRows: { padding: theme.spacing.md, gap: theme.spacing.sm },
+  skeletonGap: { marginTop: theme.spacing.sm },
+  plusBox: {
+    width: theme.layout.icon,
+    height: theme.layout.icon,
+    borderRadius: theme.radius.pill,
+    backgroundColor: theme.colors.accentSoft,
     alignItems: "center",
-    gap: theme.spacing.md,
-    paddingHorizontal: theme.spacing.lg,
-    paddingVertical: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: theme.colors.outlineVariant,
+    justifyContent: "center",
   },
-  disabled: { opacity: 0.55 },
-  dot: { width: 10, height: 10, borderRadius: 5, backgroundColor: theme.colors.primary },
-  dotAccent: { backgroundColor: theme.colors.error },
-  rowText: { flex: 1 },
-  rowLabel: { color: theme.colors.onSurface, fontSize: 15.5, fontWeight: "600" },
-  rowSub: { color: theme.colors.onSurfaceVariant, fontSize: 12.5, marginTop: 2 },
-  chevron: { color: theme.colors.onSurfaceVariant, fontSize: 22 },
-  plus: { color: theme.colors.primary, fontSize: 20, fontWeight: "700", width: 10 },
 });

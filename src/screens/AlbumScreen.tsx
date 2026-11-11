@@ -1,13 +1,11 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { Alert, Modal, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from "react-native";
-import { StatusBar } from "expo-status-bar";
+import { Pressable, ScrollView, StyleSheet, View } from "react-native";
 import { Image } from "expo-image";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { FlashList } from "@shopify/flash-list";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { getAlbumMedia } from "../lib/albums";
 import { setAlbumCover, clearAlbumCover, getAlbumCoverId } from "../lib/albumCovers";
-import { listMyGroups, resolveSenderNames, TelegramGroup } from "../lib/chats";
+import { listMyGroups, resolveSenderNames, type TelegramGroup } from "../lib/chats";
 import { sendPhotoRequest } from "../lib/photoRequest";
 import { listAlbumActivity } from "../db/queries";
 import { shareAlbumToChat } from "../lib/shareToChat";
@@ -19,16 +17,34 @@ import {
   listAlbumMedia,
   listAlbumTopics,
   setAlbumShowInTimeline,
-  AlbumMediaRow,
-  AlbumTopicRow,
-  MediaRow,
+  type AlbumMediaRow,
+  type AlbumTopicRow,
   type AlbumActivityEntry,
 } from "../db/queries";
 import { theme } from "../theme";
+import { t, tCount, tf } from "../lib/i18n";
+import {
+  AppBar,
+  AppText,
+  Button,
+  Chip,
+  EmptyState,
+  ErrorState,
+  IconButton,
+  Input,
+  ListRow,
+  MediaTile,
+  Screen,
+  Sheet,
+  Skeleton,
+  ToggleRow,
+  alertDialog,
+  confirmDialog,
+  type MediaStatus,
+} from "../ui";
 
 // Album organizer (shared albums only): optional grouping of the grid with
-// full-width section headers, mirroring GalleryScreen's day headers. "all"
-// renders the plain grid exactly as before.
+// full-width section headers, mirroring GalleryScreen's day headers.
 type AlbumGroupMode = "all" | "sender" | "month";
 
 interface AlbumGridMedia {
@@ -57,12 +73,12 @@ function timeAgoOf(ts: number): string {
   if (!ts) return "";
   const diff = Math.max(0, Date.now() - ts);
   const m = Math.floor(diff / 60_000);
-  if (m < 1) return "just now";
-  if (m < 60) return `${m} min ago`;
+  if (m < 1) return t("time.justNow");
+  if (m < 60) return tf("time.minAgo", { count: m });
   const h = Math.floor(m / 60);
-  if (h < 24) return `${h}h ago`;
+  if (h < 24) return tf("time.hAgo", { count: h });
   const d = Math.floor(h / 24);
-  if (d < 30) return `${d}d ago`;
+  if (d < 30) return tf("time.dAgo", { count: d });
   return new Date(ts).toLocaleDateString();
 }
 
@@ -70,16 +86,18 @@ export function AlbumScreen({
   navigation,
   route,
 }: {
-  navigation: NativeStackNavigationProp<{ Viewer: { ids: number[]; index: number }; Slideshow: { ids: number[]; index: number } }>;
+  navigation: NativeStackNavigationProp<{
+    Viewer: { ids: number[]; index: number };
+    Slideshow: { ids: number[]; index: number };
+  }>;
   route: { params: { key: string; label: string; sharedAlbumId?: number } };
 }) {
-  const insets = useSafeAreaInsets();
   const { key, label, sharedAlbumId } = route.params;
   const [rows, setRows] = useState<AlbumMediaRow[]>([]);
   const [loaded, setLoaded] = useState(false);
+  const [loadError, setLoadError] = useState(false);
   const [inTimeline, setInTimeline] = useState(false);
-  // Forum topic sub-albums (docs/PLAN-S9-TOPICS.md D6): empty for groups
-  // without topics — the screen then renders exactly as before.
+  // Forum topic sub-albums: empty for groups without topics.
   const [topics, setTopics] = useState<AlbumTopicRow[]>([]);
   const [activeTopic, setActiveTopic] = useState<string | "all">("all");
   const [totalCount, setTotalCount] = useState(0);
@@ -88,8 +106,7 @@ export function AlbumScreen({
   const [senderNames, setSenderNames] = useState<Map<string, string>>(new Map());
   // v0.44 activity feed: claims made by the family, newest first.
   const [activity, setActivity] = useState<AlbumActivityEntry[] | null>(null);
-  // v0.44 photo requests: a plain prompt into the family chat; replies with
-  // media land here via the normal claim engine.
+  // v0.44 photo requests: a plain prompt into the family chat.
   const [requestOpen, setRequestOpen] = useState(false);
   const [requestSubject, setRequestSubject] = useState("");
   const [requestBusy, setRequestBusy] = useState(false);
@@ -97,16 +114,14 @@ export function AlbumScreen({
   const [coverOpen, setCoverOpen] = useState(false);
   const [coverId, setCoverId] = useState<number | null>(null);
   const [ownUserId, setOwnUserId] = useState<string | null>(null);
-  // v0.39 "Share album": pick a Telegram group, then queue every local copy
-  // in the album for upload to that chat (normal queue, side-effect-free).
+  // v0.39 "Share album": pick a Telegram group, then queue every local copy.
   const [shareModal, setShareModal] = useState(false);
   const [groups, setGroups] = useState<TelegramGroup[]>([]);
   const [sharing, setSharing] = useState(false);
+  const [actionsOpen, setActionsOpen] = useState(false);
 
-  // v0.28 Album locks: a locked album shows nothing and loads nothing until
-  // the biometric check succeeds (same fail-open semantics as Hidden — with
-  // no enrolled biometric the gate opens, so the owner can never be locked
-  // out of their own content).
+  // v0.28 Album locks: fail-open semantics — with no enrolled biometric the
+  // gate opens, so the owner can never be locked out of their own content.
   const lockedKeys = useSettingsStore((s) => s.lockedAlbumKeys);
   const needsUnlock = lockedKeys.includes(key);
   const [unlocked, setUnlocked] = useState(false);
@@ -115,40 +130,48 @@ export function AlbumScreen({
     setCoverId(getAlbumCoverId(key));
   }, [key]);
 
-  useEffect(() => {
-    if (!needsUnlock || unlocked) return;
+  const tryUnlock = useCallback(() => {
     void authenticateLocal(`Unlock "${label}"`).then((ok) => {
       if (ok) setUnlocked(true);
       else navigation.goBack();
     });
-  }, [needsUnlock, unlocked, key, label, navigation]);
+  }, [label, navigation]);
 
   useEffect(() => {
+    if (!needsUnlock || unlocked) return;
+    tryUnlock();
+  }, [needsUnlock, unlocked, tryUnlock]);
+
+  const loadRows = useCallback(async () => {
     if (needsUnlock && !unlocked) return;
-    if (sharedAlbumId === undefined) {
-      void getAlbumMedia(key)
-        .then(setRows)
-        .catch(() => setRows([]))
-        .finally(() => setLoaded(true));
-      return;
-    }
-    void Promise.all([
-      listAlbumMedia(sharedAlbumId, activeTopic === "all" ? undefined : activeTopic),
-      listAlbumTopics(sharedAlbumId),
-    ])
-      .then(([media, topicList]) => {
+    setLoadError(false);
+    try {
+      if (sharedAlbumId === undefined) {
+        const media = await getAlbumMedia(key);
+        setRows(media);
+      } else {
+        const [media, topicList] = await Promise.all([
+          listAlbumMedia(sharedAlbumId, activeTopic === "all" ? undefined : activeTopic),
+          listAlbumTopics(sharedAlbumId),
+        ]);
         setRows(media);
         setTopics(topicList);
-      })
-      .catch(() => {
-        setRows([]);
-        setTopics([]);
-      })
-      .finally(() => setLoaded(true));
+      }
+    } catch {
+      setRows([]);
+      setTopics([]);
+      setLoadError(true);
+    } finally {
+      setLoaded(true);
+    }
   }, [key, sharedAlbumId, activeTopic, needsUnlock, unlocked]);
 
-  // Shared albums: load the "show in my timeline" choice and the album's total
-  // item count (the All chip's label must not follow the active topic filter).
+  useEffect(() => {
+    void loadRows();
+  }, [loadRows]);
+
+  // Shared albums: load the timeline choice and the album's total item count
+  // (the All chip's label must not follow the active topic filter).
   useEffect(() => {
     if (sharedAlbumId === undefined) return;
     void getSharedAlbum(sharedAlbumId)
@@ -160,8 +183,7 @@ export function AlbumScreen({
   }, [sharedAlbumId]);
 
   // Sender grouping needs the owner's id ("You") and display names resolved
-  // through the SAME mechanism as the Recent-activity feed (resolveSenderNames,
-  // cached in lib/chats).
+  // through the SAME mechanism as the Recent-activity feed.
   useEffect(() => {
     if (sharedAlbumId === undefined) return;
     void fetchProfile()
@@ -199,16 +221,10 @@ export function AlbumScreen({
       .catch(() => setActivity([]));
   }, [sharedAlbumId, rows.length]);
 
-  // Grid data with optional full-width section headers (GalleryScreen's day
-  // header pattern: header items + overrideItemLayout span). rows arrive
-  // newest-first from SQL, so a single pass keeps both the group order (a
-  // group's position = its newest item) and the within-group order (taken_at
-  // DESC) correct — grouping composes with the active topic filter because it
-  // only re-shapes whatever rows are already loaded.
   const data: AlbumGridItem[] = useMemo(() => {
     const media: AlbumGridMedia[] = rows.map((row) => ({ __type: "media", row }));
     if (sharedAlbumId === undefined || groupMode === "all") return media;
-    const groups = new Map<string, { label: string; rows: AlbumGridMedia[] }>();
+    const grouped = new Map<string, { label: string; rows: AlbumGridMedia[] }>();
     for (const item of media) {
       let groupKey: string;
       let groupLabel: string;
@@ -216,18 +232,20 @@ export function AlbumScreen({
         const senderId = item.row.sender_id ?? "";
         groupKey = senderId;
         groupLabel =
-          senderId && senderId === ownUserId ? "You" : (senderNames.get(senderId) ?? "Someone");
+          senderId && senderId === ownUserId
+            ? t("album.you")
+            : (senderNames.get(senderId) ?? t("album.someone"));
       } else {
         const month = monthKeyOf(item.row.taken_at);
         groupKey = month.key;
         groupLabel = month.label;
       }
-      const entry = groups.get(groupKey);
+      const entry = grouped.get(groupKey);
       if (entry) entry.rows.push(item);
-      else groups.set(groupKey, { label: groupLabel, rows: [item] });
+      else grouped.set(groupKey, { label: groupLabel, rows: [item] });
     }
     const withHeaders: AlbumGridItem[] = [];
-    groups.forEach((entry, groupKey) => {
+    grouped.forEach((entry, groupKey) => {
       withHeaders.push({
         __type: "groupHeader",
         key: `h-${groupMode}-${groupKey}`,
@@ -253,38 +271,35 @@ export function AlbumScreen({
       if (item.__type === "groupHeader") {
         return (
           <View style={styles.groupHeaderWrap}>
-            <Text style={styles.groupHeaderText}>{item.label}</Text>
-            <Text style={styles.groupHeaderCount}>{item.count}</Text>
+            <AppText variant="body" weight="semibold">
+              {item.label}
+            </AppText>
+            <AppText variant="caption" color={theme.colors.onSurfaceVariant} tabular>
+              {item.count}
+            </AppText>
           </View>
         );
       }
       const row = item.row;
       return (
-        <Pressable
-          style={styles.cell}
-          onPress={() =>
-            navigation.navigate("Viewer", {
-              ids: rows.map((r) => r.id),
-              index: rows.findIndex((r) => r.id === row.id),
-            })
-          }
-        >
-          <Image
-            source={{ uri: row.thumb_uri }}
-            style={StyleSheet.absoluteFill}
-            contentFit="cover"
-            recyclingKey={`a-${row.id}`}
-            transition={120}
+        <View style={styles.cell}>
+          <MediaTile
+            uri={row.thumb_uri}
+            aspectRatio={1}
+            video={row.mime_type.startsWith("video/")}
+            status={row.state === "synced" ? null : (row.state as MediaStatus)}
+            onPress={() =>
+              navigation.navigate("Viewer", {
+                ids: rows.map((r) => r.id),
+                index: rows.findIndex((r) => r.id === row.id),
+              })
+            }
+            accessibilityLabel={tf("gallery.tileLabel", {
+              date: new Date(row.taken_at).toLocaleDateString(),
+            })}
+            accessibilityHint={t("viewer.tileHint")}
           />
-          {row.mime_type.startsWith("video/") ? (
-            <View style={styles.videoFlag}>
-              <Text style={styles.videoFlagText}>▶</Text>
-            </View>
-          ) : null}
-          {row.state !== "synced" ? (
-            <View style={[styles.stateDot, styles[`dot_${row.state}` as const]]} />
-          ) : null}
-        </Pressable>
+        </View>
       );
     },
     [navigation, rows]
@@ -292,551 +307,462 @@ export function AlbumScreen({
 
   if (needsUnlock && !unlocked) {
     return (
-      <View style={[styles.root, styles.lockedRoot, { paddingTop: insets.top }]}>
-        <StatusBar style="light" />
-        <Text style={styles.lockIcon}>🔒</Text>
-        <Text style={styles.lockTitle}>{label}</Text>
-        <Text style={styles.lockBody}>
-          Unlock with your fingerprint or face to open this album.
-        </Text>
-      </View>
+      <Screen>
+        <AppBar title={label} large onBack={() => navigation.goBack()} backLabel={t("common.back")} />
+        <EmptyState
+          icon="lock-closed-outline"
+          title={t("album.lockedTitle")}
+          body={t("album.lockedBody")}
+          actionLabel={t("album.unlock")}
+          onAction={tryUnlock}
+        />
+      </Screen>
     );
   }
 
+  const localCount = rows.filter((r) => r.local_uri).length;
+
   return (
-    <View style={[styles.root, { paddingTop: insets.top }]}>
-      <StatusBar style="light" />
-      <View style={styles.header}>
-        <Pressable onPress={() => navigation.goBack()} hitSlop={12}>
-          <Text style={styles.back}>←</Text>
-        </Pressable>
-        <Text style={styles.title}>{label}</Text>
-        <Text style={styles.count}>{rows.length > 0 ? `${rows.length}` : ""}</Text>
-        {rows.length >= 2 ? (
-          <Pressable
-            style={styles.shareBtn}
-            hitSlop={8}
-            onPress={() => navigation.navigate("Slideshow", { ids: rows.map((r) => r.id), index: 0 })}
-          >
-            <Text style={styles.shareBtnText}>▶ Play</Text>
-          </Pressable>
+    <Screen>
+      <AppBar
+        title={label}
+        subtitle={loaded ? tCount("albums.count", rows.length) : t("state.loading")}
+        large
+        onBack={() => navigation.goBack()}
+        backLabel={t("common.back")}
+        actions={
+          <>
+            {rows.length >= 2 ? (
+              <IconButton
+                icon="play"
+                label={t("album.play")}
+                onPress={() => navigation.navigate("Slideshow", { ids: rows.map((r) => r.id), index: 0 })}
+              />
+            ) : null}
+            <IconButton
+              icon="ellipsis-horizontal"
+              label={t("album.actions")}
+              onPress={() => setActionsOpen(true)}
+            />
+          </>
+        }
+      />
+
+      {sharedAlbumId !== undefined && topics.length > 0 ? (
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipRow}>
+          <Chip
+            label={`${t("album.all")} · ${totalCount}`}
+            selected={activeTopic === "all"}
+            onPress={() => setActiveTopic("all")}
+          />
+          {topics.map((topic) => {
+            // D4: a hidden General topic with no claimed media is just noise.
+            if (topic.thread_id === "1" && topic.is_hidden === 1 && topic.count === 0) return null;
+            return (
+              <Chip
+                key={topic.thread_id}
+                label={topic.count ? `${topic.title} · ${topic.count}` : topic.title}
+                selected={activeTopic === topic.thread_id}
+                onPress={() => setActiveTopic(topic.thread_id)}
+              />
+            );
+          })}
+        </ScrollView>
+      ) : null}
+
+      {loadError ? (
+        <ErrorState
+          title={t("state.error")}
+          body="This album's index could not be read. Your photos are untouched."
+          retryLabel={t("common.retry")}
+          onRetry={() => void loadRows()}
+        />
+      ) : !loaded ? (
+        <View style={styles.skeletonGrid}>
+          {Array.from({ length: 9 }).map((_, i) => (
+            <Skeleton key={i} width="31%" height={110} radius={theme.radius.thumb} style={styles.skeletonCell} />
+          ))}
+        </View>
+      ) : (
+        <FlashList
+          data={data}
+          numColumns={3}
+          keyExtractor={(it) => (it.__type === "media" ? String(it.row.id) : it.key)}
+          getItemType={(it) => it.__type}
+          overrideItemLayout={(layout, it) => {
+            if (it.__type === "groupHeader") layout.span = 3;
+          }}
+          renderItem={renderItem}
+          contentContainerStyle={styles.listContent}
+          showsVerticalScrollIndicator={false}
+          ListHeaderComponent={
+            sharedAlbumId !== undefined && activity !== null && activity.length > 0 ? (
+              <View style={styles.activityWrap}>
+                <AppText variant="callout" color={theme.colors.onSurfaceVariant} style={styles.activityTitle}>
+                  {t("album.recent")}
+                </AppText>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.activityRow}>
+                  {activity.map((entry) => {
+                    const senderName =
+                      entry.senderId && entry.senderId === ownUserId
+                        ? t("album.you")
+                        : (senderNames.get(entry.senderId ?? "") ?? t("album.someone"));
+                    return (
+                      <Pressable
+                        key={`${entry.mediaId}-${entry.addedAt}`}
+                        style={({ pressed }) => [styles.activityCard, pressed && styles.pressed]}
+                        onPress={() =>
+                          navigation.navigate("Viewer", {
+                            ids: activity.map((a) => a.mediaId),
+                            index: activity.findIndex((a) => a.mediaId === entry.mediaId),
+                          })
+                        }
+                        accessibilityRole="button"
+                        accessibilityLabel={`${senderName}, ${timeAgoOf(entry.addedAt)}${
+                          entry.caption ? `, ${entry.caption}` : ""
+                        }`}
+                      >
+                        {entry.thumb ? (
+                          <Image
+                            source={{ uri: entry.thumb }}
+                            style={styles.activityThumb}
+                            contentFit="cover"
+                            recyclingKey={`act-${entry.mediaId}`}
+                            transition={120}
+                            accessible={false}
+                          />
+                        ) : (
+                          <View style={[styles.activityThumb, styles.activityThumbEmpty]} />
+                        )}
+                        <AppText variant="caption" weight="semibold" numberOfLines={1}>
+                          {senderName}
+                        </AppText>
+                        <AppText variant="caption2Regular" color={theme.colors.onSurfaceVariant} numberOfLines={1}>
+                          {timeAgoOf(entry.addedAt)}
+                        </AppText>
+                        {entry.caption ? (
+                          <AppText variant="caption2Regular" color={theme.colors.onSurfaceFaint} numberOfLines={1}>
+                            “{entry.caption}”
+                          </AppText>
+                        ) : null}
+                      </Pressable>
+                    );
+                  })}
+                </ScrollView>
+              </View>
+            ) : null
+          }
+          ListEmptyComponent={
+            <EmptyState
+              icon="images-outline"
+              title={t("album.empty")}
+              body={t("album.emptyBody")}
+              actionLabel={sharedAlbumId !== undefined ? t("album.ask") : undefined}
+              onAction={
+                sharedAlbumId !== undefined
+                  ? () => {
+                      setRequestSubject("");
+                      setRequestOpen(true);
+                    }
+                  : undefined
+              }
+            />
+          }
+        />
+      )}
+
+      <Sheet visible={actionsOpen} onClose={() => setActionsOpen(false)} title={t("album.actions")} scroll>
+        {sharedAlbumId !== undefined ? (
+          <>
+            <View style={styles.sheetControl}>
+              <AppText variant="callout" color={theme.colors.onSurfaceVariant}>
+                {t("album.groupBy")}
+              </AppText>
+              <View style={styles.sheetChips}>
+                {(
+                  [
+                    { mode: "all" as const, label: t("album.all") },
+                    { mode: "sender" as const, label: t("album.bySender") },
+                    { mode: "month" as const, label: t("album.byMonth") },
+                  ]
+                ).map((m) => (
+                  <Chip
+                    key={m.mode}
+                    label={m.label}
+                    selected={groupMode === m.mode}
+                    onPress={() => {
+                      setGroupMode(m.mode);
+                      setActionsOpen(false);
+                    }}
+                  />
+                ))}
+              </View>
+            </View>
+            <View style={styles.sheetControl}>
+              <ToggleRow
+                title={t("album.timeline")}
+                subtitle={t("album.timelineNote")}
+                value={inTimeline}
+                onValueChange={toggleTimeline}
+                style={styles.sheetToggle}
+              />
+            </View>
+          </>
         ) : null}
         {sharedAlbumId !== undefined ? (
-          <Pressable
-            style={styles.shareBtn}
-            hitSlop={8}
+          <ListRow
+            title={t("album.ask")}
+            icon="camera-outline"
             onPress={() => {
+              setActionsOpen(false);
               setRequestSubject("");
               setRequestOpen(true);
             }}
-          >
-            <Text style={styles.shareBtnText}>📷 Ask</Text>
-          </Pressable>
+          />
         ) : null}
-        {rows.some((r) => r.local_uri) ? (
-          <Pressable
-            style={styles.shareBtn}
-            hitSlop={8}
+        {localCount > 0 ? (
+          <ListRow
+            title={t("album.share")}
+            icon="share-social-outline"
             onPress={() => {
+              setActionsOpen(false);
               setSharing(false);
               void listMyGroups()
                 .then(setGroups)
                 .catch(() => setGroups([]))
                 .finally(() => setShareModal(true));
             }}
-          >
-            <Text style={styles.shareBtnText}>⇪ Share</Text>
-          </Pressable>
+          />
         ) : null}
         {rows.length > 0 ? (
-          <Pressable style={styles.shareBtn} hitSlop={8} onPress={() => setCoverOpen(true)}>
-            <Text style={styles.shareBtnText}>🖼️ Cover</Text>
-          </Pressable>
+          <ListRow
+            title={t("album.cover")}
+            icon="image-outline"
+            onPress={() => {
+              setActionsOpen(false);
+              setCoverOpen(true);
+            }}
+          />
         ) : null}
-      </View>
-      {sharedAlbumId !== undefined ? (
-        <View style={styles.toggleRow}>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.toggleLabel}>Show in my timeline</Text>
-            <Text style={styles.toggleNote}>Off = these photos live only in this album</Text>
-          </View>
-          <Switch value={inTimeline} onValueChange={toggleTimeline} />
-        </View>
-      ) : null}
-      {sharedAlbumId !== undefined && topics.length > 0 ? (
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.chipRow}
-        >
-          <Pressable
-            style={[styles.chip, activeTopic === "all" && styles.chipOn]}
-            onPress={() => setActiveTopic("all")}
-          >
-            <Text style={[styles.chipText, activeTopic === "all" && styles.chipTextOn]}>
-              All ({totalCount})
-            </Text>
-          </Pressable>
-          {topics.map((t) => {
-            // D4: a hidden General topic with no claimed media is just noise.
-            if (t.thread_id === "1" && t.is_hidden === 1 && t.count === 0) return null;
-            const selected = activeTopic === t.thread_id;
-            return (
-              <Pressable
-                key={t.thread_id}
-                style={[styles.chip, selected && styles.chipOn]}
-                onPress={() => setActiveTopic(t.thread_id)}
-              >
-                <Text style={[styles.chipText, selected && styles.chipTextOn]}>
-                  {t.title}
-                  {t.count ? ` · ${t.count}` : ""}
-                </Text>
-              </Pressable>
-            );
-          })}
-        </ScrollView>
-      ) : null}
-      {sharedAlbumId !== undefined ? (
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.chipRow}
-        >
-          {(["all", "sender", "month"] as AlbumGroupMode[]).map((mode) => {
-            const label = mode === "all" ? "All" : mode === "sender" ? "By sender" : "By month";
-            const selected = groupMode === mode;
-            return (
-              <Pressable
-                key={mode}
-                style={[styles.chip, selected && styles.chipOn]}
-                onPress={() => setGroupMode(mode)}
-              >
-                <Text style={[styles.chipText, selected && styles.chipTextOn]}>{label}</Text>
-              </Pressable>
-            );
-          })}
-        </ScrollView>
-      ) : null}
-      {sharedAlbumId !== undefined && activity !== null && activity.length > 0 ? (
-        <View style={styles.activityWrap}>
-          <Text style={styles.activityTitle}>Recent activity</Text>
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.activityRow}
-          >
-            {activity.map((entry) => {
-              const senderName =
-                entry.senderId && entry.senderId === ownUserId
-                  ? "You"
-                  : (senderNames.get(entry.senderId ?? "") ?? "Someone");
-              return (
-                <Pressable
-                  key={`${entry.mediaId}-${entry.addedAt}`}
-                  style={styles.activityCard}
-                  onPress={() =>
-                    navigation.navigate("Viewer", {
-                      ids: activity.map((a) => a.mediaId),
-                      index: activity.findIndex((a) => a.mediaId === entry.mediaId),
-                    })
-                  }
-                >
-                  {entry.thumb ? (
-                    <Image
-                      source={{ uri: entry.thumb }}
-                      style={styles.activityThumb}
-                      contentFit="cover"
-                      transition={120}
-                    />
-                  ) : (
-                    <View style={[styles.activityThumb, styles.activityThumbEmpty]} />
-                  )}
-                  <Text style={styles.activityWho} numberOfLines={1}>
-                    {senderName}
-                  </Text>
-                  <Text style={styles.activityWhen} numberOfLines={1}>
-                    {timeAgoOf(entry.addedAt)}
-                  </Text>
-                  {entry.caption && entry.caption.length > 0 ? (
-                    <Text style={styles.activityCaption} numberOfLines={1}>
-                      "{entry.caption}"
-                    </Text>
-                  ) : null}
-                </Pressable>
-              );
-            })}
-          </ScrollView>
-        </View>
-      ) : null}
-      <FlashList
-        data={data}
-        numColumns={3}
-        masonry
-        keyExtractor={(it) =>
-          it.__type === "media" ? String(it.row.id) : (it as AlbumGridHeader).key
-        }
-        getItemType={(it) => it.__type}
-        overrideItemLayout={(layout, it) => {
-          // Full-width section headers, same trick as GalleryScreen's day
-          // headers (span = numColumns).
-          if (it.__type === "groupHeader") {
-            layout.span = 3;
-          }
-        }}
-        renderItem={renderItem}
-        contentContainerStyle={styles.listContent}
-        ListEmptyComponent={
-          loaded ? <Text style={styles.empty}>No items in this album yet.</Text> : null
-        }
-      />
+      </Sheet>
 
       {/* v0.47 cover picker */}
-      <Modal visible={coverOpen} transparent animationType="fade" onRequestClose={() => setCoverOpen(false)}>
-        <Pressable style={styles.shareBackdrop} onPress={() => setCoverOpen(false)}>
-          <Pressable style={styles.shareCard} onPress={(e) => e.stopPropagation()}>
-            <Text style={styles.shareTitle}>Pick an album cover</Text>
-            <Text style={styles.shareHint}>
-              Shown on the Albums screen. "Auto" gives back the newest photo.
-            </Text>
-            <ScrollView style={styles.coverGridWrap} contentContainerStyle={styles.coverGrid}>
-              <Pressable
-                style={styles.coverCell}
-                onPress={() => {
-                  clearAlbumCover(key);
-                  setCoverId(null);
-                  setCoverOpen(false);
-                }}
-              >
-                <View style={[styles.coverCellBox, styles.coverCellAuto]}>
-                  <Text style={styles.coverCellAutoText}>Auto</Text>
-                </View>
-              </Pressable>
-              {rows.slice(0, 36).map((r) => (
-                <Pressable
-                  key={r.id}
-                  style={styles.coverCell}
-                  onPress={() => {
-                    void setAlbumCover(key, r.id)
-                      .then(() => {
-                        setCoverId(r.id);
-                        setCoverOpen(false);
-                      })
-                      .catch(() =>
-                        Alert.alert(
-                          "Could not set cover",
-                          "That photo is no longer available. Try another one."
-                        )
-                      );
-                  }}
-                >
-                  {r.thumb_uri ? (
-                    <Image
-                      source={{ uri: r.thumb_uri }}
-                      style={[styles.coverCellBox, coverId === r.id && styles.coverCellOn]}
-                      contentFit="cover"
-                      transition={90}
-                    />
-                  ) : (
-                    <View style={[styles.coverCellBox, styles.coverCellEmpty]} />
-                  )}
-                </Pressable>
-              ))}
-            </ScrollView>
-            <Pressable style={styles.requestCancel} onPress={() => setCoverOpen(false)}>
-              <Text style={styles.shareHint}>Close</Text>
-            </Pressable>
+      <Sheet
+        visible={coverOpen}
+        onClose={() => setCoverOpen(false)}
+        title={t("album.coverTitle")}
+        subtitle={t("album.coverHint")}
+        scroll
+      >
+        <View style={styles.coverGrid}>
+          <Pressable
+            style={[styles.coverCell, styles.coverAuto, coverId === null && styles.coverCellOn]}
+            onPress={() => {
+              clearAlbumCover(key);
+              setCoverId(null);
+              setCoverOpen(false);
+            }}
+            accessibilityRole="button"
+            accessibilityLabel={`${t("album.auto")}, ${coverId === null ? "selected" : ""}`}
+          >
+            <AppText variant="callout" weight="semibold">
+              {t("album.auto")}
+            </AppText>
           </Pressable>
-        </Pressable>
-      </Modal>
+          {rows.slice(0, 36).map((r) => (
+            <Pressable
+              key={r.id}
+              style={[styles.coverCell, r.id === coverId && styles.coverCellOn]}
+              onPress={() => {
+                void setAlbumCover(key, r.id)
+                  .then(() => {
+                    setCoverId(r.id);
+                    setCoverOpen(false);
+                  })
+                  .catch(() =>
+                    void alertDialog({
+                      title: "Could not set cover",
+                      message: "That photo is no longer available. Try another one.",
+                    })
+                  );
+              }}
+              accessibilityRole="button"
+              accessibilityLabel={`Use photo from ${new Date(r.taken_at).toLocaleDateString()}`}
+            >
+              {r.thumb_uri ? (
+                <Image
+                  source={{ uri: r.thumb_uri }}
+                  style={styles.coverImage}
+                  contentFit="cover"
+                  recyclingKey={`cover-${r.id}`}
+                  transition={90}
+                  accessible={false}
+                />
+              ) : (
+                <View style={[styles.coverImage, styles.coverEmpty]} />
+              )}
+            </Pressable>
+          ))}
+        </View>
+      </Sheet>
 
       {/* v0.44 photo request */}
-      <Modal visible={requestOpen} transparent animationType="fade" onRequestClose={() => setRequestOpen(false)}>
-        <Pressable style={styles.shareBackdrop} onPress={() => setRequestOpen(false)}>
-          <Pressable style={styles.shareCard} onPress={(e) => e.stopPropagation()}>
-            <Text style={styles.shareTitle}>Ask the family for photos</Text>
-            <Text style={styles.shareHint}>
-              A short request goes into this album's chat. Photos posted as replies will be saved
-              into the album automatically.
-            </Text>
-            <View style={styles.requestInputWrap}>
-              <TextInput
-                style={styles.requestInput}
-                value={requestSubject}
-                onChangeText={setRequestSubject}
-                placeholder="e.g. Diwali, Goa trip, grandma's birthday"
-                placeholderTextColor={theme.colors.onSurfaceVariant + "88"}
-                maxLength={120}
-              />
-            </View>
-            {requestBusy ? (
-              <Text style={styles.shareHint}>Sending…</Text>
-            ) : (
-              <View style={styles.requestActions}>
-                <Pressable style={styles.requestCancel} onPress={() => setRequestOpen(false)}>
-                  <Text style={styles.shareHint}>Cancel</Text>
-                </Pressable>
-                <Pressable
-                  style={styles.requestSend}
-                  onPress={() => {
-                    if (sharedAlbumId === undefined) return;
-                    setRequestBusy(true);
-                    void (async () => {
-                      try {
-                        const album = await getSharedAlbum(sharedAlbumId);
-                        const chatId = album?.chat_id ?? "";
-                        await sendPhotoRequest(chatId, requestSubject);
-                        setRequestOpen(false);
-                      } catch {
-                        Alert.alert(
-                          "Could not send",
-                          "The message did not go out — the album may not be linked to its chat yet. Try again after the next sync."
-                        );
-                      } finally {
-                        setRequestBusy(false);
-                      }
-                    })();
-                  }}
-                >
-                  <Text style={styles.requestSendText}>Send request</Text>
-                </Pressable>
-              </View>
-            )}
-          </Pressable>
-        </Pressable>
-      </Modal>
+      <Sheet
+        visible={requestOpen}
+        onClose={() => setRequestOpen(false)}
+        title={t("album.requestTitle")}
+        subtitle={t("album.requestHint")}
+        scroll
+        footer={
+          <>
+            <Button
+              label={t("common.cancel")}
+              variant="quiet"
+              onPress={() => setRequestOpen(false)}
+              disabled={requestBusy}
+            />
+            <Button
+              label={t("album.sendRequest")}
+              loading={requestBusy}
+              onPress={() => {
+                if (sharedAlbumId === undefined) return;
+                setRequestBusy(true);
+                void (async () => {
+                  try {
+                    const album = await getSharedAlbum(sharedAlbumId);
+                    const chatId = album?.chat_id ?? "";
+                    await sendPhotoRequest(chatId, requestSubject);
+                    setRequestOpen(false);
+                  } catch {
+                    void alertDialog({
+                      title: "Could not send",
+                      message:
+                        "The message did not go out — the album may not be linked to its chat yet. Try again after the next sync.",
+                    });
+                  } finally {
+                    setRequestBusy(false);
+                  }
+                })();
+              }}
+            />
+          </>
+        }
+      >
+        <Input
+          value={requestSubject}
+          onChangeText={setRequestSubject}
+          placeholder={t("album.requestPlaceholder")}
+          maxLength={120}
+          autoFocus
+          accessibilityLabel={t("album.requestTitle")}
+        />
+      </Sheet>
 
       {/* v0.39 share-to-group picker */}
-      <Modal visible={shareModal} transparent animationType="fade" onRequestClose={() => setShareModal(false)}>
-        <Pressable style={styles.shareBackdrop} onPress={() => setShareModal(false)}>
-          <Pressable style={styles.shareCard} onPress={(e) => e.stopPropagation()}>
-            <Text style={styles.shareTitle}>Share "{label}" to a chat</Text>
-            <Text style={styles.shareHint}>
-              Copies each local photo/video to the picked chat — Telegram storage only, like Saved
-              Messages. Uses the normal upload queue.
-            </Text>
-            {sharing ? (
-              <Text style={styles.shareHint}>Queuing…</Text>
-            ) : groups.length === 0 ? (
-              <Text style={styles.shareHint}>No groups found — create one in Telegram first.</Text>
-            ) : (
-              groups.map((g) => (
-                <Pressable
-                  key={g.id}
-                  style={styles.shareRow}
-                  onPress={() => {
-                    Alert.alert(
-                      "Share album",
-                      `Send ${rows.filter((r) => r.local_uri).length} item${rows.filter((r) => r.local_uri).length === 1 ? "" : "s"} to "${g.title}"?`,
-                      [
-                        { text: "Cancel", style: "cancel" },
-                        {
-                          text: "Send",
-                          onPress: () => {
-                            setSharing(true);
-                            void shareAlbumToChat(rows, g.id)
-                              .then((res) => {
-                                setShareModal(false);
-                                Alert.alert(
-                                  "Queued",
-                                  `${res.queued} item${res.queued === 1 ? "" : "s"} will upload to "${g.title}"` +
-                                    (res.skipped > 0 ? ` — ${res.skipped} skipped (cloud-only).` : ".")
-                                );
-                              })
-                              .catch(() => Alert.alert("Failed", "Could not queue the share — try again."))
-                              .finally(() => setSharing(false));
-                          },
-                        },
-                      ]
-                    );
-                  }}
-                >
-                  <Text style={styles.shareRowTitle} numberOfLines={1}>
-                    {g.title}
-                  </Text>
-                  <Text style={styles.shareRowSub}>
-                    {g.memberCount !== null ? `${g.memberCount} members` : g.kind}
-                  </Text>
-                </Pressable>
-              ))
-            )}
-          </Pressable>
-        </Pressable>
-      </Modal>
-    </View>
+      <Sheet
+        visible={shareModal}
+        onClose={() => setShareModal(false)}
+        title={t("album.shareTitle")}
+        subtitle={t("album.shareHint")}
+        scroll
+      >
+        {groups.length === 0 ? (
+          <AppText variant="body" color={theme.colors.onSurfaceVariant} style={styles.shareEmpty}>
+            {t("album.noGroups")}
+          </AppText>
+        ) : (
+          groups.map((g) => (
+            <ListRow
+              key={g.id}
+              title={g.title}
+              subtitle={g.memberCount !== null ? `${g.memberCount} member${g.memberCount === 1 ? "" : "s"}` : g.kind}
+              disabled={sharing}
+              onPress={() => {
+                void confirmDialog({
+                  title: t("album.share"),
+                  message: `Send ${localCount} item${localCount === 1 ? "" : "s"} to “${g.title}”?`,
+                  confirmLabel: t("album.send"),
+                }).then((ok) => {
+                  if (!ok) return;
+                  setSharing(true);
+                  void shareAlbumToChat(rows, g.id)
+                    .then((res) => {
+                      setShareModal(false);
+                      void alertDialog({
+                        title: t("album.queued"),
+                        message:
+                          `${res.queued} item${res.queued === 1 ? "" : "s"} will upload to “${g.title}”` +
+                          (res.skipped > 0 ? ` — ${res.skipped} skipped (cloud-only).` : "."),
+                      });
+                    })
+                    .catch(() => void alertDialog({ title: "Failed", message: "Could not queue the share — try again." }))
+                    .finally(() => setSharing(false));
+                });
+              }}
+            />
+          ))
+        )}
+      </Sheet>
+    </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: theme.colors.background },
-  // v0.28 locked-album placeholder (Hidden's pattern).
-  lockedRoot: { alignItems: "center", justifyContent: "center", paddingHorizontal: theme.spacing.xl },
-  lockIcon: { fontSize: 40, marginBottom: theme.spacing.md },
-  lockTitle: { color: theme.colors.onSurface, fontSize: 22, fontWeight: "700", marginBottom: theme.spacing.sm },
-  lockBody: { color: theme.colors.onSurfaceVariant, fontSize: 13.5, textAlign: "center" },
-  header: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: theme.spacing.md,
-    paddingHorizontal: theme.spacing.md,
-    paddingBottom: 4,
-  },
-  back: { color: theme.colors.onSurface, fontSize: 24 },
-  title: { color: theme.colors.onSurface, fontSize: 24, fontWeight: "700", flex: 1 },
-  count: { color: theme.colors.onSurfaceVariant, fontSize: 14 },
-  // v0.39 share chip + picker modal
-  shareBtn: {
-    backgroundColor: theme.colors.primaryContainer,
-    borderRadius: theme.radius.full,
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-  },
-  shareBtnText: { color: theme.colors.onPrimaryContainer, fontSize: 12, fontWeight: "700" },
-  shareBackdrop: { flex: 1, backgroundColor: "#000000AA", justifyContent: "center", padding: theme.spacing.xl },
-  shareCard: {
-    backgroundColor: theme.colors.surfaceContainer,
-    borderRadius: theme.radius.xl,
-    padding: theme.spacing.lg,
-    maxHeight: "70%",
-  },
-  shareTitle: { color: theme.colors.onSurface, fontSize: 17, fontWeight: "700" },
-  shareHint: { color: theme.colors.onSurfaceVariant, fontSize: 12.5, marginTop: 4, marginBottom: theme.spacing.sm },
-  shareRow: {
-    paddingVertical: 11,
-    borderBottomWidth: 1,
-    borderBottomColor: theme.colors.outlineVariant,
-  },
-  shareRowTitle: { color: theme.colors.onSurface, fontSize: 14.5, fontWeight: "600" },
-  shareRowSub: { color: theme.colors.onSurfaceVariant, fontSize: 11.5, marginTop: 1 },
-  toggleRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: theme.spacing.md,
-    paddingVertical: theme.spacing.xs,
-    gap: theme.spacing.md,
-  },
-  toggleLabel: { color: theme.colors.onSurface, fontSize: 14, fontWeight: "600" },
-  toggleNote: { color: theme.colors.onSurfaceVariant, fontSize: 11.5, marginTop: 1 },
-  // Topic sub-album chips (D6), matching the SharedAlbumsScreen mini-chip look.
   chipRow: {
-    flexDirection: "row",
     gap: theme.spacing.sm,
     paddingHorizontal: theme.spacing.md,
-    paddingVertical: theme.spacing.xs,
+    paddingBottom: theme.spacing.sm,
   },
-  chip: {
-    backgroundColor: theme.colors.surfaceContainer,
-    borderRadius: theme.radius.full,
-    paddingHorizontal: 12,
-    paddingVertical: 5,
+  listContent: { paddingBottom: theme.spacing.xl },
+  cell: { flex: 1, margin: 1 },
+  groupHeaderWrap: {
+    flexDirection: "row",
+    alignItems: "baseline",
+    gap: theme.spacing.sm,
+    paddingHorizontal: theme.spacing.xs,
+    paddingTop: theme.spacing.md,
+    paddingBottom: theme.spacing.xs,
   },
-  chipText: { color: theme.colors.onSurface, fontSize: 12, fontWeight: "600" },
-  activityWrap: { paddingHorizontal: theme.spacing.md, paddingTop: theme.spacing.xs },
-  activityTitle: {
-    color: theme.colors.onSurfaceVariant,
-    fontSize: 11.5,
-    fontWeight: "700",
-    marginBottom: theme.spacing.xs,
-  },
-  activityRow: { flexDirection: "row", gap: theme.spacing.sm, paddingBottom: 6 },
+  activityWrap: { paddingTop: theme.spacing.xs, paddingBottom: theme.spacing.sm },
+  activityTitle: { paddingHorizontal: theme.spacing.md, marginBottom: theme.spacing.xs },
+  activityRow: { gap: theme.spacing.sm, paddingHorizontal: theme.spacing.md },
   activityCard: {
-    width: 96,
+    width: 100,
     backgroundColor: theme.colors.surfaceContainer,
-    borderRadius: theme.radius.lg,
-    padding: 6,
+    borderRadius: theme.radius.control,
+    padding: theme.spacing.xs,
     gap: 2,
   },
   activityThumb: {
     width: "100%",
-    height: 60,
-    borderRadius: theme.radius.md,
+    height: 64,
+    borderRadius: theme.radius.thumb,
     backgroundColor: theme.colors.surfaceHighest,
+    marginBottom: 2,
   },
-  activityThumbEmpty: { height: 60 },
-  activityWho: { color: theme.colors.onSurface, fontSize: 11.5, fontWeight: "600" },
-  activityWhen: { color: theme.colors.onSurfaceVariant, fontSize: 10 },
-  activityCaption: { color: theme.colors.onSurfaceVariant, fontSize: 10, marginTop: 1 },
-  requestInputWrap: {
-    marginTop: theme.spacing.md,
-    backgroundColor: theme.colors.surfaceHighest,
-    borderRadius: theme.radius.lg,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: theme.colors.outlineVariant,
-  },
-  requestInput: {
-    color: theme.colors.onSurface,
-    paddingHorizontal: theme.spacing.md,
-    paddingVertical: 10,
-    fontSize: 14,
-  },
-  requestActions: { flexDirection: "row", gap: theme.spacing.md, marginTop: theme.spacing.md },
-  requestCancel: {
-    paddingVertical: 9,
-    paddingHorizontal: 14,
-    borderRadius: theme.radius.full,
-    backgroundColor: theme.colors.surfaceHighest,
-  },
-  requestSend: {
-    paddingVertical: 9,
-    paddingHorizontal: 14,
-    borderRadius: theme.radius.full,
-    backgroundColor: theme.colors.primary,
-  },
-  requestSendText: { color: theme.colors.onPrimary, fontWeight: "700", fontSize: 13 },
-  chipOn: { backgroundColor: theme.colors.primaryContainer },
-  chipTextOn: { color: theme.colors.onPrimaryContainer },
-  listContent: { paddingBottom: 40, paddingTop: theme.spacing.sm },
-  // v0.47 cover picker
-  coverGridWrap: { maxHeight: 320 },
-  coverGrid: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  activityThumbEmpty: { height: 64 },
+  pressed: { opacity: 0.85 },
+  coverGrid: { flexDirection: "row", flexWrap: "wrap", gap: theme.spacing.sm, paddingBottom: theme.spacing.md },
   coverCell: {
-    width: 96,
-    height: 96,
-    borderRadius: theme.radius.lg,
-    overflow: "hidden",
-    borderWidth: 0,
-  },
-  coverCellBox: { width: "100%", height: "100%" },
-  coverCellEmpty: { backgroundColor: theme.colors.surfaceHighest },
-  coverCellAuto: { backgroundColor: theme.colors.surfaceHighest, justifyContent: "center" },
-  coverCellAutoText: {
-    color: theme.colors.onSurface, fontSize: 13, fontWeight: "700", textAlign: "center",
-  },
-  coverCellOn: { borderWidth: 2, borderColor: theme.colors.primary },
-  // Album organizer section headers (full-width via overrideItemLayout span).
-  groupHeaderWrap: {
-    flexDirection: "row",
-    alignItems: "baseline",
-    gap: 8,
-    paddingHorizontal: theme.spacing.xs,
-    paddingTop: theme.spacing.sm,
-    paddingBottom: theme.spacing.xs,
-  },
-  groupHeaderText: { color: theme.colors.onSurface, fontSize: 14, fontWeight: "700" },
-  groupHeaderCount: { color: theme.colors.onSurfaceVariant, fontSize: 12 },
-  cell: {
-    flex: 1,
-    margin: 1,
-    aspectRatio: 1,
-    borderRadius: 4,
+    width: 88,
+    height: 88,
+    borderRadius: theme.radius.control,
     overflow: "hidden",
     backgroundColor: theme.colors.surfaceHighest,
   },
-  videoFlag: {
-    position: "absolute",
-    bottom: 5,
-    left: 5,
-    width: 18,
-    height: 18,
-    borderRadius: 9,
-    backgroundColor: "#00000088",
-    alignItems: "center",
-    justifyContent: "center",
+  coverCellOn: { borderWidth: 2, borderColor: theme.colors.accent },
+  coverAuto: { alignItems: "center", justifyContent: "center" },
+  coverImage: { width: "100%", height: "100%" },
+  coverEmpty: { backgroundColor: theme.colors.surfaceHighest },
+  shareEmpty: { paddingVertical: theme.spacing.md },
+  sheetControl: { paddingBottom: theme.spacing.md, gap: theme.spacing.sm },
+  sheetChips: { flexDirection: "row", flexWrap: "wrap", gap: theme.spacing.sm },
+  sheetToggle: { paddingHorizontal: 0 },
+  skeletonGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    paddingHorizontal: theme.spacing.xs,
+    gap: theme.spacing.xs,
   },
-  videoFlagText: { color: "#FFFFFF", fontSize: 9 },
-  stateDot: { position: "absolute", bottom: 6, right: 6, width: 8, height: 8, borderRadius: 4 },
-  dot_local: { backgroundColor: "#9AA0A6" },
-  dot_queued: { backgroundColor: "#FBBC05" },
-  dot_uploading: { backgroundColor: "#FBBC05" },
-  dot_failed: { backgroundColor: "#EA4335" },
-  empty: { color: theme.colors.onSurfaceVariant, textAlign: "center", marginTop: 60 },
+  skeletonCell: { margin: 1 },
 });

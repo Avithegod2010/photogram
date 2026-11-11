@@ -1,19 +1,19 @@
 import React, { useState } from "react";
-import {
-  Alert,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Switch,
-  Text,
-  TextInput,
-  View,
-} from "react-native";
-import { StatusBar } from "expo-status-bar";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { ScrollView, StyleSheet, View } from "react-native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
-import { runRulesSearch, saveSmartRules, type SavedRules } from "../db/queries";
+import { saveSmartRules, type SavedRules } from "../db/queries";
 import { theme } from "../theme";
+import { t } from "../lib/i18n";
+import {
+  AppBar,
+  AppText,
+  Button,
+  Input,
+  Screen,
+  Section,
+  ToggleRow,
+  alertDialog,
+} from "../ui";
 
 // v0.41 Smart-album rules v2 — a small builder for combined filters stored as
 // JSON (schema v20): text, favorites, manual/app tags, taken_at range. The
@@ -36,7 +36,7 @@ function parseDay(raw: string): number | null {
 function previewLabel(rules: SavedRules): string {
   const parts: string[] = [];
   if (rules.favorites) parts.push("favorites");
-  for (const t of rules.tags) parts.push(`"${t}"`);
+  for (const tag of rules.tags) parts.push(`"${tag}"`);
   if (rules.fromMs) parts.push(`from ${new Date(rules.fromMs).toLocaleDateString()}`);
   if (rules.toMs) parts.push(`before ${new Date(rules.toMs).toLocaleDateString()}`);
   if (rules.text) parts.push(`text "${rules.text}"`);
@@ -51,7 +51,6 @@ export function AlbumRulesScreen({
     SavedSearch: { id: number };
   }>;
 }) {
-  const insets = useSafeAreaInsets();
   const [name, setName] = useState("");
   const [favorites, setFavorites] = useState(false);
   const [tags, setTags] = useState("");
@@ -64,26 +63,32 @@ export function AlbumRulesScreen({
 
   const save = () => {
     if (!dirty) {
-      Alert.alert("Nothing to save", "Pick at least one filter for this album.");
+      void alertDialog({
+        title: "Nothing to save",
+        message: "Pick at least one filter for this album.",
+      });
       return;
     }
     const tagList = tags
       .split(",")
-      .map((t) => t.trim())
-      .filter((t) => t.length > 0)
+      .map((tag) => tag.trim())
+      .filter((tag) => tag.length > 0)
       .slice(0, 6);
     const fromMs = fromDay.trim().length > 0 ? parseDay(fromDay) : undefined;
     const toMs = toDay.trim().length > 0 ? parseDay(toDay) : undefined;
     if (fromDay.trim().length > 0 && fromMs === undefined) {
-      Alert.alert("Check the dates", '"From" must look like 2024-01-15.');
+      void alertDialog({ title: "Check the dates", message: '"From" must look like 2024-01-15.' });
       return;
     }
     if (toDay.trim().length > 0 && toMs === undefined) {
-      Alert.alert("Check the dates", '"To" must look like 2025-06-30.');
+      void alertDialog({ title: "Check the dates", message: '"To" must look like 2025-06-30.' });
       return;
     }
     if (fromMs !== undefined && fromMs !== null && toMs !== undefined && toMs !== null && fromMs >= toMs) {
-      Alert.alert("Check the dates", '"From" must be earlier than "To".');
+      void alertDialog({
+        title: "Check the dates",
+        message: '"From" must be earlier than "To".',
+      });
       return;
     }
     if (saving) return;
@@ -100,7 +105,10 @@ export function AlbumRulesScreen({
         const id = await saveSmartRules(name, rules);
         navigation.replace("SavedSearch", { id });
       } catch {
-        Alert.alert("Could not save", "Writing the album rules failed. Try again.");
+        void alertDialog({
+          title: "Could not save",
+          message: "Writing the album rules failed. Try again.",
+        });
       } finally {
         setSaving(false);
       }
@@ -108,154 +116,124 @@ export function AlbumRulesScreen({
   };
 
   return (
-    <View style={[styles.root, { paddingTop: insets.top }]}>
-      <StatusBar style="light" />
-      <View style={styles.header}>
-        <Pressable onPress={() => navigation.goBack()} hitSlop={12}>
-          <Text style={styles.back}>←</Text>
-        </Pressable>
-        <View style={{ flex: 1 }}>
-          <Text style={styles.title}>New smart album</Text>
-          <Text style={styles.sub}>Rules stack: every filter must match</Text>
-        </View>
-      </View>
+    <Screen>
+      <AppBar
+        title="New smart album"
+        subtitle="Rules stack: every filter must match"
+        large
+        onBack={() => navigation.goBack()}
+        backLabel={t("common.back")}
+      />
 
-      <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
-        <Text style={styles.fieldLabel}>Album name</Text>
-        <View style={styles.inputWrap}>
-          <TextInput
-            style={styles.input}
-            value={name}
-            onChangeText={setName}
-            placeholder="e.g. Beach favorites"
-            placeholderTextColor={theme.colors.outlineVariant}
-            maxLength={60}
-          />
-        </View>
-
-        <View style={styles.switchRow}>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.fieldLabel}>Favorites only</Text>
-            <Text style={styles.fieldSub}>Only photos you marked with a ♥</Text>
+      <ScrollView
+        contentContainerStyle={styles.content}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+      >
+        <Section title="Name" icon="bookmark-outline">
+          <View style={styles.field}>
+            <Input
+              label="Album name"
+              value={name}
+              onChangeText={setName}
+              placeholder="e.g. Beach favorites"
+              maxLength={60}
+              hint="Shown in Collections. Leave empty for “Smart album”."
+            />
           </View>
-          <Switch value={favorites} onValueChange={setFavorites} thumbColor={theme.colors.primary} />
-        </View>
+        </Section>
 
-        <Text style={styles.fieldLabel}>Tags (comma-separated, up to 6)</Text>
-        <View style={styles.inputWrap}>
-          <TextInput
-            style={styles.input}
-            value={tags}
-            onChangeText={setTags}
-            placeholder="beach, family"
-            placeholderTextColor={theme.colors.outlineVariant}
-            autoCapitalize="none"
+        <Section title="Filters" icon="options-outline">
+          <ToggleRow
+            title="Favorites only"
+            subtitle="Only photos you marked with a ♥"
+            value={favorites}
+            onValueChange={setFavorites}
           />
-        </View>
-        <Text style={styles.hint}>Matches photo tags, your tags and scene labels.</Text>
-
-        <Text style={styles.fieldLabel}>Photo text (optional)</Text>
-        <View style={styles.inputWrap}>
-          <TextInput
-            style={styles.input}
-            value={text}
-            onChangeText={setText}
-            placeholder="receipt, Goa, mom — searches names, notes, scanned text"
-            placeholderTextColor={theme.colors.outlineVariant}
-            autoCapitalize="none"
-          />
-        </View>
-
-        <Text style={styles.fieldLabel}>Date range (optional)</Text>
-        <View style={{ flexDirection: "row", gap: theme.spacing.sm }}>
-          <View style={[styles.inputWrap, { flex: 1 }]}>
-            <TextInput
-              style={styles.input}
+          <View style={styles.field}>
+            <Input
+              label="Tags (comma-separated, up to 6)"
+              value={tags}
+              onChangeText={setTags}
+              placeholder="beach, family"
+              autoCapitalize="none"
+              hint="Matches photo tags, your tags and scene labels."
+            />
+          </View>
+          <View style={styles.field}>
+            <Input
+              label="Photo text (optional)"
+              value={text}
+              onChangeText={setText}
+              placeholder="receipt, Goa, mom — searches names, notes, scanned text"
+              autoCapitalize="none"
+            />
+          </View>
+          <View style={styles.dateRow}>
+            <Input
+              label="From"
               value={fromDay}
               onChangeText={setFromDay}
-              placeholder="From 2024-01-15"
-              placeholderTextColor={theme.colors.outlineVariant}
+              placeholder="2024-01-15"
               autoCapitalize="none"
               keyboardType="number-pad"
+              containerStyle={styles.flex}
             />
-          </View>
-          <View style={[styles.inputWrap, { flex: 1 }]}>
-            <TextInput
-              style={styles.input}
+            <Input
+              label="To"
               value={toDay}
               onChangeText={setToDay}
-              placeholder="To 2025-06-30"
-              placeholderTextColor={theme.colors.outlineVariant}
+              placeholder="2025-06-30"
               autoCapitalize="none"
               keyboardType="number-pad"
+              containerStyle={styles.flex}
             />
           </View>
-        </View>
+        </Section>
 
-        <View style={styles.previewCard}>
-          <Text style={styles.previewLabel}>Album shows</Text>
-          <Text style={styles.previewValue}>{previewLabel({
-            text: text.trim() || null,
-            favorites,
-            tags: tags.split(",").map((t) => t.trim()).filter((t) => t.length > 0),
-            fromMs: fromDay.trim() ? parseDay(fromDay) : null,
-            toMs: toDay.trim() ? parseDay(toDay) : null,
-          })}</Text>
-        </View>
+        <Section title="Album shows" icon="search-outline">
+          <View style={styles.previewWrap}>
+            <AppText variant="body" color={theme.colors.onSurface}>
+              {previewLabel({
+                text: text.trim() || null,
+                favorites,
+                tags: tags.split(",").map((tag) => tag.trim()).filter((tag) => tag.length > 0),
+                fromMs: fromDay.trim() ? parseDay(fromDay) : null,
+                toMs: toDay.trim() ? parseDay(toDay) : null,
+              })}
+            </AppText>
+            <AppText variant="captionRegular" color={theme.colors.onSurfaceFaint} style={styles.previewHint}>
+              Re-checked every time you open the album.
+            </AppText>
+          </View>
+        </Section>
 
-        <Pressable style={[styles.saveBtn, !dirty && styles.btnDisabled]} onPress={save} disabled={!dirty || saving}>
-          <Text style={styles.saveText}>{saving ? "Saving…" : "Create album"}</Text>
-        </Pressable>
+        <Button
+          label={saving ? "Saving…" : "Create album"}
+          icon="checkmark"
+          fullWidth
+          loading={saving}
+          disabled={!dirty || saving}
+          onPress={save}
+        />
       </ScrollView>
-    </View>
+    </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: theme.colors.background },
-  header: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: theme.spacing.md,
-    paddingHorizontal: theme.spacing.lg,
-    paddingTop: theme.spacing.md,
-    paddingBottom: theme.spacing.sm,
-  },
-  back: { color: theme.colors.onSurface, fontSize: 24 },
-  title: { color: theme.colors.onSurface, fontSize: 20, fontWeight: "700" },
-  sub: { color: theme.colors.onSurfaceVariant, fontSize: 12, marginTop: 2 },
-  content: { padding: theme.spacing.lg, paddingBottom: 60, gap: 8 },
-  fieldLabel: { color: theme.colors.onSurface, fontSize: 14, fontWeight: "600" },
-  fieldSub: { color: theme.colors.onSurfaceVariant, fontSize: 11.5, marginTop: 2 },
-  hint: { color: theme.colors.onSurfaceVariant, fontSize: 11.5 },
-  inputWrap: {
-    backgroundColor: theme.colors.surfaceContainer,
-    borderRadius: theme.radius.lg,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: theme.colors.outlineVariant,
-  },
-  input: {
-    color: theme.colors.onSurface,
+  content: {
     paddingHorizontal: theme.spacing.md,
-    paddingVertical: 10,
-    fontSize: 14,
+    paddingBottom: theme.spacing.xl,
   },
-  switchRow: { flexDirection: "row", alignItems: "center", gap: theme.spacing.md, paddingVertical: 8 },
-  previewCard: {
-    marginTop: theme.spacing.sm,
-    backgroundColor: theme.colors.surfaceContainer,
-    borderRadius: theme.radius.lg,
-    padding: theme.spacing.md,
+  flex: { flex: 1, minWidth: 0 },
+  field: { paddingHorizontal: theme.spacing.md, paddingVertical: theme.spacing.sm },
+  dateRow: {
+    flexDirection: "row",
+    gap: theme.spacing.sm,
+    paddingHorizontal: theme.spacing.md,
+    paddingVertical: theme.spacing.sm,
   },
-  previewLabel: { color: theme.colors.onSurfaceVariant, fontSize: 11.5, fontWeight: "700" },
-  previewValue: { color: theme.colors.onSurface, fontSize: 13, marginTop: 4, lineHeight: 18 },
-  saveBtn: {
-    marginTop: theme.spacing.md,
-    backgroundColor: theme.colors.primary,
-    borderRadius: theme.radius.full,
-    alignItems: "center",
-    paddingVertical: 13,
-  },
-  btnDisabled: { opacity: 0.45 },
-  saveText: { color: theme.colors.onPrimary, fontWeight: "700", fontSize: 15 },
+  previewWrap: { padding: theme.spacing.md, gap: theme.spacing.xs },
+  previewHint: { marginTop: 2 },
 });

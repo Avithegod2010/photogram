@@ -81,6 +81,31 @@ process — never mid-upload) → device verification per CHANGELOG checklists (
 → resume bulk backup (~8 GB, NOT uploading) → Play Store track (privacy email + Pages,
 signing, closed testing).
 
+## UI rules — "Quiet Archive" (2026-11-11)
+
+The UI system is documented in `docs/UI-SYSTEM.md`; the kit is `src/ui/`; tokens are `src/theme.ts`.
+
+11. **One token source.** Never write a raw hex value or a one-off `fontSize` in a screen or
+    component. Add/choose a role in `src/theme.ts` and use `AppText` variants. The probe's static
+    guard fails on both.
+12. **One kit.** Screens use `Screen`, `AppBar`, `Section`, `ListRow`, `ToggleRow`, `Button`,
+    `IconButton`, `Chip`, `Input`, `Sheet`, `EmptyState`, `ErrorState`, `Skeleton`, `ProgressBar`,
+    `Stat`, `Badge`, `StatusBadge`, `MediaTile`. Do not invent local buttons/cards/headers.
+13. **No in-app `Alert.alert`.** Use `confirmDialog` / `alertDialog` from `src/ui` for decisions;
+    keep native alerts only for OS-level confirmations. No raw `<Modal>` — use `Sheet`.
+14. **Photos are the interface.** Gallery and album grids stay edge-to-edge; chrome floats and
+    recedes; no card around the grid; accent is for action/selection/focus only.
+15. **States are mandatory.** Every data screen has loading (Skeleton), empty (why + action),
+    error (what + retry), and offline/partial where relevant. Never a blank screen.
+16. **Accessibility is part of done.** Every pressable has a role + label (+ state); icon-only
+    controls require `accessibilityLabel`; 48dp minimum; font scaling stays on; colour is never
+    the only signal; reduced motion is respected.
+17. **Motion budget.** 120ms feedback / 180ms state / 240ms navigation; standard easing; no
+    360° spins, bounces, wiggles, or tab-screen entrance animations. One signature moment per
+    screen at most (Memories, Wrapped, Story).
+18. **Danger at the bottom**, isolated, with a destructive confirmation. Destructive actions keep
+    their existing confirm step even when the visual layer changes.
+
 ## Future planning
 
 - `docs/IDEAS-BACKLOG.md` — curated next-feature menu (JS-only vs native marked).

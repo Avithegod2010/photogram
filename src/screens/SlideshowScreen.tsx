@@ -1,13 +1,21 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { Pressable, StyleSheet, View } from "react-native";
 import { StatusBar } from "expo-status-bar";
-import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
 import { useVideoPlayer, VideoView } from "expo-video";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import Animated, { FadeIn, useAnimatedStyle, useSharedValue, withTiming } from "react-native-reanimated";
+import Animated, {
+  FadeIn,
+  useAnimatedStyle,
+  useReducedMotion,
+  useSharedValue,
+  withTiming,
+} from "react-native-reanimated";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { getMediaByIds, MediaRow } from "../db/queries";
+import { theme } from "../theme";
+import { t } from "../lib/i18n";
+import { AppText, EmptyState, ErrorState, IconButton, Skeleton } from "../ui";
 
 const SLIDE_MS = 4000;
 const CONTROLS_HIDE_MS = 3500;
@@ -25,18 +33,31 @@ export function SlideshowScreen({ navigation, route }: { navigation: SlideshowNa
   const { ids } = route.params;
   const insets = useSafeAreaInsets();
   const [rows, setRows] = useState<MediaRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [index, setIndex] = useState(route.params.index);
   const [playing, setPlaying] = useState(true);
   const [controlsVisible, setControlsVisible] = useState(true);
   const rowsRef = useRef<MediaRow[]>([]);
   rowsRef.current = rows;
 
-  useEffect(() => {
-    void getMediaByIds(ids).then((loaded) => {
+  const load = useCallback(async () => {
+    setLoading(true);
+    setLoadError(null);
+    try {
+      const loaded = await getMediaByIds(ids);
       setRows(loaded);
       setIndex((i) => Math.min(Math.max(0, i), Math.max(0, loaded.length - 1)));
-    });
+    } catch (e) {
+      setLoadError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setLoading(false);
+    }
   }, [ids]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
 
   const goNextNow = useCallback(() => {
     setIndex((i) => (rowsRef.current.length > 0 ? (i + 1) % rowsRef.current.length : i));
@@ -70,61 +91,131 @@ export function SlideshowScreen({ navigation, route }: { navigation: SlideshowNa
 
   const current = rows[index];
 
+  if (loadError) {
+    return (
+      <View style={styles.root}>
+        <StatusBar style="light" />
+        <ErrorState
+          title={t("state.error")}
+          body={loadError}
+          retryLabel={t("common.retry")}
+          onRetry={() => void load()}
+        />
+      </View>
+    );
+  }
+
+  if (!current) {
+    return (
+      <View style={styles.root}>
+        <StatusBar style="light" />
+        {loading ? (
+          <View style={styles.centered}>
+            <Skeleton
+              width="82%"
+              height={360}
+              radius={theme.radius.control}
+              label={t("state.loading")}
+            />
+          </View>
+        ) : (
+          <EmptyState
+            icon="images-outline"
+            title={t("state.empty")}
+            body={t("viewer.empty")}
+            actionLabel={t("common.back")}
+            onAction={() => navigation.goBack()}
+          />
+        )}
+      </View>
+    );
+  }
+
   return (
     <View style={styles.root}>
       <StatusBar style="light" hidden={!controlsVisible} />
-      {current ? (
-        current.mime_type.startsWith("video/") ? (
-          <VideoSlide
-            key={`v-${current.id}`}
-            item={current}
-            paused={!playing}
-            controlsVisible={controlsVisible}
-            onEnded={goNextNow}
-          />
-        ) : (
-          <PhotoSlide key={`p-${current.id}`} item={current} />
-        )
+      {current.mime_type.startsWith("video/") ? (
+        <VideoSlide
+          key={`v-${current.id}`}
+          item={current}
+          paused={!playing}
+          controlsVisible={controlsVisible}
+          onEnded={goNextNow}
+        />
       ) : (
-        <View style={styles.loading}>
-          <Text style={styles.loadingText}>Loading…</Text>
-        </View>
+        <PhotoSlide key={`p-${current.id}`} item={current} />
       )}
 
       {/* Tap zones (only while controls are hidden — with controls up, taps
           reach the video's own seek controls and the bottom-bar buttons). */}
       {!controlsVisible ? (
         <View style={styles.tapRow}>
-          <Pressable style={styles.tapZone} onPress={goPrev} />
-          <Pressable style={styles.tapZone} onPress={() => setControlsVisible(true)} />
-          <Pressable style={styles.tapZone} onPress={goNextNow} />
+          <Pressable
+            style={styles.tapZone}
+            onPress={goPrev}
+            accessibilityRole="button"
+            accessibilityLabel="Previous item"
+          />
+          <Pressable
+            style={styles.tapZone}
+            onPress={() => setControlsVisible(true)}
+            accessibilityRole="button"
+            accessibilityLabel="Show controls"
+          />
+          <Pressable
+            style={styles.tapZone}
+            onPress={goNextNow}
+            accessibilityRole="button"
+            accessibilityLabel="Next item"
+          />
         </View>
       ) : null}
 
       {controlsVisible ? (
         <>
-          <View style={[styles.topBar, { top: insets.top + 8 }]}>
-            <Pressable onPress={() => navigation.goBack()} hitSlop={12}>
-              <Ionicons name="close" size={26} color="#FFFFFF" />
-            </Pressable>
+          <View style={[styles.topBar, { top: insets.top + theme.spacing.sm }]}>
+            <IconButton
+              icon="close"
+              label={t("common.close")}
+              variant="onMedia"
+              onPress={() => navigation.goBack()}
+            />
             <View style={styles.topCenter}>
-              <Text style={styles.date}>
-                {current ? new Date(current.taken_at).toLocaleDateString(undefined, { dateStyle: "medium" }) : " "}
-              </Text>
-              <Text style={styles.counter}>{rows.length > 0 ? `${index + 1} / ${rows.length}` : " "}</Text>
+              <AppText
+                variant="caption"
+                weight="semibold"
+                color={theme.colors.onViewer}
+                numberOfLines={1}
+                align="center"
+                style={styles.dateShadow}
+              >
+                {new Date(current.taken_at).toLocaleDateString(undefined, { dateStyle: "medium" })}
+              </AppText>
+              <AppText variant="caption2Regular" color={theme.colors.onViewerMuted} tabular>
+                {`${index + 1} / ${rows.length}`}
+              </AppText>
             </View>
             <View style={styles.topSpacer} />
           </View>
-          <View style={[styles.bottomBar, { bottom: insets.bottom + 16 }]}>
-            <Pressable onPress={goPrev} hitSlop={10}>
-              <Ionicons name="play-back" size={28} color="#FFFFFF" />
-            </Pressable>
-            <Pressable onPress={() => setPlaying((p) => !p)} hitSlop={10}>
-              <Ionicons name={playing ? "pause" : "play"} size={30} color="#FFFFFF" />
-            </Pressable>
-            <Pressable onPress={goNextNow} hitSlop={10}>
-              <Ionicons name="play-forward" size={28} color="#FFFFFF" />
-            </Pressable>
+          <View style={[styles.bottomBar, { bottom: insets.bottom + theme.spacing.md }]}>
+            <IconButton
+              icon="play-back"
+              label="Previous item"
+              variant="onMedia"
+              onPress={goPrev}
+            />
+            <IconButton
+              icon={playing ? "pause" : "play"}
+              label={playing ? "Pause" : "Play"}
+              variant="onMedia"
+              onPress={() => setPlaying((p) => !p)}
+            />
+            <IconButton
+              icon="play-forward"
+              label="Next item"
+              variant="onMedia"
+              onPress={goNextNow}
+            />
           </View>
         </>
       ) : null}
@@ -133,27 +224,39 @@ export function SlideshowScreen({ navigation, route }: { navigation: SlideshowNa
 }
 
 function PhotoSlide({ item }: { item: MediaRow }) {
+  const reduced = useReducedMotion();
   const scale = useSharedValue(1);
   const tx = useSharedValue(0);
   const ty = useSharedValue(0);
   useEffect(() => {
     // Slow Ken Burns: gentle zoom + drift across the slide's on-screen time.
-    scale.value = withTiming(1.07, { duration: 7000 });
-    tx.value = withTiming(8, { duration: 7000 });
-    ty.value = withTiming(-6, { duration: 7000 });
-  }, [scale, tx, ty]);
+    // Reduced motion holds the frame still; the crossfade is dropped too.
+    if (reduced) {
+      scale.set(1);
+      tx.set(0);
+      ty.set(0);
+      return;
+    }
+    scale.set(withTiming(1.07, { duration: 7000 }));
+    tx.set(withTiming(8, { duration: 7000 }));
+    ty.set(withTiming(-6, { duration: 7000 }));
+  }, [reduced, scale, tx, ty]);
   const kenBurns = useAnimatedStyle(() => ({
-    transform: [{ scale: scale.value }, { translateX: tx.value }, { translateY: ty.value }],
+    transform: [{ scale: scale.get() }, { translateX: tx.get() }, { translateY: ty.get() }],
   }));
   return (
-    <Animated.View entering={FadeIn.duration(350)} style={StyleSheet.absoluteFill}>
+    <Animated.View
+      entering={reduced ? undefined : FadeIn.duration(theme.motion.duration.slow)}
+      style={StyleSheet.absoluteFill}
+    >
       <Animated.View style={[StyleSheet.absoluteFill, kenBurns]}>
         <Image
           source={{ uri: item.local_uri ?? item.thumb_uri }}
           style={StyleSheet.absoluteFill}
           contentFit="contain"
-          transition={180}
+          transition={reduced ? 0 : 180}
           recyclingKey={`slide-${item.id}`}
+          accessible={false}
         />
       </Animated.View>
     </Animated.View>
@@ -191,24 +294,34 @@ function VideoSlide({
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: "#000000" },
-  loading: { ...StyleSheet.absoluteFill, alignItems: "center", justifyContent: "center" },
-  loadingText: { color: "#FFFFFF88" },
-  tapRow: { ...StyleSheet.absoluteFill, flexDirection: "row", zIndex: 1 },
+  root: { flex: 1, backgroundColor: theme.colors.viewer },
+  centered: { flex: 1, alignItems: "center", justifyContent: "center" },
+  tapRow: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    flexDirection: "row",
+    zIndex: 1,
+  },
   tapZone: { flex: 1 },
   topBar: {
     position: "absolute",
-    left: 16,
-    right: 16,
+    left: theme.spacing.md,
+    right: theme.spacing.md,
     flexDirection: "row",
     alignItems: "center",
-    gap: 12,
+    gap: theme.spacing.sm,
     zIndex: 2,
   },
   topCenter: { flex: 1, alignItems: "center" },
-  topSpacer: { width: 26 },
-  date: { color: "#FFFFFF", fontSize: 14, fontWeight: "600", textShadowColor: "#000000AA", textShadowRadius: 4 },
-  counter: { color: "#FFFFFFAA", fontSize: 12, marginTop: 2 },
+  topSpacer: { width: theme.layout.touch },
+  dateShadow: {
+    textShadowColor: theme.colors.black,
+    textShadowRadius: 4,
+    textShadowOffset: { width: 0, height: 1 },
+  },
   bottomBar: {
     position: "absolute",
     left: 0,
@@ -216,7 +329,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "center",
     alignItems: "center",
-    gap: 44,
+    gap: theme.spacing.lg,
     zIndex: 2,
   },
 });

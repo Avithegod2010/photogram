@@ -146,5 +146,72 @@ function check(name, cond, extra) {
   }
 }
 
+// P) UI guard: no raw hex colours and no one-off font sizes in screen/component
+// code. Colour is a token (src/theme.ts); text is an AppText variant.
+// Allowlist: none — QR white/black already use theme.colors.white/black.
+{
+  const walk = (dir) =>
+    fs.existsSync(dir)
+      ? fs.readdirSync(dir, { withFileTypes: true }).flatMap((e) => {
+          const p = dir + "/" + e.name;
+          return e.isDirectory() ? walk(p) : [p];
+        })
+      : [];
+  const uiFiles = [
+    ...walk("src/screens"),
+    ...walk("src/components"),
+    ...walk("src/ui"),
+  ].filter((f) => /\.(ts|tsx)$/.test(f));
+
+  const hexHits = [];
+  const fontHits = [];
+  for (const file of uiFiles) {
+    const src = fs.readFileSync(file, "utf8");
+    const lines = src.split("\n");
+    lines.forEach((line, i) => {
+      const hex = line.match(/["'`]#[0-9a-fA-F]{3,8}["'`]/g);
+      if (hex) hexHits.push(`${file}:${i + 1} ${hex.join(" ")}`);
+      if (/fontSize\s*:\s*[0-9]/.test(line)) fontHits.push(`${file}:${i + 1}`);
+    });
+  }
+  check(
+    "no raw hex colours under src/screens, src/components, src/ui",
+    hexHits.length === 0,
+    hexHits.slice(0, 12).join(" | ") || "none"
+  );
+  check(
+    "no one-off fontSize under src/screens, src/components, src/ui (use AppText variants)",
+    fontHits.length === 0,
+    fontHits.slice(0, 12).join(" | ") || "none"
+  );
+}
+
+// Q) Alert.alert is reserved for OS-level confirmations. Report remaining
+// in-app usages as a warning (not a hard failure) so they can be migrated
+// without blocking a build.
+{
+  const walk = (dir) =>
+    fs.existsSync(dir)
+      ? fs.readdirSync(dir, { withFileTypes: true }).flatMap((e) => {
+          const p = dir + "/" + e.name;
+          return e.isDirectory() ? walk(p) : [p];
+        })
+      : [];
+  const files = walk("src/screens").filter((f) => /\.tsx$/.test(f));
+  const hits = [];
+  for (const file of files) {
+    const src = fs.readFileSync(file, "utf8");
+    const count = (src.match(/Alert\.alert/g) || []).length;
+    if (count > 0) hits.push(`${file.replace("src/screens/", "")}(${count})`);
+  }
+  if (hits.length > 0) {
+    console.log(
+      "WARN  Alert.alert still present in: " + hits.join(", ") + " — prefer confirmDialog/alertDialog"
+    );
+  } else {
+    console.log("PASS  no in-app Alert.alert left in src/screens");
+  }
+}
+
 console.log("\nRESULT: " + passed + " passed, " + failed + " failed");
 process.exitCode = failed > 0 ? 1 : 0;

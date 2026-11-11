@@ -1,19 +1,8 @@
-import React, { useCallback, useEffect, useState } from "react";
-import {
-  Alert,
-  Dimensions,
-  FlatList,
-  Modal,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-} from "react-native";
-import { StatusBar } from "expo-status-bar";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { Pressable, ScrollView, StyleSheet, View } from "react-native";
 import { Image } from "expo-image";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { Ionicons } from "@expo/vector-icons";
+import { FlashList } from "@shopify/flash-list";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import {
   assignFacesToPerson,
@@ -37,12 +26,36 @@ import {
   type PersonCandidate,
 } from "../lib/people";
 import { theme } from "../theme";
+import { t, tCount, tf } from "../lib/i18n";
+import {
+  AppBar,
+  AppText,
+  Button,
+  Chip,
+  EmptyState,
+  ErrorState,
+  IconButton,
+  Input,
+  ListRow,
+  MediaTile,
+  Screen,
+  Section,
+  Sheet,
+  Skeleton,
+  confirmDialog,
+} from "../ui";
 
 const SENS_CHIPS: { label: string; value: number }[] = [
   { label: "Loose 0.5", value: 0.5 },
   { label: "Normal 0.6", value: 0.6 },
   { label: "Strict 0.75", value: 0.75 },
 ];
+
+interface CandidateRow {
+  media: MediaRow;
+  sampleId: number;
+  score: number;
+}
 
 interface PersonViewState {
   person: PersonFull;
@@ -52,28 +65,22 @@ interface PersonViewState {
   candidates: CandidateRow[];
 }
 
-interface CandidateRow {
-  media: MediaRow;
-  sampleId: number;
-  score: number;
-}
-
-// v0.39 People & Pets v2: list → person's photos. List row long-press starts
-// a merge (tap the second person — their faces move INTO the first). Inside a
-// person: ✎ rename (+ sensitivity chips), Select → "Split off", long-press a
-// photo → "Not this person" (blocked pairs keep the dismissal through future
-// re-groupings). "Group faces" runs the v2 engine (affinity attach + blocked
-// pairs).
 export function PeopleScreen({
   navigation,
   route,
 }: {
-  navigation: NativeStackNavigationProp<{ Viewer: { ids: number[]; index: number }; Corrections: undefined; Slideshow: { ids: number[]; index: number } }>;
+  navigation: NativeStackNavigationProp<{
+    Viewer: { ids: number[]; index: number };
+    Corrections: undefined;
+    PeopleSetup: undefined;
+    Slideshow: { ids: number[]; index: number };
+  }>;
   route?: { params?: { openPerson?: number } };
 }) {
-  const insets = useSafeAreaInsets();
   const [people, setPeople] = useState<PersonFull[]>([]);
   const [listRows, setListRows] = useState<PeopleRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
   const [view, setView] = useState<PersonViewState | null>(null);
   const [grouping, setGrouping] = useState(false);
   const [groupedNote, setGroupedNote] = useState<string | null>(null);
@@ -82,10 +89,19 @@ export function PeopleScreen({
   const [renameDraft, setRenameDraft] = useState("");
 
   const reload = useCallback(async () => {
-    const full = await listPeopleFull().catch(() => [] as PersonFull[]);
-    const rows = await listPeople().catch(() => [] as PeopleRow[]);
-    setPeople(full);
-    setListRows(rows);
+    setLoadError(false);
+    try {
+      const full = await listPeopleFull();
+      const rows = await listPeople();
+      setPeople(full);
+      setListRows(rows);
+    } catch {
+      setPeople([]);
+      setListRows([]);
+      setLoadError(true);
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
   useEffect(() => {
@@ -159,26 +175,26 @@ export function PeopleScreen({
     void reload();
   }, [renaming, renameDraft, reload]);
 
-  const confirmMerge = useCallback((target: PersonFull, source: PersonFull) => {
-    const count = listRows.find((r) => r.id === source.id)?.face_count ?? 0;
-    Alert.alert(
-      "Merge people",
-      `Move all of "${source.name ?? "Unnamed"}" (${count} face${count === 1 ? "" : "s"}) into "${target.name ?? "Unnamed"}"?\n\n"${target.name ?? "Unnamed"}" keeps its name.`,
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Merge",
-          style: "destructive",
-          onPress: () => {
-            void mergePeople(target.id, source.id).then(() => {
-              if (view?.person.id === source.id) setView(null);
-              void reload();
-            });
-          },
-        },
-      ]
-    );
-  }, [listRows, reload, view]);
+  const confirmMerge = useCallback(
+    (target: PersonFull, source: PersonFull) => {
+      const count = listRows.find((r) => r.id === source.id)?.face_count ?? 0;
+      const targetName = target.name ?? t("people.unnamed");
+      const sourceName = source.name ?? t("people.unnamed");
+      void confirmDialog({
+        title: t("people.mergeTitle"),
+        message: `Move all of “${sourceName}” (${count} face${count === 1 ? "" : "s"}) into “${targetName}”?\n\n“${targetName}” keeps its name.`,
+        confirmLabel: t("people.mergeTitle"),
+        destructive: true,
+      }).then((ok) => {
+        if (!ok) return;
+        void mergePeople(target.id, source.id).then(() => {
+          if (view?.person.id === source.id) setView(null);
+          void reload();
+        });
+      });
+    },
+    [listRows, reload, view]
+  );
 
   const onPersonRowPress = useCallback(
     (person: PersonFull) => {
@@ -197,56 +213,55 @@ export function PeopleScreen({
     [merging, openTheirs, confirmMerge]
   );
 
-  const doSplit = useCallback((person: PersonFull, mediaIds: number[]) => {
-    Alert.alert(
-      "Split off",
-      `Move ${mediaIds.length} photo${mediaIds.length === 1 ? "" : "s"} out of "${person.name ?? "Unnamed"}"? They will not re-group with what stays (unless you merge later).`,
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Split",
-          style: "destructive",
-          onPress: () => {
-            void (async () => {
-              const samples: number[] = [];
-              for (const mediaId of mediaIds) {
-                samples.push(...(await listSampleIdsForMediaInPerson(mediaId, person.id)));
-              }
-              await splitOffFaces(samples, person.id);
-              setView(null);
-              void reload();
-            })();
-          },
-        },
-      ]
-    );
-  }, [reload]);
+  const doSplit = useCallback(
+    (person: PersonFull, mediaIds: number[]) => {
+      void confirmDialog({
+        title: t("people.splitTitle"),
+        message: `Move ${mediaIds.length} photo${mediaIds.length === 1 ? "" : "s"} out of “${person.name ?? t("people.unnamed")}”? They will not re-group with what stays (unless you merge later).`,
+        confirmLabel: t("people.split"),
+        destructive: true,
+      }).then((ok) => {
+        if (!ok) return;
+        void (async () => {
+          const samples: number[] = [];
+          for (const mediaId of mediaIds) {
+            samples.push(...(await listSampleIdsForMediaInPerson(mediaId, person.id)));
+          }
+          await splitOffFaces(samples, person.id);
+          setView(null);
+          void reload();
+        })();
+      });
+    },
+    [reload]
+  );
 
-  const doNotThisPerson = useCallback((person: PersonFull, mediaId: number) => {
-    Alert.alert(
-      "Not this person?",
-      `Remove this photo from "${person.name ?? "Unnamed"}" and stop suggesting them together in future groupings?`,
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Yes, remove",
-          style: "destructive",
-          onPress: () => {
-            void (async () => {
-              const samples = await listSampleIdsForMediaInPerson(mediaId, person.id);
-              await dismissFacesFromPerson(samples, person.id);
-              await openTheirs(person);
-              void reload();
-            })();
-          },
-        },
-      ]
-    );
-  }, [reload, openTheirs]);
+  const doNotThisPerson = useCallback(
+    (person: PersonFull, mediaId: number) => {
+      void confirmDialog({
+        title: t("people.notThisTitle"),
+        message: `Remove this photo from “${person.name ?? t("people.unnamed")}” and stop suggesting them together?`,
+        confirmLabel: "Yes, remove",
+        destructive: true,
+      }).then((ok) => {
+        if (!ok) return;
+        void (async () => {
+          const samples = await listSampleIdsForMediaInPerson(mediaId, person.id);
+          await dismissFacesFromPerson(samples, person.id);
+          await openTheirs(person);
+          void reload();
+        })();
+      });
+    },
+    [reload, openTheirs]
+  );
 
-  const setSensitivity = useCallback((person: PersonFull, value: number | null) => {
-    void setPersonSensitivity(person.id, value).then(() => reload());
-  }, [reload]);
+  const setSensitivity = useCallback(
+    (person: PersonFull, value: number | null) => {
+      void setPersonSensitivity(person.id, value).then(() => reload());
+    },
+    [reload]
+  );
 
   const attachCandidate = useCallback(
     (row: CandidateRow) => {
@@ -263,107 +278,190 @@ export function PeopleScreen({
 
   const isChipOn = (sens: number | null, value: number) => Math.abs((sens ?? 0.6) - value) < 0.01;
 
-  return (
-    <View style={[styles.root, { paddingTop: insets.top }]}>
-      <StatusBar style="light" />
-      <View style={styles.header}>
-        <Pressable
-          onPress={() => {
-            if (view && view.selecting) setView({ ...view, selecting: false, selected: new Set() });
-            else if (view) setView(null);
-            else navigation.goBack();
-          }}
-          hitSlop={12}
-        >
-          <Text style={styles.back}>←</Text>
-        </Pressable>
-        <View style={{ flex: 1 }}>
-          <Text style={styles.title}>
-            {view ? view.person.name ?? "Unnamed" : merging ? "Tap the target person…" : "People"}
-          </Text>
-          <Text style={styles.sub}>
-            {view
-              ? `${view.photos.length} photo${view.photos.length === 1 ? "" : "s"} with this person`
-              : merging
-              ? "Their faces move into the person you tapped first."
-              : "Grouped on this phone — long-press a person to start a merge"}
-          </Text>
-        </View>
-        {view ? (
-          <>
-            <Pressable
-              style={[styles.groupBtn, view.photos.length < 2 && styles.btnDisabled]}
-              disabled={view.photos.length < 2}
-              onPress={() =>
-                navigation.navigate("Slideshow", {
-                  ids: view.photos.map((r) => r.id),
-                  index: 0,
-                })
-              }
-            >
-              <Text style={styles.groupBtnText}>▶ Play</Text>
-            </Pressable>
-            <Pressable style={styles.groupBtn} onPress={() => setRenaming(view.person)}>
-              <Text style={styles.groupBtnText}>✎ Name</Text>
-            </Pressable>
-            <Pressable
-              style={[styles.groupBtn, view.selecting && styles.btnDisabled]}
-              onPress={() => setView({ ...view, selecting: !view.selecting, selected: new Set() })}
-            >
-              <Text style={styles.groupBtnText}>{view.selecting ? "Cancel" : "Select"}</Text>
-            </Pressable>
-          </>
-        ) : (
-          <>
-            <Pressable style={styles.groupBtn} onPress={() => navigation.navigate("Corrections")}>
-              <Text style={styles.groupBtnText}>Review</Text>
-            </Pressable>
-            <Pressable style={[styles.groupBtn, grouping && styles.btnDisabled]} onPress={() => void groupFaces()}>
-              <Text style={styles.groupBtnText}>{grouping ? "Grouping…" : "Group faces"}</Text>
-            </Pressable>
-          </>
-        )}
-      </View>
-      {groupedNote && view === null && merging === null ? <Text style={styles.note}>{groupedNote}</Text> : null}
+  const goBack = useCallback(() => {
+    if (view && view.selecting) setView({ ...view, selecting: false, selected: new Set() });
+    else if (view) setView(null);
+    else navigation.goBack();
+  }, [view, navigation]);
 
-      {view !== null ? (
+  const title = view
+    ? view.person.name ?? t("people.unnamed")
+    : merging
+      ? t("people.merging")
+      : t("people.title");
+  const subtitle = view
+    ? tCount("people.photosWith", view.photos.length)
+    : merging
+      ? t("people.mergingHint")
+      : t("people.subtitle");
+
+  const navActions = useMemo(() => {
+    if (view) {
+      return (
+        <>
+          <IconButton
+            icon="play"
+            label={t("people.play")}
+            disabled={view.photos.length < 2}
+            onPress={() =>
+              navigation.navigate("Slideshow", { ids: view.photos.map((r) => r.id), index: 0 })
+            }
+          />
+          <IconButton
+            icon="pencil-outline"
+            label={t("people.rename")}
+            onPress={() => {
+              setRenameDraft(view.person.name ?? "");
+              setRenaming(view.person);
+            }}
+          />
+          <IconButton
+            icon={view.selecting ? "close" : "checkmark-circle-outline"}
+            label={view.selecting ? t("people.cancel") : t("people.select")}
+            variant={view.selecting ? "tonal" : "plain"}
+            onPress={() => setView({ ...view, selecting: !view.selecting, selected: new Set() })}
+          />
+        </>
+      );
+    }
+    return (
+      <>
+        <IconButton
+          icon="shield-checkmark-outline"
+          label={t("people.review")}
+          onPress={() => navigation.navigate("Corrections")}
+        />
+        <IconButton
+          icon="sparkles-outline"
+          label={grouping ? t("people.grouping") : t("people.group")}
+          disabled={grouping}
+          onPress={() => void groupFaces()}
+        />
+      </>
+    );
+  }, [view, grouping, navigation, groupFaces]);
+
+  return (
+    <Screen>
+      <AppBar
+        title={title}
+        subtitle={subtitle}
+        large
+        onBack={goBack}
+        backLabel={t("common.back")}
+        actions={navActions}
+      />
+
+      {merging ? (
+        <View style={styles.mergeBanner}>
+          <Ionicons name="git-merge-outline" size={20} color={theme.colors.onAccentSoft} importantForAccessibility="no" />
+          <AppText variant="callout" color={theme.colors.onAccentSoft} style={styles.flex}>
+            {`Merging “${merging.name ?? t("people.unnamed")}” — tap the person these faces move into.`}
+          </AppText>
+          <Button label={t("common.cancel")} variant="quiet" size="sm" onPress={() => setMerging(null)} />
+        </View>
+      ) : null}
+
+      {groupedNote && view === null && merging === null ? (
+        <View style={styles.noteBanner}>
+          <AppText variant="footnote" color={theme.colors.onSurfaceVariant} style={styles.flex}>
+            {groupedNote}
+          </AppText>
+          <AppText
+            variant="caption"
+            color={theme.colors.accent}
+            onPress={() => setGroupedNote(null)}
+            accessibilityRole="button"
+            accessibilityLabel={t("common.dismiss")}
+            suppressHighlighting
+          >
+            {t("common.dismiss")}
+          </AppText>
+        </View>
+      ) : null}
+
+      {loadError ? (
+        <ErrorState
+          title={t("state.error")}
+          body="Photogram couldn't read the people index on this phone."
+          retryLabel={t("common.retry")}
+          onRetry={() => void reload()}
+        />
+      ) : loading ? (
+        <View style={styles.skeletonList}>
+          {Array.from({ length: 5 }).map((_, i) => (
+            <View key={i} style={styles.skeletonRow}>
+              <Skeleton width={52} height={52} radius={theme.radius.control} />
+              <View style={styles.flex}>
+                <Skeleton width="45%" height={16} />
+                <Skeleton width="30%" height={12} style={styles.skeletonGap} />
+              </View>
+            </View>
+          ))}
+          <AppText variant="captionRegular" color={theme.colors.onSurfaceVariant}>
+            {t("people.loading")}
+          </AppText>
+        </View>
+      ) : view !== null ? (
         <>
           {view.person.name !== null ? (
             <View style={styles.sensRow}>
-              <Text style={styles.sensLabel}>Attach new faces at:</Text>
+              <AppText variant="caption" color={theme.colors.onSurfaceVariant}>
+                {t("people.sensitivity")}
+              </AppText>
               {SENS_CHIPS.map((chip) => (
-                <Pressable
+                <Chip
                   key={chip.label}
-                  style={[styles.sensChip, isChipOn(view.person.sensitivity, chip.value) && styles.sensChipOn]}
+                  label={chip.label}
+                  selected={isChipOn(view.person.sensitivity, chip.value)}
                   onPress={() => setSensitivity(view.person, chip.value)}
-                >
-                  <Text style={[styles.sensChipText, isChipOn(view.person.sensitivity, chip.value) && styles.sensChipTextOn]}>
-                    {chip.label}
-                  </Text>
-                </Pressable>
+                />
               ))}
             </View>
           ) : null}
-          <FlatList
+          <FlashList
             data={view.photos}
             numColumns={3}
             keyExtractor={(r) => String(r.id)}
+            extraData={view.selected}
+            contentContainerStyle={{
+              paddingBottom: view.selecting ? 96 : theme.spacing.xl,
+            }}
+            showsVerticalScrollIndicator={false}
             ListHeaderComponent={
               view.candidates.length > 0 && !view.selecting ? (
                 <View style={styles.candBlock}>
-                  <Text style={styles.candTitle}>
-                    Possible more of {view.person.name ?? "this person"} — tap to attach:
-                  </Text>
-                  <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.candStrip}>
+                  <AppText variant="caption" color={theme.colors.onSurfaceVariant}>
+                    {tf("people.candidates", { name: view.person.name ?? t("people.unnamed") })}
+                  </AppText>
+                  <ScrollView
+                    horizontal
+                    showsHorizontalScrollIndicator={false}
+                    contentContainerStyle={styles.candStrip}
+                  >
                     {view.candidates.map((c) => (
-                      <Pressable key={c.sampleId} style={styles.candTile} onPress={() => attachCandidate(c)}>
+                      <Pressable
+                        key={c.sampleId}
+                        style={styles.candTile}
+                        onPress={() => attachCandidate(c)}
+                        accessibilityRole="button"
+                        accessibilityLabel={`${tf("people.candidates", {
+                          name: view.person.name ?? t("people.unnamed"),
+                        })}, ${Math.round(c.score * 100)}% match`}
+                      >
                         <Image
                           source={{ uri: c.media.thumb_uri }}
-                          style={styles.candImg}
+                          style={StyleSheet.absoluteFill}
                           contentFit="cover"
+                          recyclingKey={`cand-${c.media.id}`}
                           transition={120}
+                          accessible={false}
                         />
-                        <Text style={styles.candScore}>{Math.round(c.score * 100)}%</Text>
+                        <View style={styles.candScore}>
+                          <AppText variant="caption2" weight="semibold" color={theme.colors.onViewer}>
+                            {Math.round(c.score * 100)}%
+                          </AppText>
+                        </View>
                       </Pressable>
                     ))}
                   </ScrollView>
@@ -373,272 +471,236 @@ export function PeopleScreen({
             renderItem={({ item }) => {
               const selected = view.selected.has(item.id);
               return (
-                <Pressable
-                  style={[styles.cell, selected && styles.cellSelected]}
-                  onPress={() => {
-                    if (view.selecting) {
-                      const next = new Set(view.selected);
-                      if (next.has(item.id)) next.delete(item.id);
-                      else next.add(item.id);
-                      setView({ ...view, selected: next });
-                    } else {
-                      navigation.navigate("Viewer", {
-                        ids: view.photos.map((r) => r.id),
-                        index: view.photos.findIndex((r) => r.id === item.id),
-                      });
-                    }
-                  }}
-                  onLongPress={() => !view.selecting && doNotThisPerson(view.person, item.id)}
-                >
-                  <Image
-                    source={{ uri: item.thumb_uri }}
-                    style={styles.cellImg}
-                    contentFit="cover"
-                    transition={120}
-                    recyclingKey={`pp-${item.id}`}
+                <View style={styles.cell}>
+                  <MediaTile
+                    uri={item.thumb_uri}
+                    aspectRatio={1}
+                    selected={selected}
+                    selectionMode={view.selecting}
+                    onPress={() => {
+                      if (view.selecting) {
+                        const next = new Set(view.selected);
+                        if (next.has(item.id)) next.delete(item.id);
+                        else next.add(item.id);
+                        setView({ ...view, selected: next });
+                      } else {
+                        navigation.navigate("Viewer", {
+                          ids: view.photos.map((r) => r.id),
+                          index: view.photos.findIndex((r) => r.id === item.id),
+                        });
+                      }
+                    }}
+                    onLongPress={() => !view.selecting && doNotThisPerson(view.person, item.id)}
+                    accessibilityLabel={tf("gallery.tileLabel", {
+                      date: new Date(item.taken_at).toLocaleDateString(),
+                    })}
+                    accessibilityHint={t("people.hint")}
                   />
-                </Pressable>
+                </View>
               );
             }}
-            contentContainerStyle={styles.listContent}
-            ListEmptyComponent={<Text style={styles.empty}>No photos found for this person.</Text>}
+            ListEmptyComponent={
+              <EmptyState icon="person-outline" title={t("people.noPhotos")} compact />
+            }
             ListFooterComponent={
-              view.selecting ? (
-                <View style={styles.selectActions}>
-                  <Text style={styles.selectHint}>
-                    {view.selected.size} selected — tap photos to pick, then split them out of this
-                    person. (Long-press does "Not this person" when not selecting.)
-                  </Text>
-                  <Pressable
-                    style={[styles.groupBtn, view.selected.size === 0 && styles.btnDisabled]}
-                    disabled={view.selected.size === 0}
-                    onPress={() => doSplit(view.person, [...view.selected])}
-                  >
-                    <Text style={styles.groupBtnText}>Split off ({view.selected.size})</Text>
-                  </Pressable>
-                </View>
-              ) : (
-                <Text style={styles.hintLine}>
-                  Long-press a photo → "Not this person". Tap Select to split several out.
-                </Text>
-              )
+              !view.selecting ? (
+                <AppText
+                  variant="caption"
+                  color={theme.colors.onSurfaceFaint}
+                  align="center"
+                  style={styles.hintLine}
+                >
+                  {t("people.hint")}
+                </AppText>
+              ) : null
             }
           />
+          {view.selecting ? (
+            <View style={styles.selectBar}>
+              <View style={styles.flex}>
+                <AppText variant="caption" color={theme.colors.onSurfaceVariant} numberOfLines={2}>
+                  {tf("people.selectHint", { count: view.selected.size })}
+                </AppText>
+              </View>
+              <Button
+                label={tf("people.splitCount", { count: view.selected.size })}
+                variant="danger"
+                size="sm"
+                disabled={view.selected.size === 0}
+                onPress={() => doSplit(view.person, [...view.selected])}
+              />
+            </View>
+          ) : null}
         </>
-      ) : people.length === 0 ? (
-        <Text style={styles.empty}>
-          No people yet. Enable face detection, download a model, run "Detect & embed" in setup —
-          then tap "Group faces".
-        </Text>
-      ) : (
-        <FlatList
-          data={listRows}
-          keyExtractor={(p) => String(p.id)}
-          renderItem={({ item }) => {
-            const full = people.find((p) => p.id === item.id) ?? null;
-            return (
-              <Pressable
-                style={[styles.personRow, merging?.id === item.id && styles.personRowMerging]}
-                onPress={() => full && onPersonRowPress(full)}
-                onLongPress={() => full && setMerging(full)}
-              >
-                <Image
-                  source={{ uri: item.cover ?? undefined }}
-                  style={styles.personThumb}
-                  contentFit="cover"
-                  recyclingKey={`ppl-${item.id}`}
-                />
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.personName}>{item.name ?? "Unnamed"}</Text>
-                  <Text style={styles.personSub}>
-                    {item.face_count} face{item.face_count === 1 ? "" : "s"} · tap to see photos
-                  </Text>
-                </View>
-                <Text style={styles.chevron}>›</Text>
-              </Pressable>
-            );
-          }}
-          contentContainerStyle={styles.listContent}
+      ) : listRows.length === 0 ? (
+        <EmptyState
+          icon="people-outline"
+          title={t("people.empty.title")}
+          body={t("people.empty.body")}
+          actionLabel={t("people.empty.action")}
+          onAction={() => navigation.navigate("PeopleSetup")}
         />
+      ) : (
+        <ScrollView contentContainerStyle={styles.listContent} showsVerticalScrollIndicator={false}>
+          <Section
+            title={t("people.title")}
+            icon="people-outline"
+            footer={t("people.subtitle")}
+          >
+            {listRows.map((item) => {
+              const full = people.find((p) => p.id === item.id) ?? null;
+              return (
+                <ListRow
+                  key={item.id}
+                  title={item.name ?? t("people.unnamed")}
+                  subtitle={`${tCount("people.faces", item.face_count)} · ${t("people.tapToSee")}`}
+                  leading={
+                    item.cover ? (
+                      <Image
+                        source={{ uri: item.cover }}
+                        style={styles.personThumb}
+                        contentFit="cover"
+                        recyclingKey={`ppl-${item.id}`}
+                        accessible={false}
+                      />
+                    ) : (
+                      <View style={[styles.personThumb, styles.personThumbEmpty]} />
+                    )
+                  }
+                  accessory="chevron"
+                  selected={merging?.id === item.id}
+                  accessibilityHint={t("people.subtitle")}
+                  onPress={() => full && onPersonRowPress(full)}
+                  onLongPress={() => full && setMerging(full)}
+                />
+              );
+            })}
+          </Section>
+        </ScrollView>
       )}
 
-      {merging !== null ? (
-        <View style={styles.mergeBanner} pointerEvents="none">
-          <Text style={styles.mergeBannerText}>
-            Merging "{merging.name ?? "Unnamed"}" — now tap the person these faces move INTO.
-          </Text>
-        </View>
-      ) : null}
-
-      <Modal visible={renaming !== null} transparent animationType="fade" onRequestClose={() => setRenaming(null)}>
-        <Pressable style={noteStyles.backdrop} onPress={() => setRenaming(null)}>
-          <Pressable style={noteStyles.card} onPress={(e) => e.stopPropagation()}>
-            <Text style={noteStyles.title}>Name this person</Text>
-            <Text style={noteStyles.hint}>Stored on this phone only.</Text>
-            <TextInput
-              style={noteStyles.input}
-              value={renameDraft}
-              onChangeText={setRenameDraft}
-              maxLength={60}
-              autoFocus
-              placeholder="Mom, Dad, Emma…"
-              placeholderTextColor={theme.colors.onSurfaceVariant + "88"}
-            />
-            <View style={styles.sensRow}>
-              <Text style={noteStyles.hint}>Attach new faces at:</Text>
+      <Sheet
+        visible={renaming !== null}
+        onClose={() => setRenaming(null)}
+        title={t("people.renameTitle")}
+        subtitle={t("people.renameHint")}
+        scroll
+        footer={
+          <>
+            <Button label={t("common.cancel")} variant="quiet" onPress={() => setRenaming(null)} />
+            <Button label={t("common.save")} onPress={() => void saveRename()} />
+          </>
+        }
+      >
+        <Input
+          value={renameDraft}
+          onChangeText={setRenameDraft}
+          maxLength={60}
+          autoFocus
+          placeholder={t("people.renamePlaceholder")}
+          accessibilityLabel={t("people.renameTitle")}
+        />
+        {renaming ? (
+          <View style={styles.sensWrap}>
+            <AppText variant="caption" color={theme.colors.onSurfaceVariant}>
+              {t("people.sensitivity")}
+            </AppText>
+            <View style={styles.sensChips}>
               {SENS_CHIPS.map((chip) => (
-                <Pressable
+                <Chip
                   key={chip.label}
-                  style={[styles.sensChip, isChipOn(renaming?.sensitivity ?? null, chip.value) && styles.sensChipOn]}
-                  onPress={async () => {
-                    if (renaming) {
-                      await setPersonSensitivity(renaming.id, chip.value);
+                  label={chip.label}
+                  selected={isChipOn(renaming.sensitivity, chip.value)}
+                  onPress={() => {
+                    void setPersonSensitivity(renaming.id, chip.value).then(() => {
                       setRenaming({ ...renaming, sensitivity: chip.value });
-                    }
+                    });
                   }}
-                >
-                  <Text
-                    style={[
-                      styles.sensChipText,
-                      isChipOn(renaming?.sensitivity ?? null, chip.value) && styles.sensChipTextOn,
-                    ]}
-                  >
-                    {chip.label}
-                  </Text>
-                </Pressable>
+                />
               ))}
             </View>
-            <View style={noteStyles.buttons}>
-              <Pressable style={noteStyles.btn} onPress={() => setRenaming(null)}>
-                <Text style={noteStyles.btnText}>Cancel</Text>
-              </Pressable>
-              <Pressable style={[noteStyles.btn, noteStyles.btnPrimary]} onPress={() => void saveRename()}>
-                <Text style={[noteStyles.btnText, noteStyles.btnPrimaryText]}>Save</Text>
-              </Pressable>
-            </View>
-          </Pressable>
-        </Pressable>
-      </Modal>
-    </View>
+          </View>
+        ) : null}
+      </Sheet>
+    </Screen>
   );
 }
 
-const noteStyles = StyleSheet.create({
-  backdrop: { flex: 1, backgroundColor: "#000000AA", justifyContent: "center", padding: theme.spacing.xl },
-  card: {
-    backgroundColor: theme.colors.surfaceContainer,
-    borderRadius: theme.radius.xl,
-    padding: theme.spacing.lg,
-  },
-  title: { color: theme.colors.onSurface, fontSize: 18, fontWeight: "700" },
-  hint: { color: theme.colors.onSurfaceVariant, fontSize: 12.5, marginTop: 2 },
-  input: {
-    marginTop: theme.spacing.md,
-    minHeight: 48,
-    backgroundColor: theme.colors.surfaceHighest,
-    borderRadius: theme.radius.lg,
-    color: theme.colors.onSurface,
-    fontSize: 14,
-    padding: theme.spacing.md,
-  },
-  buttons: { flexDirection: "row", justifyContent: "flex-end", gap: theme.spacing.md, marginTop: theme.spacing.sm },
-  btn: { paddingHorizontal: 14, paddingVertical: 9, borderRadius: theme.radius.full },
-  btnPrimary: { backgroundColor: theme.colors.primary },
-  btnText: { color: theme.colors.onSurface, fontSize: 13.5, fontWeight: "600" },
-  btnPrimaryText: { color: theme.colors.onPrimary },
-});
-
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: theme.colors.background },
-  header: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: theme.spacing.md,
-    paddingHorizontal: theme.spacing.lg,
-    paddingTop: theme.spacing.md,
-    paddingBottom: theme.spacing.sm,
-  },
-  back: { color: theme.colors.onSurface, fontSize: 24 },
-  title: { color: theme.colors.onSurface, fontSize: 22, fontWeight: "700" },
-  sub: { color: theme.colors.onSurfaceVariant, fontSize: 12.5, marginTop: 2 },
-  groupBtn: {
-    backgroundColor: theme.colors.primaryContainer,
-    borderRadius: theme.radius.full,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-  },
-  btnDisabled: { opacity: 0.5 },
-  groupBtnText: { color: theme.colors.onPrimaryContainer, fontWeight: "700", fontSize: 12 },
-  note: {
-    color: theme.colors.onSurfaceVariant,
-    fontSize: 12,
-    paddingHorizontal: theme.spacing.lg,
-    paddingBottom: theme.spacing.xs,
-  },
-  listContent: { paddingBottom: 32, paddingHorizontal: theme.spacing.lg },
-  empty: { color: theme.colors.onSurfaceVariant, fontSize: 13.5, marginTop: 40, marginHorizontal: theme.spacing.xl, lineHeight: 20 },
-  personRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: theme.spacing.md,
-    paddingVertical: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: theme.colors.outlineVariant,
-  },
-  personRowMerging: { backgroundColor: theme.colors.secondaryContainer },
-  personThumb: { width: 56, height: 56, borderRadius: theme.radius.md, backgroundColor: theme.colors.surfaceHighest },
-  personName: { color: theme.colors.onSurface, fontSize: 15, fontWeight: "600" },
-  personSub: { color: theme.colors.onSurfaceVariant, fontSize: 12.5, marginTop: 2 },
-  chevron: { color: theme.colors.onSurfaceVariant, fontSize: 20 },
-  cell: { width: Math.floor(Dimensions.get("window").width / 3) - 2, height: Math.floor(Dimensions.get("window").width / 3) - 2, margin: 1, backgroundColor: theme.colors.surfaceContainer },
-  cellImg: { width: "100%", height: "100%" },
-  cellSelected: { borderWidth: 3, borderColor: theme.colors.primary },
-  sensRow: { flexDirection: "row", alignItems: "center", gap: theme.spacing.sm, paddingHorizontal: theme.spacing.lg, paddingVertical: theme.spacing.sm, flexWrap: "wrap" },
-  sensLabel: { color: theme.colors.onSurfaceVariant, fontSize: 11.5 },
-  sensChip: {
-    backgroundColor: theme.colors.surfaceHighest,
-    borderRadius: theme.radius.full,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-  },
-  sensChipOn: { backgroundColor: theme.colors.primary },
-  sensChipText: { color: theme.colors.onSurfaceVariant, fontSize: 11, fontWeight: "600" },
-  sensChipTextOn: { color: theme.colors.onPrimary },
-  selectHint: { color: theme.colors.onSurfaceVariant, fontSize: 11.5, marginBottom: theme.spacing.sm },
-  selectActions: { padding: theme.spacing.md, alignItems: "flex-start" },
-  hintLine: { color: theme.colors.onSurfaceVariant, fontSize: 11, textAlign: "center", paddingBottom: theme.spacing.md },
+  flex: { flex: 1, minWidth: 0 },
   mergeBanner: {
-    position: "absolute",
-    bottom: 24,
-    left: 24,
-    right: 24,
-    backgroundColor: theme.colors.secondaryContainer,
-    borderRadius: theme.radius.lg,
-    padding: theme.spacing.md,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: theme.spacing.sm,
+    marginHorizontal: theme.spacing.md,
+    marginBottom: theme.spacing.sm,
+    padding: theme.spacing.compact,
+    borderRadius: theme.radius.control,
+    backgroundColor: theme.colors.accentSoft,
   },
-  mergeBannerText: { color: theme.colors.onSecondaryContainer, fontSize: 12.5, textAlign: "center" },
-  candBlock: { paddingHorizontal: theme.spacing.lg, paddingBottom: theme.spacing.sm },
-  candTitle: { color: theme.colors.onSurfaceVariant, fontSize: 11.5, marginBottom: 6 },
-  candStrip: { gap: 8 },
+  noteBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: theme.spacing.sm,
+    marginHorizontal: theme.spacing.md,
+    marginBottom: theme.spacing.sm,
+    padding: theme.spacing.compact,
+    borderRadius: theme.radius.control,
+    backgroundColor: theme.colors.surfaceContainer,
+  },
+  sensRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: theme.spacing.sm,
+    paddingHorizontal: theme.spacing.md,
+    paddingBottom: theme.spacing.sm,
+    flexWrap: "wrap",
+  },
+  cell: { flex: 1, margin: 1 },
+  candBlock: { gap: theme.spacing.sm, paddingBottom: theme.spacing.sm },
+  candStrip: { gap: theme.spacing.sm },
   candTile: {
     width: 72,
     height: 72,
-    borderRadius: theme.radius.md,
+    borderRadius: theme.radius.control,
     overflow: "hidden",
-    backgroundColor: theme.colors.surfaceContainer,
+    backgroundColor: theme.colors.surfaceHighest,
   },
-  candImg: { width: "100%", height: "100%" },
   candScore: {
     position: "absolute",
-    bottom: 4,
-    right: 4,
-    color: theme.colors.onSurface,
-    fontSize: 9.5,
-    fontWeight: "700",
-    backgroundColor: "#00000099",
-    borderRadius: 8,
-    paddingHorizontal: 4,
+    bottom: theme.spacing.xs,
+    right: theme.spacing.xs,
+    backgroundColor: theme.colors.mediaScrimStrong,
+    borderRadius: theme.radius.thumb,
+    paddingHorizontal: theme.spacing.xs,
     paddingVertical: 1,
-    overflow: "hidden",
   },
+  hintLine: { paddingVertical: theme.spacing.lg },
+  selectBar: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    bottom: 0,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: theme.spacing.sm,
+    padding: theme.spacing.md,
+    backgroundColor: theme.colors.surface,
+    borderTopLeftRadius: theme.radius.card,
+    borderTopRightRadius: theme.radius.card,
+    ...theme.elevation.floating,
+  },
+  listContent: { paddingHorizontal: theme.spacing.md, paddingBottom: theme.spacing.xl },
+  personThumb: {
+    width: 52,
+    height: 52,
+    borderRadius: theme.radius.control,
+    backgroundColor: theme.colors.surfaceHighest,
+  },
+  personThumbEmpty: { backgroundColor: theme.colors.surfaceHighest },
+  skeletonList: { padding: theme.spacing.md, gap: theme.spacing.md },
+  skeletonRow: { flexDirection: "row", alignItems: "center", gap: theme.spacing.compact },
+  skeletonGap: { marginTop: theme.spacing.xs },
+  sensWrap: { gap: theme.spacing.xs, marginTop: theme.spacing.sm },
+  sensChips: { flexDirection: "row", gap: theme.spacing.sm, flexWrap: "wrap" },
 });

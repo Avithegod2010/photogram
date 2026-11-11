@@ -1,6 +1,7 @@
 import React from "react";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { RootTabs } from "./RootTabs";
+import { theme } from "../theme";
 import { ViewerScreen } from "../screens/ViewerScreen";
 import { TrashScreen } from "../screens/TrashScreen";
 import { MapScreen } from "../screens/MapScreen";
@@ -74,7 +75,12 @@ const Stack = createNativeStackNavigator<RootStackParamList>();
 
 export function RootNavigator() {
   return (
-    <Stack.Navigator screenOptions={{ headerShown: false }}>
+    <Stack.Navigator
+      screenOptions={{
+        headerShown: false,
+        contentStyle: { backgroundColor: theme.colors.background },
+      }}
+    >
       <Stack.Screen name="Tabs" component={RootTabs} />
       <Stack.Screen
         name="Viewer"

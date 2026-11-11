@@ -1,13 +1,10 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
-import { StatusBar } from "expo-status-bar";
-import { Alert } from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { Pressable, ScrollView, StyleSheet, View } from "react-native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { useSettingsStore } from "../store/settingsStore";
 import {
   FACE_MODELS,
-  FaceModelDef,
+  type FaceModelDef,
   deleteModel,
   downloadModel,
   isModelDownloaded,
@@ -16,16 +13,29 @@ import {
 import { backfillFaces } from "../lib/people";
 import { countMediaMissingFaces, countFacesNeedingEmbedding, countPeople } from "../db/queries";
 import { theme } from "../theme";
+import { t } from "../lib/i18n";
+import {
+  AppBar,
+  AppText,
+  Badge,
+  Button,
+  PressableScale,
+  ProgressBar,
+  Screen,
+  Section,
+  Stat,
+  ToggleRow,
+  alertDialog,
+} from "../ui";
 
 // v0.33+ People & Pets setup: pick + download a face model, toggle detection,
-// process the EXISTING library (detect + embed — the scanner only covers rows
-// it encounters), and open the grouped People screen.
+// process the EXISTING library (detect + embed), and open the grouped People
+// screen. All model work stays on this phone.
 export function PeopleSetupScreen({
   navigation,
 }: {
   navigation: NativeStackNavigationProp<{ Tabs: undefined; People: undefined }>;
 }) {
-  const insets = useSafeAreaInsets();
   const peopleTagsEnabled = useSettingsStore((s) => s.peopleTagsEnabled);
   const setPeopleTagsEnabled = useSettingsStore((s) => s.setPeopleTagsEnabled);
   const faceModelId = useSettingsStore((s) => s.faceModelId);
@@ -70,8 +80,8 @@ export function PeopleSetupScreen({
           result.detectDone && result.embedDone
             ? null
             : result.detectionReady
-            ? `Part done (${result.processed} this run) — run again to continue.`
-            : "Face detection needs the app rebuild — run again after updating."
+              ? `Part done (${result.processed} this run) — run again to continue.`
+              : "Face detection needs the app rebuild — run again after updating."
         );
         if (result.detectDone && result.embedDone) break;
         if (cancelRef.current.cancelled) break;
@@ -86,7 +96,7 @@ export function PeopleSetupScreen({
   const choose = useCallback(
     async (model: FaceModelDef) => {
       if (!validateModelUrl(model.url)) {
-        Alert.alert("Blocked", "This model URL failed the safety check.");
+        void alertDialog({ title: "Blocked", message: "This model URL failed the safety check." });
         return;
       }
       setBusyId(model.id);
@@ -98,7 +108,10 @@ export function PeopleSetupScreen({
         setFaceModelId(model.id);
         await refresh();
       } catch (err) {
-        Alert.alert("Download failed", err instanceof Error ? err.message : "Unknown error.");
+        void alertDialog({
+          title: "Download failed",
+          message: err instanceof Error ? err.message : "Unknown error.",
+        });
       } finally {
         setBusyId(null);
       }
@@ -116,215 +129,174 @@ export function PeopleSetupScreen({
   );
 
   return (
-    <View style={[styles.root, { paddingTop: insets.top }]}>
-      <StatusBar style="light" />
-      <View style={styles.header}>
-        <Pressable onPress={() => navigation.goBack()} hitSlop={12}>
-          <Text style={styles.back}>←</Text>
-        </Pressable>
-        <View style={{ flex: 1 }}>
-          <Text style={styles.title}>People & Pets</Text>
-          <Text style={styles.sub}>Face grouping, entirely on this phone</Text>
-        </View>
-      </View>
-      <ScrollView contentContainerStyle={styles.content}>
-        <View style={styles.card}>
-          <Text style={styles.sectionTitle}>Step 1 · Detect faces</Text>
-          <Pressable
-            style={styles.row}
-            onPress={() => setPeopleTagsEnabled(!peopleTagsEnabled)}
-            android_ripple={{ color: theme.colors.outlineVariant }}
-          >
-            <View style={{ flex: 1 }}>
-              <Text style={styles.rowLabel}>Find faces in photos</Text>
-              <Text style={styles.rowSub}>
-                Runs during scans on the thumbnails, on-device only. Also available in Settings →
-                Search.
-              </Text>
-            </View>
-            <Text style={[styles.stateText, peopleTagsEnabled && styles.stateOn]}>
-              {peopleTagsEnabled ? "ON" : "OFF"}
-            </Text>
-          </Pressable>
-        </View>
+    <Screen>
+      <AppBar
+        title="People & Pets"
+        subtitle="Face grouping, entirely on this phone"
+        large
+        onBack={() => navigation.goBack()}
+        backLabel={t("common.back")}
+      />
+      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+        <Section title="Step 1 · Detect faces" icon="scan-outline">
+          <ToggleRow
+            title="Find faces in photos"
+            subtitle="Runs during scans on the thumbnails, on-device only. Also available in Settings → Search."
+            value={peopleTagsEnabled}
+            onValueChange={setPeopleTagsEnabled}
+          />
+        </Section>
 
-        <View style={styles.card}>
-          <Text style={styles.sectionTitle}>Step 2 · Choose a face model</Text>
-          <Text style={styles.sectionSub}>
-            The model groups similar faces together. It is downloaded to this phone and never
-            uploaded. Switching models later re-processes the library.
-          </Text>
+        <Section
+          title="Step 2 · Choose a face model"
+          icon="cube-outline"
+          subtitle="The model groups similar faces together. It is downloaded to this phone and never uploaded. Switching models later re-processes the library."
+          footer="Face detection works without a model. With a model selected, Photogram also groups similar faces into people — all on this phone."
+        >
           {FACE_MODELS.map((model) => {
             const isDownloaded = downloaded[model.id] ?? false;
             const fraction = progress[model.id];
             const isSelected = faceModelId === model.id;
+            const busy = busyId === model.id;
             return (
               <View key={model.id} style={[styles.modelCard, isSelected && styles.modelCardSelected]}>
-                <Pressable
+                <PressableScale
                   disabled={!isDownloaded || busyId !== null}
                   onPress={() => setFaceModelId(isSelected ? null : model.id)}
+                  accessibilityRole="button"
+                  accessibilityLabel={`${model.name}${model.recommended ? ", recommended" : ""}${
+                    isSelected ? ", selected" : isDownloaded ? "" : ", not downloaded"
+                  }`}
+                  accessibilityState={{ selected: isSelected, disabled: !isDownloaded || busyId !== null }}
+                  style={styles.modelHead}
+                  contentStyle={styles.modelHeadContent}
                 >
-                  <View style={styles.modelHead}>
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.modelName}>
+                  <View style={styles.flex}>
+                    <View style={styles.modelTitleRow}>
+                      <AppText variant="body" weight="semibold" style={styles.flex} numberOfLines={2}>
                         {model.name}
-                        {model.recommended ? " · recommended" : ""}
-                      </Text>
-                      <Text style={styles.modelMeta}>
-                        {model.sizeLabel} · {model.inputSize}×{model.inputSize} input ·{" "}
-                        {model.embeddingDim}-d · {model.license}
-                      </Text>
-                      <Text style={styles.modelNotes}>{model.notes}</Text>
+                      </AppText>
+                      {model.recommended ? <Badge label="Recommended" tone="accent" /> : null}
+                      {isSelected ? <Badge label="Selected" tone="success" icon="checkmark" /> : null}
                     </View>
-                    {isSelected ? <Text style={styles.selectedText}>SELECTED</Text> : null}
+                    <AppText variant="caption" color={theme.colors.onSurfaceVariant} style={styles.modelMeta}>
+                      {model.sizeLabel} · {model.inputSize}×{model.inputSize} input · {model.embeddingDim}-d ·{" "}
+                      {model.license}
+                    </AppText>
+                    <AppText variant="captionRegular" color={theme.colors.onSurfaceFaint} style={styles.modelNotes}>
+                      {model.notes}
+                    </AppText>
                   </View>
-                  {fraction !== undefined && busyId === model.id ? (
-                    <View style={styles.progressTrack}>
-                      <View style={[styles.progressFill, { flex: Math.max(0.02, fraction) }]} />
-                    </View>
-                  ) : null}
-                  <View style={styles.modelActions}>
-                    {!isDownloaded ? (
-                      <Pressable
-                        style={[styles.btn, busyId !== null && styles.btnDisabled]}
-                        disabled={busyId !== null}
-                        onPress={() => void choose(model)}
-                      >
-                        <Text style={styles.btnText}>
-                          {busyId === model.id ? "Downloading…" : `Download ${model.sizeLabel}`}
-                        </Text>
-                      </Pressable>
-                    ) : null}
-                    {isDownloaded ? (
-                      <Pressable
-                        style={styles.btn}
-                        disabled={busyId !== null}
-                        onPress={() => void remove(model)}
-                      >
-                        <Text style={styles.btnText}>Remove</Text>
-                      </Pressable>
-                    ) : null}
-                  </View>
-                </Pressable>
+                </PressableScale>
+                {fraction !== undefined && busy ? (
+                  <ProgressBar
+                    progress={fraction}
+                    label={`Downloading ${model.name}`}
+                    valueText={`${Math.round(fraction * 100)}%`}
+                    live
+                  />
+                ) : null}
+                <View style={styles.modelActions}>
+                  {!isDownloaded ? (
+                    <Button
+                      label={busy ? "Downloading…" : `Download ${model.sizeLabel}`}
+                      size="sm"
+                      loading={busy}
+                      disabled={busyId !== null}
+                      onPress={() => void choose(model)}
+                    />
+                  ) : (
+                    <Button
+                      label="Remove model"
+                      size="sm"
+                      variant="secondary"
+                      disabled={busyId !== null}
+                      onPress={() => void remove(model)}
+                    />
+                  )}
+                </View>
               </View>
             );
           })}
-          <Text style={styles.footnote}>
-            Face detection works without a model. With a model selected, Photogram also groups
-            similar faces into people — detection and grouping run on this phone, and switching
-            models re-processes the library.
-          </Text>
-        </View>
+        </Section>
 
-        <View style={styles.card}>
-          <Text style={styles.sectionTitle}>Step 3 · Process your library</Text>
-          <Text style={styles.sectionSub}>
+        <Section title="Step 3 · Process your library" icon="layers-outline">
+          <View style={styles.statRow}>
+            <Stat value={(counts.missingFaces).toLocaleString()} label="left to detect" />
+            <Stat
+              value={faceModelId ? String(counts.missingEmbeddings) : "—"}
+              label={faceModelId ? "faces to embed" : "no model chosen"}
+            />
+            <Stat value={(counts.people).toLocaleString()} label="people grouped" />
+          </View>
+          <AppText variant="footnote" color={theme.colors.onSurfaceVariant} style={styles.stepCopy}>
             Detects faces and computes embeddings for photos already in your library — including
             everything uploaded before today. Resumable; safe to stop and re-run.
-          </Text>
-          <Text style={styles.statusLine}>
-            {counts.missingFaces} photo{counts.missingFaces === 1 ? "" : "s"} left to detect ·{" "}
-            {faceModelId ? `${counts.missingEmbeddings} faces to embed` : "no model chosen yet"} ·{" "}
-            {counts.people} people grouped
-          </Text>
+          </AppText>
           <View style={styles.modelActions}>
-            <Pressable
-              style={[styles.btn, processing && styles.btnDisabled]}
+            <Button
+              label={processing ? "Processing…" : "Detect & embed"}
+              icon="sparkles-outline"
+              loading={processing}
               disabled={processing}
               onPress={() => void processLibrary()}
-            >
-              <Text style={styles.btnText}>{processing ? "Processing…" : "Detect & embed"}</Text>
-            </Pressable>
+            />
             {processing ? (
-              <Pressable
-                style={styles.btn}
+              <Button
+                label="Stop"
+                variant="danger"
                 onPress={() => {
                   cancelRef.current.cancelled = true;
                 }}
-              >
-                <Text style={styles.btnText}>Stop</Text>
-              </Pressable>
+              />
             ) : null}
-            <Pressable
-              style={[styles.btn, counts.people === 0 && styles.btnDisabled]}
+            <Button
+              label={`View people (${counts.people})`}
+              variant="secondary"
               disabled={counts.people === 0}
               onPress={() => navigation.navigate("People")}
-            >
-              <Text style={styles.btnText}>View people ({counts.people})</Text>
-            </Pressable>
+            />
           </View>
-          {status ? <Text style={styles.footnote}>{status}</Text> : null}
-        </View>
+          {status ? (
+            <AppText variant="caption" color={theme.colors.onSurfaceVariant} style={styles.statusLine}>
+              {status}
+            </AppText>
+          ) : null}
+        </Section>
       </ScrollView>
-    </View>
+    </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: theme.colors.background },
-  header: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: theme.spacing.md,
-    paddingHorizontal: theme.spacing.lg,
-    paddingTop: theme.spacing.md,
-    paddingBottom: theme.spacing.sm,
-  },
-  back: { color: theme.colors.onSurface, fontSize: 24 },
-  title: { color: theme.colors.onSurface, fontSize: 22, fontWeight: "700" },
-  sub: { color: theme.colors.onSurfaceVariant, fontSize: 12.5, marginTop: 2 },
-  content: { paddingBottom: 40, paddingHorizontal: theme.spacing.lg },
-  card: {
-    backgroundColor: theme.colors.surfaceContainer,
-    borderRadius: theme.radius.lg,
-    borderWidth: 1,
-    borderColor: theme.colors.outlineVariant,
-    padding: theme.spacing.md,
-    marginBottom: theme.spacing.md,
-  },
-  sectionTitle: { color: theme.colors.onSurface, fontSize: 15, fontWeight: "700" },
-  sectionSub: { color: theme.colors.onSurfaceVariant, fontSize: 12.5, marginTop: 2, marginBottom: theme.spacing.sm },
-  row: { flexDirection: "row", alignItems: "center", gap: theme.spacing.md, paddingVertical: 6 },
-  rowLabel: { color: theme.colors.onSurface, fontSize: 14.5, fontWeight: "600" },
-  rowSub: { color: theme.colors.onSurfaceVariant, fontSize: 12.5, marginTop: 2 },
-  stateText: { color: theme.colors.onSurfaceVariant, fontSize: 13, fontWeight: "700" },
-  stateOn: { color: theme.colors.primary },
+  content: { paddingHorizontal: theme.spacing.md, paddingBottom: theme.spacing.xl },
+  flex: { flex: 1, minWidth: 0 },
   modelCard: {
-    borderWidth: 1,
-    borderColor: theme.colors.outlineVariant,
-    borderRadius: theme.radius.md,
-    padding: theme.spacing.md,
-    marginTop: theme.spacing.sm,
-  },
-  modelCardSelected: { borderColor: theme.colors.primary, borderWidth: 2 },
-  modelHead: { flexDirection: "row", alignItems: "flex-start", gap: theme.spacing.sm },
-  modelName: { color: theme.colors.onSurface, fontSize: 14.5, fontWeight: "700" },
-  modelMeta: { color: theme.colors.onSurfaceVariant, fontSize: 12, marginTop: 2 },
-  modelNotes: { color: theme.colors.onSurfaceVariant, fontSize: 12, marginTop: 2 },
-  selectedText: { color: theme.colors.primary, fontSize: 11, fontWeight: "700" },
-  progressTrack: {
-    height: 8,
-    borderRadius: 4,
+    margin: theme.spacing.compact,
+    padding: theme.spacing.compact,
+    borderRadius: theme.radius.control,
     backgroundColor: theme.colors.surfaceHighest,
-    overflow: "hidden",
+    gap: theme.spacing.sm,
+  },
+  modelCardSelected: { backgroundColor: theme.colors.accentSoft },
+  modelHead: { width: "100%" },
+  modelHeadContent: { alignItems: "flex-start" },
+  modelTitleRow: { flexDirection: "row", alignItems: "center", gap: theme.spacing.xs, flexWrap: "wrap" },
+  modelMeta: { marginTop: 2 },
+  modelNotes: { marginTop: 2 },
+  modelActions: {
     flexDirection: "row",
-    marginTop: theme.spacing.sm,
+    flexWrap: "wrap",
+    gap: theme.spacing.sm,
+    padding: theme.spacing.md,
+    paddingTop: theme.spacing.sm,
   },
-  progressFill: { backgroundColor: theme.colors.primary },
-  modelActions: { flexDirection: "row", gap: theme.spacing.sm, marginTop: theme.spacing.sm },
-  btn: {
-    backgroundColor: theme.colors.primaryContainer,
-    borderRadius: theme.radius.full,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
+  statRow: {
+    flexDirection: "row",
+    gap: theme.spacing.sm,
+    paddingHorizontal: theme.spacing.md,
+    paddingTop: theme.spacing.sm,
   },
-  btnDisabled: { opacity: 0.5 },
-  btnText: { color: theme.colors.onPrimaryContainer, fontWeight: "700", fontSize: 12 },
-  footnote: { color: theme.colors.onSurfaceVariant, fontSize: 11.5, marginTop: theme.spacing.sm },
-  statusLine: {
-    color: theme.colors.onSurface,
-    fontSize: 12.5,
-    marginTop: theme.spacing.xs,
-    marginBottom: theme.spacing.sm,
-  },
+  stepCopy: { paddingHorizontal: theme.spacing.md, paddingTop: theme.spacing.xs },
+  statusLine: { paddingHorizontal: theme.spacing.md, paddingBottom: theme.spacing.md },
 });

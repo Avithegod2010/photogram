@@ -1,11 +1,19 @@
-import React, { useEffect, useState } from "react";
-import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
-import { StatusBar } from "expo-status-bar";
+import React, { useCallback, useEffect, useState } from "react";
+import { ScrollView, StyleSheet, View } from "react-native";
 import { Image } from "expo-image";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { listNotedMedia, MediaRow } from "../db/queries";
 import { theme } from "../theme";
+import { t } from "../lib/i18n";
+import {
+  AppBar,
+  EmptyState,
+  ErrorState,
+  ListRow,
+  Screen,
+  Section,
+  Skeleton,
+} from "../ui";
 
 // v0.32 Journal: every photo note (v0.17) as a diary. "Today across the
 // years" on top — notes written on this calendar day in any year — then all
@@ -15,14 +23,22 @@ export function JournalScreen({
 }: {
   navigation: NativeStackNavigationProp<{ Viewer: { ids: number[]; index: number } }>;
 }) {
-  const insets = useSafeAreaInsets();
   const [rows, setRows] = useState<MediaRow[] | null>(null);
+  const [loadError, setLoadError] = useState(false);
 
-  useEffect(() => {
+  const load = useCallback(() => {
+    setLoadError(false);
     void listNotedMedia()
       .then(setRows)
-      .catch(() => setRows([]));
+      .catch(() => {
+        setRows([]);
+        setLoadError(true);
+      });
   }, []);
+
+  useEffect(() => {
+    load();
+  }, [load]);
 
   const today = new Date();
   const isToday = (ts: number) => {
@@ -41,98 +57,109 @@ export function JournalScreen({
   }
   const years = [...byYear.keys()].sort((a, b) => b - a);
 
-  const entry = (row: MediaRow) => (
-    <Pressable
-      key={String(row.id)}
-      style={styles.row}
-      onPress={() =>
-        navigation.navigate("Viewer", { ids: all.map((r) => r.id), index: all.findIndex((r) => r.id === row.id) })
-      }
-      android_ripple={{ color: theme.colors.outlineVariant }}
-    >
-      <Image source={{ uri: row.thumb_uri }} style={styles.thumb} contentFit="cover" recyclingKey={`jr-${row.id}`} />
-      <View style={{ flex: 1 }}>
-        <Text style={styles.note} numberOfLines={3}>
-          {row.note_text}
-        </Text>
-        <Text style={styles.date}>{new Date(row.taken_at).toLocaleDateString(undefined, { dateStyle: "medium" })}</Text>
-      </View>
-    </Pressable>
-  );
+  const entry = (row: MediaRow) => {
+    const date = new Date(row.taken_at).toLocaleDateString(undefined, { dateStyle: "medium" });
+    return (
+      <ListRow
+        key={String(row.id)}
+        title={row.note_text ?? ""}
+        subtitle={date}
+        leading={
+          <Image
+            source={{ uri: row.thumb_uri }}
+            style={styles.thumb}
+            contentFit="cover"
+            recyclingKey={`jr-${row.id}`}
+            accessible={false}
+          />
+        }
+        onPress={() =>
+          navigation.navigate("Viewer", {
+            ids: all.map((r) => r.id),
+            index: all.findIndex((r) => r.id === row.id),
+          })
+        }
+        accessibilityLabel={`${row.note_text ?? ""}. ${date}`}
+        accessibilityHint={t("viewer.tileHint")}
+      />
+    );
+  };
 
   return (
-    <View style={[styles.root, { paddingTop: insets.top }]}>
-      <StatusBar style="light" />
-      <View style={styles.header}>
-        <Pressable onPress={() => navigation.goBack()} hitSlop={12}>
-          <Text style={styles.back}>←</Text>
-        </Pressable>
-        <View style={{ flex: 1 }}>
-          <Text style={styles.title}>Journal</Text>
-          <Text style={styles.sub}>{all.length} note{all.length === 1 ? "" : "s"} written on your photos</Text>
-        </View>
-      </View>
-      <ScrollView contentContainerStyle={styles.content}>
-        {rows === null ? (
-          <Text style={styles.empty}>Loading…</Text>
-        ) : all.length === 0 ? (
-          <Text style={styles.empty}>
-            No notes yet. Open any photo → Note, write something — it shows up here and travels as
-            the caption in your Telegram backup.
-          </Text>
-        ) : (
-          <>
-            {todayEntries.length > 0 ? (
-              <>
-                <Text style={styles.yearTitle}>
-                  Today across the years · {today.getDate()} {today.toLocaleString(undefined, { month: "long" })}
-                </Text>
-                {todayEntries.map(entry)}
-              </>
-            ) : null}
-            {years.map((year) => (
-              <View key={String(year)}>
-                <Text style={styles.yearTitle}>{year}</Text>
-                {(byYear.get(year) ?? []).map(entry)}
+    <Screen>
+      <AppBar
+        title={t("collections.journal")}
+        subtitle={
+          rows === null
+            ? t("state.loading")
+            : `${all.length} note${all.length === 1 ? "" : "s"} written on your photos`
+        }
+        large
+        onBack={() => navigation.goBack()}
+        backLabel={t("common.back")}
+      />
+
+      {loadError ? (
+        <ErrorState
+          title={t("state.error")}
+          body="Photogram couldn't read your notes on this phone."
+          retryLabel={t("common.retry")}
+          onRetry={load}
+        />
+      ) : rows === null ? (
+        <View style={styles.loadingWrap}>
+          {Array.from({ length: 4 }).map((_, i) => (
+            <View key={i} style={styles.skeletonRow}>
+              <Skeleton width={56} height={56} radius={theme.radius.md} label={i === 0 ? t("common.loading") : undefined} />
+              <View style={styles.skeletonText}>
+                <Skeleton width="90%" height={14} />
+                <Skeleton width="45%" height={12} />
               </View>
-            ))}
-          </>
-        )}
-      </ScrollView>
-    </View>
+            </View>
+          ))}
+        </View>
+      ) : all.length === 0 ? (
+        <EmptyState
+          icon="book-outline"
+          title="No notes yet"
+          body="Open any photo → Note, write something — it shows up here and travels as the caption in your Telegram backup."
+          actionLabel={t("common.back")}
+          onAction={() => navigation.goBack()}
+        />
+      ) : (
+        <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+          {todayEntries.length > 0 ? (
+            <Section
+              title={`Today across the years · ${today.getDate()} ${today.toLocaleString(undefined, {
+                month: "long",
+              })}`}
+            >
+              {todayEntries.map(entry)}
+            </Section>
+          ) : null}
+          {years.map((year) => (
+            <Section key={String(year)} title={String(year)}>
+              {(byYear.get(year) ?? []).map(entry)}
+            </Section>
+          ))}
+        </ScrollView>
+      )}
+    </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: theme.colors.background },
-  header: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: theme.spacing.md,
-    paddingHorizontal: theme.spacing.lg,
-    paddingTop: theme.spacing.md,
-    paddingBottom: theme.spacing.sm,
+  content: {
+    paddingHorizontal: theme.spacing.md,
+    paddingBottom: theme.spacing.xl,
   },
-  back: { color: theme.colors.onSurface, fontSize: 24 },
-  title: { color: theme.colors.onSurface, fontSize: 22, fontWeight: "700" },
-  sub: { color: theme.colors.onSurfaceVariant, fontSize: 12.5, marginTop: 2 },
-  content: { paddingBottom: 40, paddingHorizontal: theme.spacing.lg },
-  yearTitle: {
-    color: theme.colors.onSurface,
-    fontSize: 16,
-    fontWeight: "700",
-    marginTop: theme.spacing.lg,
-    marginBottom: theme.spacing.sm,
+  thumb: {
+    width: 56,
+    height: 56,
+    borderRadius: theme.radius.md,
+    backgroundColor: theme.colors.surfaceHighest,
   },
-  row: {
-    flexDirection: "row",
-    gap: theme.spacing.md,
-    paddingVertical: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: theme.colors.outlineVariant,
-  },
-  thumb: { width: 56, height: 56, borderRadius: theme.radius.md, backgroundColor: theme.colors.surfaceHighest },
-  note: { color: theme.colors.onSurface, fontSize: 14, lineHeight: 19 },
-  date: { color: theme.colors.onSurfaceVariant, fontSize: 12, marginTop: 4 },
-  empty: { color: theme.colors.onSurfaceVariant, fontSize: 13.5, marginTop: 40, lineHeight: 20 },
+  loadingWrap: { padding: theme.spacing.md, gap: theme.spacing.lg },
+  skeletonRow: { flexDirection: "row", gap: theme.spacing.md },
+  skeletonText: { flex: 1, gap: theme.spacing.sm, justifyContent: "center" },
 });

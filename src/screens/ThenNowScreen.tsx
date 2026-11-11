@@ -1,11 +1,19 @@
 import React, { useCallback, useEffect, useState } from "react";
-import { FlatList, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
-import { StatusBar } from "expo-status-bar";
-import { Image } from "expo-image";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { ScrollView, StyleSheet, View } from "react-native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { listOnThisDay, type MediaRow } from "../db/queries";
 import { theme } from "../theme";
+import { t, tf } from "../lib/i18n";
+import {
+  AppBar,
+  AppText,
+  EmptyState,
+  ErrorState,
+  MediaTile,
+  Screen,
+  Section,
+  Skeleton,
+} from "../ui";
 
 // v0.40 Then & now — "on this day" for EVERY past year at once (±3 days so
 // real-world dates still line up). Rows group by year, newest first; tapping
@@ -15,12 +23,21 @@ export function ThenNowScreen({
 }: {
   navigation: NativeStackNavigationProp<{ Viewer: { ids: number[]; index: number } }>;
 }) {
-  const insets = useSafeAreaInsets();
   const [rows, setRows] = useState<MediaRow[]>([]);
+  const [loaded, setLoaded] = useState(false);
+  const [loadError, setLoadError] = useState(false);
 
   const reload = useCallback(async () => {
-    const found = await listOnThisDay(3, 400).catch(() => [] as MediaRow[]);
-    setRows(found);
+    setLoadError(false);
+    setLoaded(false);
+    try {
+      setRows(await listOnThisDay(3, 400));
+    } catch {
+      setRows([]);
+      setLoadError(true);
+    } finally {
+      setLoaded(true);
+    }
   }, []);
 
   useEffect(() => {
@@ -32,82 +49,115 @@ export function ThenNowScreen({
     .sort((a, b) => b - a);
 
   return (
-    <View style={[styles.root, { paddingTop: insets.top }]}>
-      <StatusBar style="light" />
-      <View style={styles.header}>
-        <Pressable onPress={() => navigation.goBack()} hitSlop={12}>
-          <Text style={styles.back}>←</Text>
-        </Pressable>
-        <View style={{ flex: 1 }}>
-          <Text style={styles.title}>Then & now</Text>
-          <Text style={styles.sub}>Photos from this day (±3 days), every year you have</Text>
-        </View>
-      </View>
-      <FlatList
-        data={years}
-        keyExtractor={(y) => String(y)}
-        renderItem={({ item: year }) => {
-          const yearRows = rows.filter((r) => (r.taken_at ? new Date(r.taken_at).getFullYear() : 0) === year);
-          const ago = new Date().getFullYear() - year;
-          return (
-            <View style={styles.yearBlock}>
-              <Text style={styles.yearTitle}>
-                {ago === 0 ? "This year" : `${ago} year${ago === 1 ? "" : "s"} ago`} · {year}
-              </Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.strip}>
-                {yearRows.map((r, idx) => {
-                  const idxInAll = rows.findIndex((x) => x.id === r.id);
-                  return (
-                    <Pressable
-                      key={r.id}
-                      onPress={() => navigation.navigate("Viewer", { ids: rows.map((x) => x.id), index: Math.max(idxInAll, 0) })}
-                    >
-                      <Image
-                        source={{ uri: r.thumb_uri }}
-                        style={styles.thumb}
-                        contentFit="cover"
-                        transition={120}
-                        recyclingKey={`tn-${r.id}-${idx}`}
-                      />
-                      <Text style={styles.dateLine}>{new Date(r.taken_at!).toLocaleDateString()}</Text>
-                    </Pressable>
-                  );
-                })}
-              </ScrollView>
-            </View>
-          );
-        }}
-        contentContainerStyle={styles.listContent}
-        ListEmptyComponent={<Text style={styles.empty}>Nothing from this day yet — come back as your library grows.</Text>}
+    <Screen>
+      <AppBar
+        title="Then & now"
+        subtitle="Photos from this day (±3 days), every year you have"
+        large
+        onBack={() => navigation.goBack()}
+        backLabel={t("common.back")}
       />
-    </View>
+
+      {loadError ? (
+        <ErrorState
+          title={t("state.error")}
+          body="Photogram couldn't read this day's photos on this phone."
+          retryLabel={t("common.retry")}
+          onRetry={() => void reload()}
+        />
+      ) : !loaded ? (
+        <View style={styles.loadingWrap}>
+          {Array.from({ length: 2 }).map((_, block) => (
+            <View key={block} style={styles.skeletonBlock}>
+              <Skeleton width="45%" height={16} label={block === 0 ? t("common.loading") : undefined} />
+              <View style={styles.skeletonRow}>
+                {Array.from({ length: 3 }).map((_, i) => (
+                  <Skeleton
+                    key={i}
+                    width={108}
+                    height={108}
+                    radius={theme.radius.md}
+                  />
+                ))}
+              </View>
+            </View>
+          ))}
+        </View>
+      ) : years.length === 0 ? (
+        <EmptyState
+          icon="time-outline"
+          title="Nothing from this day yet"
+          body="Come back as your library grows — every past year shows up here on its date."
+          actionLabel={t("common.back")}
+          onAction={() => navigation.goBack()}
+        />
+      ) : (
+        <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+          {years.map((year) => {
+            const yearRows = rows.filter(
+              (r) => (r.taken_at ? new Date(r.taken_at).getFullYear() : 0) === year
+            );
+            const ago = new Date().getFullYear() - year;
+            return (
+              <Section
+                key={year}
+                title={`${ago === 0 ? "This year" : `${ago} year${ago === 1 ? "" : "s"} ago`} · ${year}`}
+                card={false}
+                style={styles.yearBlock}
+              >
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={styles.strip}
+                >
+                  {yearRows.map((r) => {
+                    const idxInAll = rows.findIndex((x) => x.id === r.id);
+                    const date = new Date(r.taken_at).toLocaleDateString();
+                    return (
+                      <View key={r.id} style={styles.thumbWrap}>
+                        <MediaTile
+                          uri={r.thumb_uri}
+                          aspectRatio={1}
+                          onPress={() =>
+                            navigation.navigate("Viewer", {
+                              ids: rows.map((x) => x.id),
+                              index: Math.max(idxInAll, 0),
+                            })
+                          }
+                          accessibilityLabel={tf("gallery.tileLabel", { date })}
+                          accessibilityHint={t("viewer.tileHint")}
+                        />
+                        <AppText
+                          variant="caption2Regular"
+                          color={theme.colors.onSurfaceVariant}
+                          numberOfLines={1}
+                          style={styles.dateLine}
+                        >
+                          {date}
+                        </AppText>
+                      </View>
+                    );
+                  })}
+                </ScrollView>
+              </Section>
+            );
+          })}
+        </ScrollView>
+      )}
+    </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: theme.colors.background },
-  header: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: theme.spacing.md,
-    paddingHorizontal: theme.spacing.lg,
-    paddingTop: theme.spacing.md,
-    paddingBottom: theme.spacing.sm,
+  content: {
+    paddingHorizontal: theme.spacing.md,
+    paddingBottom: theme.spacing.xl,
   },
-  back: { color: theme.colors.onSurface, fontSize: 24 },
-  title: { color: theme.colors.onSurface, fontSize: 22, fontWeight: "700" },
-  sub: { color: theme.colors.onSurfaceVariant, fontSize: 12.5, marginTop: 2 },
-  yearBlock: { marginBottom: theme.spacing.lg },
-  yearTitle: {
-    color: theme.colors.onSurface,
-    fontSize: 15,
-    fontWeight: "700",
-    paddingHorizontal: theme.spacing.lg,
-    paddingBottom: theme.spacing.sm,
-  },
-  strip: { gap: 8, paddingHorizontal: theme.spacing.lg },
-  thumb: { width: 108, height: 108, borderRadius: theme.radius.md, backgroundColor: theme.colors.surfaceContainer },
-  dateLine: { color: theme.colors.onSurfaceVariant, fontSize: 10, marginTop: 3, width: 108 },
-  listContent: { paddingBottom: 40 },
-  empty: { color: theme.colors.onSurfaceVariant, fontSize: 13.5, marginTop: 40, marginHorizontal: theme.spacing.xl, lineHeight: 20 },
+  yearBlock: { marginBottom: theme.spacing.md },
+  strip: { gap: theme.spacing.sm },
+  thumbWrap: { width: 108 },
+  dateLine: { marginTop: theme.spacing.xs },
+  loadingWrap: { padding: theme.spacing.md, gap: theme.spacing.lg },
+  skeletonBlock: { gap: theme.spacing.sm },
+  skeletonRow: { flexDirection: "row", gap: theme.spacing.sm },
 });

@@ -17,6 +17,7 @@ import { syncWallpaperConfig } from "./src/lib/wallpaper";
 import { consumeSharedInbox } from "./src/lib/sharedInbox";
 import { maybeRunDbMaintenance } from "./src/lib/dbMaintenance";
 import { ErrorBoundary } from "./src/components/ErrorBoundary";
+import { DialogHost } from "./src/ui";
 import { recordStartup } from "./src/lib/startup";
 import Constants from "expo-constants";
 import { startJunkAutoSweepLoop } from "./src/lib/junkAutoSweep";
@@ -118,6 +119,8 @@ export default function App() {
           <LoginScreen />
         </ErrorBoundary>
       )}
+      {/* One imperative dialog host for the whole app (confirmDialog/alertDialog). */}
+      <DialogHost />
     </GestureHandlerRootView>
   );
 }

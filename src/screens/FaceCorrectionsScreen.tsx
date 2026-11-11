@@ -1,11 +1,21 @@
 import React, { useCallback, useEffect, useState } from "react";
-import { Alert, FlatList, Pressable, StyleSheet, Text, View } from "react-native";
-import { StatusBar } from "expo-status-bar";
+import { Pressable, StyleSheet, View } from "react-native";
 import { Image } from "expo-image";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { FlashList } from "@shopify/flash-list";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { listRejectionDetails, unblockRejection, type RejectionDetail } from "../db/queries";
 import { theme } from "../theme";
+import { t } from "../lib/i18n";
+import {
+  AppBar,
+  AppText,
+  Button,
+  EmptyState,
+  ErrorState,
+  Screen,
+  Skeleton,
+  confirmDialog,
+} from "../ui";
 
 // v0.40 Review corrections — every blocked face pair ("Not this person" /
 // split-off memories) with its two photos side by side. Undo deletes the
@@ -17,13 +27,21 @@ export function FaceCorrectionsScreen({
 }: {
   navigation: NativeStackNavigationProp<{ Viewer: { ids: number[]; index: number }; People: undefined }>;
 }) {
-  const insets = useSafeAreaInsets();
   const [rows, setRows] = useState<RejectionDetail[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
   const [busy, setBusy] = useState(false);
 
   const reload = useCallback(async () => {
-    const details = await listRejectionDetails().catch(() => [] as RejectionDetail[]);
-    setRows(details);
+    setLoadError(false);
+    try {
+      setRows(await listRejectionDetails());
+    } catch {
+      setRows([]);
+      setLoadError(true);
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
   useEffect(() => {
@@ -32,125 +50,173 @@ export function FaceCorrectionsScreen({
 
   const undo = useCallback(
     (r: RejectionDetail) => {
-      Alert.alert(
-        "Undo correction",
-        "This pair stops being blocked — tap \"Group faces\" on the People screen to let the app reconsider it.",
-        [
-          { text: "Cancel", style: "cancel" },
-          {
-            text: "Undo",
-            style: "destructive",
-            onPress: () => {
-              setBusy(true);
-              void unblockRejection(r.sampleId, r.blockedSampleId)
-                .then(reload)
-                .finally(() => setBusy(false));
-            },
-          },
-        ]
-      );
+      void confirmDialog({
+        title: "Undo correction",
+        message:
+          'This pair stops being blocked — tap "Group faces" on the People screen to let the app reconsider it.',
+        confirmLabel: "Undo",
+        destructive: true,
+      }).then((ok) => {
+        if (!ok) return;
+        setBusy(true);
+        void unblockRejection(r.sampleId, r.blockedSampleId)
+          .then(reload)
+          .finally(() => setBusy(false));
+      });
     },
     [reload]
   );
 
   return (
-    <View style={[styles.root, { paddingTop: insets.top }]}>
-      <StatusBar style="light" />
-      <View style={styles.header}>
-        <Pressable onPress={() => navigation.goBack()} hitSlop={12}>
-          <Text style={styles.back}>←</Text>
-        </Pressable>
-        <View style={{ flex: 1 }}>
-          <Text style={styles.title}>Review corrections</Text>
-          <Text style={styles.sub}>Every "not this person" / split-off face pair you taught the app</Text>
-        </View>
-      </View>
-      <Text style={styles.note}>
-        Undo one to let "Group faces" consider the pair again. Corrections keep working even after
-        merges, renames or splits — that is by design.
-      </Text>
-      <FlatList
-        data={rows}
-        keyExtractor={(r) => `${r.sampleId}-${r.blockedSampleId}`}
-        renderItem={({ item }) => (
-          <View style={styles.card}>
-            <Pressable
-              style={styles.thumbPair}
-              onPress={() =>
-                navigation.navigate("Viewer", {
-                  ids: [item.mediaIdA, item.mediaIdB].filter((id) => id > 0),
-                  index: 0,
-                })
-              }
-            >
-              <Image source={{ uri: item.thumbA ?? undefined }} style={styles.thumb} contentFit="cover" />
-              <Image source={{ uri: item.thumbB ?? undefined }} style={styles.thumb} contentFit="cover" />
-            </Pressable>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.personLine}>
-                {item.personName ? `"${item.personName}"` : "Unknown person"}
-                {item.personStillExists ? "" : " (person deleted)"}
-              </Text>
-              <Text style={styles.dateLine}>
-                Blocked {new Date(item.createdAt).toLocaleDateString()} · tap photos to open
-              </Text>
-            </View>
-            <Pressable style={[styles.undoBtn, busy && styles.btnDisabled]} onPress={() => undo(item)} disabled={busy}>
-              <Text style={styles.undoText}>Undo</Text>
-            </Pressable>
-          </View>
-        )}
-        contentContainerStyle={styles.listContent}
-        ListEmptyComponent={<Text style={styles.empty}>No corrections yet. Nothing blocked — nothing to review.</Text>}
+    <Screen>
+      <AppBar
+        title="Review corrections"
+        subtitle='Every "not this person" / split-off face pair you taught the app'
+        large
+        onBack={() => navigation.goBack()}
+        backLabel={t("common.back")}
       />
-    </View>
+
+      {loadError ? (
+        <ErrorState
+          title={t("state.error")}
+          body="Photogram couldn't read your saved corrections. Nothing was changed."
+          retryLabel={t("common.retry")}
+          onRetry={() => void reload()}
+        />
+      ) : loading ? (
+        <View style={styles.skeletonList}>
+          {Array.from({ length: 5 }).map((_, i) => (
+            <View key={i} style={styles.skeletonCard}>
+              <Skeleton width={108} height={52} radius={theme.radius.control} />
+              <View style={styles.flex}>
+                <Skeleton width="55%" height={16} />
+                <Skeleton width="75%" height={12} style={styles.skeletonGap} />
+              </View>
+              <Skeleton width={64} height={36} radius={theme.radius.pill} />
+            </View>
+          ))}
+        </View>
+      ) : (
+        <FlashList
+          data={rows}
+          keyExtractor={(r) => `${r.sampleId}-${r.blockedSampleId}`}
+          contentContainerStyle={styles.listContent}
+          showsVerticalScrollIndicator={false}
+          ListHeaderComponent={
+            <AppText variant="footnote" color={theme.colors.onSurfaceVariant} style={styles.note}>
+              Undo one to let "Group faces" consider the pair again. Corrections keep working even
+              after merges, renames or splits — that is by design.
+            </AppText>
+          }
+          ListEmptyComponent={
+            <EmptyState
+              icon="shield-checkmark-outline"
+              title="No corrections yet"
+              body="Nothing is blocked, so there is nothing to review. Corrections appear here whenever you mark “not this person” or split faces off."
+              actionLabel={t("common.back")}
+              onAction={() => navigation.goBack()}
+            />
+          }
+          renderItem={({ item }) => (
+            <View style={styles.card}>
+              <Pressable
+                style={styles.thumbPair}
+                onPress={() =>
+                  navigation.navigate("Viewer", {
+                    ids: [item.mediaIdA, item.mediaIdB].filter((id) => id > 0),
+                    index: 0,
+                  })
+                }
+                accessibilityRole="button"
+                accessibilityLabel="Open the two photos in this correction"
+                accessibilityHint="Opens the pair in the photo viewer."
+              >
+                <View style={styles.thumb}>
+                  <Image
+                    source={{ uri: item.thumbA ?? undefined }}
+                    style={StyleSheet.absoluteFill}
+                    contentFit="cover"
+                    recyclingKey={`corr-a-${item.sampleId}`}
+                    accessible={false}
+                  />
+                </View>
+                <View style={styles.thumb}>
+                  <Image
+                    source={{ uri: item.thumbB ?? undefined }}
+                    style={StyleSheet.absoluteFill}
+                    contentFit="cover"
+                    recyclingKey={`corr-b-${item.sampleId}`}
+                    accessible={false}
+                  />
+                </View>
+              </Pressable>
+              <View style={styles.flex}>
+                <AppText variant="body" weight="medium" numberOfLines={2}>
+                  {item.personName ? `"${item.personName}"` : "Unknown person"}
+                  {item.personStillExists ? "" : " (person deleted)"}
+                </AppText>
+                <AppText
+                  variant="captionRegular"
+                  color={theme.colors.onSurfaceVariant}
+                  style={styles.dateLine}
+                >
+                  Blocked {new Date(item.createdAt).toLocaleDateString()} · tap photos to open
+                </AppText>
+              </View>
+              <Button
+                label="Undo"
+                size="sm"
+                variant="secondary"
+                disabled={busy}
+                accessibilityLabel="Undo this correction"
+                onPress={() => undo(item)}
+              />
+            </View>
+          )}
+        />
+      )}
+    </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: theme.colors.background },
-  header: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: theme.spacing.md,
-    paddingHorizontal: theme.spacing.lg,
-    paddingTop: theme.spacing.md,
-    paddingBottom: theme.spacing.sm,
+  flex: { flex: 1, minWidth: 0 },
+  note: { marginBottom: theme.spacing.md },
+  listContent: {
+    paddingHorizontal: theme.spacing.md,
+    paddingBottom: theme.spacing.xl,
   },
-  back: { color: theme.colors.onSurface, fontSize: 24 },
-  title: { color: theme.colors.onSurface, fontSize: 22, fontWeight: "700" },
-  sub: { color: theme.colors.onSurfaceVariant, fontSize: 12.5, marginTop: 2 },
-  note: {
-    color: theme.colors.onSurfaceVariant,
-    fontSize: 12,
-    paddingHorizontal: theme.spacing.lg,
-    paddingBottom: theme.spacing.sm,
-  },
-  listContent: { paddingBottom: 40, paddingHorizontal: theme.spacing.lg, gap: theme.spacing.sm },
   card: {
     flexDirection: "row",
     alignItems: "center",
     gap: theme.spacing.md,
     backgroundColor: theme.colors.surfaceContainer,
-    borderRadius: theme.radius.lg,
+    borderRadius: theme.radius.card,
     padding: theme.spacing.md,
+    marginBottom: theme.spacing.sm,
   },
-  thumbPair: { flexDirection: "row", gap: 4 },
+  thumbPair: { flexDirection: "row", gap: theme.spacing.xs },
   thumb: {
     width: 52,
     height: 52,
-    borderRadius: theme.radius.md,
+    borderRadius: theme.radius.control,
+    overflow: "hidden",
     backgroundColor: theme.colors.surfaceHighest,
   },
-  personLine: { color: theme.colors.onSurface, fontSize: 14, fontWeight: "600" },
-  dateLine: { color: theme.colors.onSurfaceVariant, fontSize: 11, marginTop: 3 },
-  undoBtn: {
-    backgroundColor: theme.colors.secondaryContainer,
-    borderRadius: theme.radius.full,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
+  dateLine: { marginTop: 2 },
+  skeletonList: {
+    paddingHorizontal: theme.spacing.md,
+    paddingTop: theme.spacing.md,
+    gap: theme.spacing.sm,
   },
-  btnDisabled: { opacity: 0.5 },
-  undoText: { color: theme.colors.onSecondaryContainer, fontWeight: "700", fontSize: 12 },
-  empty: { color: theme.colors.onSurfaceVariant, fontSize: 13.5, marginTop: 40, marginHorizontal: theme.spacing.xl, lineHeight: 20 },
+  skeletonCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: theme.spacing.md,
+    backgroundColor: theme.colors.surfaceContainer,
+    borderRadius: theme.radius.card,
+    padding: theme.spacing.md,
+  },
+  skeletonGap: { marginTop: theme.spacing.xs },
 });

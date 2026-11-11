@@ -1,8 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { Pressable, Alert, StyleSheet, Text, View } from "react-native";
-import { StatusBar } from "expo-status-bar";
+import { StyleSheet, View } from "react-native";
 import { Image } from "expo-image";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { FlashList } from "@shopify/flash-list";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { getSafetyReport, SafetyReport, clearRemotePointers } from "../db/queries";
@@ -12,18 +10,30 @@ import { IntegrityReport, loadIntegrityReport, runIntegrityPass } from "../lib/i
 import type { IntegritySchedule } from "../lib/integritySchedule";
 import { useSettingsStore } from "../store/settingsStore";
 import { theme } from "../theme";
+import { t } from "../lib/i18n";
+import {
+  AppBar,
+  AppText,
+  Badge,
+  Button,
+  Chip,
+  EmptyState,
+  ErrorState,
+  ListRow,
+  Screen,
+  Section,
+  Skeleton,
+  Stat,
+  StatusBadge,
+  alertDialog,
+  confirmDialog,
+  type BadgeTone,
+} from "../ui";
 
 const SCHEDULE_LABEL: Record<IntegritySchedule, string> = {
   off: "Off",
   weekly: "Weekly",
   monthly: "Monthly",
-};
-
-const STATE_LABEL: Record<string, string> = {
-  local: "Not backed up yet",
-  queued: "Waiting in queue",
-  uploading: "Uploading…",
-  failed: "Upload failed — tap ⟳ in gallery to retry",
 };
 
 // Idea 7: answers "if I drop my phone in a river tomorrow, what do I lose?"
@@ -35,10 +45,10 @@ export function SafetyCheckScreen({
 }: {
   navigation: NativeStackNavigationProp<{ Tabs: undefined; Viewer: { ids: number[]; index: number } }>;
 }) {
-  const insets = useSafeAreaInsets();
   const schedule = useSettingsStore((s) => s.integritySchedule);
   const setSchedule = useSettingsStore((s) => s.setIntegritySchedule);
   const [report, setReport] = useState<SafetyReport | null>(null);
+  const [reportError, setReportError] = useState(false);
   const [integrity, setIntegrity] = useState<IntegrityReport | null>(null);
   const [checking, setChecking] = useState(false);
   const [reuploading, setReuploading] = useState(false);
@@ -46,8 +56,14 @@ export function SafetyCheckScreen({
 
   const reload = useCallback(() => {
     void getSafetyReport()
-      .then(setReport)
-      .catch(() => setReport(null));
+      .then((r) => {
+        setReport(r);
+        setReportError(false);
+      })
+      .catch(() => {
+        setReport(null);
+        setReportError(true);
+      });
     void loadIntegrityReport()
       .then(setIntegrity)
       .catch(() => setIntegrity(null));
@@ -81,315 +97,383 @@ export function SafetyCheckScreen({
   const reuploadMissing = useCallback(() => {
     const rows = integrity?.rows ?? [];
     if (rows.length === 0 || reuploading) return;
-    Alert.alert(
-      "Re-upload missing items?",
-      `${rows.length} item${rows.length === 1 ? "" : "s"} will be sent to Telegram again. Items whose local file is gone will be skipped.`,
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Re-upload",
-          onPress: () => {
-            setReuploading(true);
-            void (async () => {
-              let queued = 0;
-              let skipped = 0;
-              try {
-                await clearRemotePointers(rows.map((r) => r.id));
-                for (const row of rows) {
-                  try {
-                    await enqueueForUpload(row.id);
-                    queued++;
-                  } catch {
-                    skipped++;
-                  }
-                }
-              } catch {
-                // a failure here must not hide what already got queued
-              } finally {
-                setReuploading(false);
-                reload();
-              }
-              Alert.alert(
-                "Re-upload",
-                skipped === 0
-                  ? `${queued} item${queued === 1 ? "" : "s"} queued. The backup will send them again.`
-                  : `${queued} queued, ${skipped} skipped (no local file left).`
-              );
-            })();
-          },
-        },
-      ]
-    );
+    void confirmDialog({
+      title: "Re-upload missing items?",
+      message: `${rows.length} item${rows.length === 1 ? "" : "s"} will be sent to Telegram again. Items whose local file is gone will be skipped.`,
+      confirmLabel: "Re-upload",
+    }).then((ok) => {
+      if (!ok) return;
+      setReuploading(true);
+      void (async () => {
+        let queued = 0;
+        let skipped = 0;
+        try {
+          await clearRemotePointers(rows.map((r) => r.id));
+          for (const row of rows) {
+            try {
+              await enqueueForUpload(row.id);
+              queued++;
+            } catch {
+              skipped++;
+            }
+          }
+        } catch {
+          // a failure here must not hide what already got queued
+        } finally {
+          setReuploading(false);
+          reload();
+        }
+        void alertDialog({
+          title: "Re-upload",
+          message:
+            skipped === 0
+              ? `${queued} item${queued === 1 ? "" : "s"} queued. The backup will send them again.`
+              : `${queued} queued, ${skipped} skipped (no local file left).`,
+        });
+      })();
+    });
   }, [integrity, reuploading, reload]);
 
   const allSafe =
     report !== null && report.pendingCount === 0 && report.failedCount === 0;
 
+  const notSafeCount = report ? report.pendingCount + report.failedCount : 0;
+  const verdictTone: BadgeTone = allSafe
+    ? "success"
+    : report && report.failedCount > 0
+      ? "error"
+      : "warning";
+
+  const integrityStatus =
+    integrity === null
+      ? "Ask Telegram now, or pick a schedule above."
+      : integrity.stoppedReason
+        ? `Paused: ${integrity.stoppedReason} — run again to continue.`
+        : integrity.finishedAt !== null
+          ? `Last checked ${new Date(integrity.finishedAt).toLocaleString()}: ${
+              integrity.verified
+            } verified / ${integrity.broken} broken`
+          : `${integrity.verified + integrity.broken} checked so far (${
+              integrity.verified
+            } verified / ${integrity.broken} broken) — run again to continue`;
+
   return (
-    <View style={[styles.root, { paddingTop: insets.top }]}>
-      <StatusBar style="light" />
-      <View style={styles.header}>
-        <Pressable onPress={() => navigation.goBack()} hitSlop={12}>
-          <Text style={styles.back}>←</Text>
-        </Pressable>
-        <Text style={styles.title}>Safety check</Text>
-      </View>
+    <Screen>
+      <AppBar
+        title="Safety check"
+        subtitle="What exists only on this phone?"
+        large
+        onBack={() => navigation.goBack()}
+        backLabel={t("common.back")}
+      />
 
-      {report === null ? (
-        <Text style={styles.empty}>Loading…</Text>
+      {reportError ? (
+        <ErrorState
+          title={t("state.error")}
+          body="The safety report could not be read. Your photos and your Telegram backup are untouched."
+          retryLabel={t("common.retry")}
+          onRetry={reload}
+        />
+      ) : report === null ? (
+        <SafetySkeleton />
       ) : (
-        <>
-          <View style={[styles.verdictCard, allSafe && styles.verdictSafe]}>
-            <Text style={styles.verdictTitle}>
-              {allSafe
-                ? `Everything is safe${report.cloudOnlyCount > 0 ? " (some items are cloud-only by choice)" : ""}`
-                : `${report.pendingCount + report.failedCount} item${
-                    report.pendingCount + report.failedCount === 1 ? "" : "s"
-                  } not yet safe in Telegram`}
-            </Text>
-            <Text style={styles.verdictSub}>
-              {report.bytesWaiting > 0
-                ? `${formatBytes(report.bytesWaiting) } exist only on this phone.`
-                : "Nothing exists only on this phone."}
-            </Text>
-          </View>
+        <FlashList
+          style={styles.fill}
+          data={report.attention}
+          keyExtractor={(i) => String(i.id)}
+          contentContainerStyle={styles.listContent}
+          showsVerticalScrollIndicator={false}
+          ListHeaderComponent={
+            <View style={styles.headerWrap}>
+              <Section
+                title="Verdict"
+                icon={allSafe ? "shield-checkmark-outline" : "warning-outline"}
+                danger={report.failedCount > 0}
+                footer="Covers your own library. Family photos in shared albums are never auto-deleted and stay safe in the group."
+              >
+                <View style={styles.verdictBlock}>
+                  <Badge
+                    label={allSafe ? "All safe" : "Needs attention"}
+                    tone={verdictTone}
+                    icon={allSafe ? "checkmark-circle-outline" : "alert-circle-outline"}
+                  />
+                  <AppText variant="title2">
+                    {allSafe
+                      ? `Everything is safe${
+                          report.cloudOnlyCount > 0
+                            ? " (some items are cloud-only by choice)"
+                            : ""
+                        }`
+                      : `${notSafeCount} item${notSafeCount === 1 ? "" : "s"} not yet safe in Telegram`}
+                  </AppText>
+                  <AppText variant="body" color={theme.colors.onSurfaceVariant}>
+                    {report.bytesWaiting > 0
+                      ? `${formatBytes(report.bytesWaiting)} exist only on this phone.`
+                      : "Nothing exists only on this phone."}
+                  </AppText>
+                </View>
+                <View style={styles.statRow}>
+                  <Stat value={(report.safeCount).toLocaleString()} label="Safe (local + cloud)" />
+                  <Stat value={(report.cloudOnlyCount).toLocaleString()} label="Cloud-only (freed)" />
+                  <Stat value={(report.pendingCount).toLocaleString()} label="Waiting" />
+                  <Stat
+                    value={(report.failedCount).toLocaleString()}
+                    label="Failed"
+                    tone={report.failedCount > 0 ? theme.colors.error : undefined}
+                  />
+                </View>
+              </Section>
 
-          <View style={styles.statGrid}>
-            <View style={styles.stat}>
-              <Text style={styles.statValue}>{report.safeCount}</Text>
-              <Text style={styles.statLabel}>Safe (local + cloud)</Text>
-            </View>
-            <View style={styles.stat}>
-              <Text style={styles.statValue}>{report.cloudOnlyCount}</Text>
-              <Text style={styles.statLabel}>Cloud-only (freed)</Text>
-            </View>
-            <View style={styles.stat}>
-              <Text style={styles.statValue}>{report.pendingCount}</Text>
-              <Text style={styles.statLabel}>Waiting</Text>
-            </View>
-            <View style={[styles.stat, report.failedCount > 0 && styles.statDanger]}>
-              <Text style={styles.statValue}>{report.failedCount}</Text>
-              <Text style={styles.statLabel}>Failed</Text>
-            </View>
-          </View>
-
-          <Text style={styles.note}>
-            Covers your own library. Family photos in shared albums are never auto-deleted and stay
-            safe in the group.
-          </Text>
-
-          <View style={styles.integrityCard}>
-            <View style={styles.integrityHead}>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.integrityTitle}>Backup integrity</Text>
-                <Text style={styles.integritySub}>
-                  {schedule !== "off"
+              <Section
+                title="Backup integrity"
+                icon="shield-half-outline"
+                subtitle={
+                  schedule !== "off"
                     ? `Auto-check ${SCHEDULE_LABEL[schedule].toLowerCase()} — re-verifies the whole library and re-checks anything Telegram says is missing.`
-                    : "Asks Telegram whether every backed-up photo still exists."}
-                </Text>
-              </View>
-            </View>
-            <View style={styles.scheduleRow}>
-              {(["off", "weekly", "monthly"] as IntegritySchedule[]).map((s) => (
-                <Pressable
-                  key={s}
-                  style={[styles.scheduleChip, schedule === s && styles.scheduleChipOn]}
-                  onPress={() => setSchedule(s)}
-                >
-                  <Text style={[styles.scheduleChipText, schedule === s && styles.scheduleChipTextOn]}>
-                    {SCHEDULE_LABEL[s]}
-                  </Text>
-                </Pressable>
-              ))}
-            </View>
-            <View style={{ flexDirection: "row", alignItems: "center", gap: theme.spacing.sm, marginTop: theme.spacing.sm }}>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.integritySub}>
-                  {integrity === null
-                    ? "Ask Telegram now, or pick a schedule above."
-                    : integrity.stoppedReason
-                    ? `Paused: ${integrity.stoppedReason} — run again to continue.`
-                    : integrity.finishedAt !== null
-                    ? `Last checked ${new Date(integrity.finishedAt).toLocaleString()}: ${integrity.verified} verified / ${integrity.broken} broken`
-                    : `${integrity.verified + integrity.broken} checked so far (${integrity.verified} verified / ${integrity.broken} broken) — run again to continue`}
-                </Text>
-              </View>
-              <Pressable style={[styles.runBtn, checking && styles.btnDisabled]} onPress={() => void runIntegrity()} disabled={checking}>
-                <Text style={styles.runBtnText}>{checking ? "Checking…" : integrity ? "Run again" : "Run check"}</Text>
-              </Pressable>
-              {checking ? (
-                <Pressable
-                  style={styles.runBtn}
-                  onPress={() => {
-                    cancelRef.current.cancelled = true;
-                  }}
-                >
-                  <Text style={styles.runBtnText}>Stop</Text>
-                </Pressable>
+                    : "Asks Telegram whether every backed-up photo still exists."
+                }
+              >
+                <View style={styles.chipRow}>
+                  {(["off", "weekly", "monthly"] as IntegritySchedule[]).map((s) => (
+                    <Chip
+                      key={s}
+                      label={SCHEDULE_LABEL[s]}
+                      selected={schedule === s}
+                      onPress={() => setSchedule(s)}
+                      accessibilityLabel={`Integrity check schedule: ${SCHEDULE_LABEL[s]}`}
+                    />
+                  ))}
+                </View>
+                <View style={styles.integrityBlock}>
+                  <AppText
+                    variant="footnote"
+                    color={theme.colors.onSurfaceVariant}
+                    accessibilityLiveRegion="polite"
+                  >
+                    {integrityStatus}
+                  </AppText>
+                  <View style={styles.buttonRow}>
+                    <Button
+                      label={integrity ? "Run again" : "Run check"}
+                      size="sm"
+                      variant="secondary"
+                      icon="refresh"
+                      disabled={checking}
+                      loading={checking}
+                      onPress={() => void runIntegrity()}
+                      accessibilityHint="Asks Telegram whether each backed-up photo still exists."
+                    />
+                    {checking ? (
+                      <Button
+                        label="Stop"
+                        size="sm"
+                        variant="secondary"
+                        icon="stop-circle-outline"
+                        onPress={() => {
+                          cancelRef.current.cancelled = true;
+                        }}
+                      />
+                    ) : null}
+                  </View>
+                </View>
+
+                {integrity !== null && integrity.rows.length > 0 ? (
+                  <>
+                    <View style={styles.brokenHead}>
+                      <AppText variant="callout" color={theme.colors.error}>
+                        {integrity.broken} item{integrity.broken === 1 ? "" : "s"} no longer exist
+                        {integrity.broken === 1 ? "s" : ""} in Telegram:
+                      </AppText>
+                    </View>
+                    {integrity.rows.slice(0, 5).map((row) => (
+                      <ListRow
+                        key={String(row.id)}
+                        title={row.file_name}
+                        subtitle={row.reason}
+                        leading={
+                          <Image
+                            source={{ uri: row.thumb_uri }}
+                            style={styles.brokenThumb}
+                            contentFit="cover"
+                            recyclingKey={`int-${row.id}`}
+                            accessible={false}
+                          />
+                        }
+                        accessory="chevron"
+                        onPress={() =>
+                          navigation.navigate("Viewer", {
+                            ids: integrity.rows.map((r) => r.id),
+                            index: integrity.rows.findIndex((r) => r.id === row.id),
+                          })
+                        }
+                        accessibilityLabel={`${row.file_name}, missing from Telegram. ${row.reason}`}
+                        accessibilityHint="Opens this photo in the viewer."
+                      />
+                    ))}
+                    {integrity.rows.length > 5 ? (
+                      <View style={styles.brokenHead}>
+                        <AppText variant="footnote" color={theme.colors.onSurfaceVariant}>
+                          …and {integrity.rows.length - 5} more.
+                        </AppText>
+                      </View>
+                    ) : null}
+                    <View style={styles.reuploadBlock}>
+                      <Button
+                        label={
+                          reuploading
+                            ? "Queueing…"
+                            : `Re-upload ${integrity.rows.length} missing item${
+                                integrity.rows.length === 1 ? "" : "s"
+                              }`
+                        }
+                        variant="secondary"
+                        icon="cloud-upload-outline"
+                        fullWidth
+                        disabled={reuploading}
+                        loading={reuploading}
+                        onPress={reuploadMissing}
+                      />
+                    </View>
+                  </>
+                ) : null}
+              </Section>
+
+              <AppText variant="callout" color={theme.colors.onSurfaceVariant} style={styles.listHeading}>
+                Needs attention
+              </AppText>
+              {report.failedCount > 0 ? (
+                <AppText variant="footnote" color={theme.colors.onSurfaceVariant} style={styles.listNote}>
+                  Failed uploads can be retried from the gallery — open the photo and tap ⟳.
+                </AppText>
               ) : null}
             </View>
-            {integrity !== null && integrity.rows.length > 0 ? (
-              <>
-                <Text style={styles.integrityBrokenTitle}>
-                  {integrity.broken} item{integrity.broken === 1 ? "" : "s"} no longer exist
-                  {integrity.broken === 1 ? "s" : ""} in Telegram:
-                </Text>
-                {integrity.rows.slice(0, 5).map((row) => (
-                  <Pressable
-                    key={String(row.id)}
-                    style={styles.brokenRow}
-                    onPress={() => navigation.navigate("Viewer", { ids: integrity.rows.map((r) => r.id), index: integrity.rows.findIndex((r) => r.id === row.id) })}
-                  >
-                    <Image source={{ uri: row.thumb_uri }} style={styles.brokenThumb} contentFit="cover" recyclingKey={`int-${row.id}`} />
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.rowName} numberOfLines={1}>
-                        {row.file_name}
-                      </Text>
-                      <Text style={styles.rowFailed} numberOfLines={1}>
-                        {row.reason}
-                      </Text>
-                    </View>
-                  </Pressable>
-                ))}
-                {integrity.rows.length > 5 ? (
-                  <Text style={styles.integritySub}>…and {integrity.rows.length - 5} more.</Text>
-                ) : null}
-                <Pressable
-                  style={[styles.runBtn, reuploading && styles.btnDisabled]}
-                  onPress={reuploadMissing}
-                  disabled={reuploading}
-                >
-                  <Text style={styles.runBtnText}>
-                    {reuploading
-                      ? "Queueing…"
-                      : `Re-upload ${integrity.rows.length} missing item${integrity.rows.length === 1 ? "" : "s"}`}
-                  </Text>
-                </Pressable>
-              </>
-            ) : null}
-          </View>
-
-          <FlashList
-            data={report.attention}
-            keyExtractor={(i) => String(i.id)}
-            renderItem={({ item }) => (
-              <View style={styles.row}>
-                <Image source={{ uri: item.thumb_uri }} style={styles.thumb} contentFit="cover" recyclingKey={`sf-${item.id}`} />
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.rowName} numberOfLines={1}>
-                    {item.file_name ?? "Untitled"}
-                  </Text>
-                  <Text style={[styles.rowState, item.state === "failed" && styles.rowFailed]}>
-                    {STATE_LABEL[item.state] ?? item.state}
-                  </Text>
-                </View>
-                <Text style={styles.rowSize}>{formatBytes(item.byte_size)}</Text>
-              </View>
-            )}
-            contentContainerStyle={styles.listContent}
-            ListEmptyComponent={
-              <Text style={styles.empty}>
-                {allSafe ? "Nothing needs attention. 🎉" : "Loading items…"}
-              </Text>
-            }
-          />
-        </>
+          }
+          renderItem={({ item }) => (
+            <ListRow
+              title={item.file_name ?? "Untitled"}
+              subtitle={formatBytes(item.byte_size)}
+              leading={
+                <Image
+                  source={{ uri: item.thumb_uri }}
+                  style={styles.thumb}
+                  contentFit="cover"
+                  recyclingKey={`sf-${item.id}`}
+                  accessible={false}
+                />
+              }
+              trailing={<StatusBadge status={item.state} />}
+              style={styles.attentionRow}
+            />
+          )}
+          ListEmptyComponent={
+            <EmptyState
+              compact
+              icon="checkmark-circle-outline"
+              title={allSafe ? "Nothing needs attention" : "No single item is blocking"}
+              body={
+                allSafe
+                  ? "Every photo on this phone also lives in your Telegram backup."
+                  : "The counts above are the whole story — no individual item needs a tap."
+              }
+            />
+          }
+        />
       )}
+    </Screen>
+  );
+}
+
+function SafetySkeleton() {
+  return (
+    <View
+      style={styles.skeletonRoot}
+      accessible
+      accessibilityRole="progressbar"
+      accessibilityLabel="Loading the safety report"
+    >
+      <Skeleton width="100%" height={148} radius={theme.radius.card} />
+      <View style={styles.skeletonStatRow}>
+        {Array.from({ length: 4 }).map((_, i) => (
+          <Skeleton key={i} width="23%" height={64} radius={theme.radius.control} />
+        ))}
+      </View>
+      <Skeleton width="100%" height={132} radius={theme.radius.card} />
+      <Skeleton width="60%" height={16} />
+      {Array.from({ length: 3 }).map((_, i) => (
+        <Skeleton key={i} width="100%" height={64} radius={theme.radius.control} />
+      ))}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: theme.colors.background },
-  header: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: theme.spacing.md,
+  fill: { flex: 1 },
+  listContent: { paddingBottom: theme.spacing.xl },
+  headerWrap: { paddingHorizontal: theme.spacing.md },
+  verdictBlock: {
     paddingHorizontal: theme.spacing.md,
-    paddingBottom: 4,
+    paddingTop: theme.spacing.md,
+    gap: theme.spacing.sm,
+    alignItems: "flex-start",
   },
-  back: { color: theme.colors.onSurface, fontSize: 24 },
-  title: { color: theme.colors.onSurface, fontSize: 24, fontWeight: "700" },
-  verdictCard: {
-    margin: theme.spacing.md,
-    backgroundColor: theme.colors.secondaryContainer,
-    borderRadius: theme.radius.lg,
-    padding: theme.spacing.md,
-  },
-  verdictSafe: { backgroundColor: theme.colors.primaryContainer },
-  verdictTitle: { color: theme.colors.onPrimaryContainer, fontSize: 15.5, fontWeight: "700" },
-  verdictSub: { color: theme.colors.onPrimaryContainer, fontSize: 12.5, marginTop: 4 },
-  statGrid: {
+  statRow: {
     flexDirection: "row",
     gap: theme.spacing.sm,
     paddingHorizontal: theme.spacing.md,
-    marginBottom: theme.spacing.sm,
+    paddingTop: theme.spacing.sm,
+    paddingBottom: theme.spacing.md,
   },
-  stat: {
-    flex: 1,
-    backgroundColor: theme.colors.surfaceContainer,
-    borderRadius: theme.radius.md,
-    padding: theme.spacing.sm,
-    alignItems: "center",
-  },
-  statDanger: { backgroundColor: theme.colors.errorContainer },
-  statValue: { color: theme.colors.onSurface, fontSize: 18, fontWeight: "800" },
-  statLabel: { color: theme.colors.onSurfaceVariant, fontSize: 10, textAlign: "center", marginTop: 2 },
-  note: {
-    color: theme.colors.onSurfaceVariant,
-    fontSize: 11.5,
+  chipRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: theme.spacing.sm,
     paddingHorizontal: theme.spacing.md,
-    marginBottom: theme.spacing.sm,
+    paddingTop: theme.spacing.md,
   },
-  integrityCard: {
+  integrityBlock: {
+    paddingHorizontal: theme.spacing.md,
+    paddingVertical: theme.spacing.md,
+    gap: theme.spacing.sm,
+  },
+  buttonRow: { flexDirection: "row", flexWrap: "wrap", gap: theme.spacing.sm },
+  brokenHead: {
+    paddingHorizontal: theme.spacing.md,
+    paddingBottom: theme.spacing.sm,
+  },
+  brokenThumb: {
+    width: 44,
+    height: 44,
+    borderRadius: theme.radius.thumb,
+    backgroundColor: theme.colors.surfaceHighest,
+  },
+  reuploadBlock: {
+    paddingHorizontal: theme.spacing.md,
+    paddingVertical: theme.spacing.md,
+  },
+  listHeading: {
+    marginBottom: theme.spacing.sm,
+    marginTop: theme.spacing.xs,
+  },
+  listNote: { marginBottom: theme.spacing.sm },
+  attentionRow: {
+    backgroundColor: theme.colors.surfaceContainer,
+    borderRadius: theme.radius.control,
     marginHorizontal: theme.spacing.md,
     marginBottom: theme.spacing.sm,
-    backgroundColor: theme.colors.surfaceContainer,
-    borderRadius: theme.radius.lg,
-    padding: theme.spacing.md,
   },
-  integrityHead: { flexDirection: "row", alignItems: "center", gap: theme.spacing.sm },
-  scheduleRow: { flexDirection: "row", gap: 6, marginTop: theme.spacing.sm },
-  scheduleChip: {
+  thumb: {
+    width: 44,
+    height: 44,
+    borderRadius: theme.radius.thumb,
     backgroundColor: theme.colors.surfaceHighest,
-    borderRadius: theme.radius.full,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
   },
-  scheduleChipOn: { backgroundColor: theme.colors.primary },
-  scheduleChipText: { color: theme.colors.onSurfaceVariant, fontSize: 11, fontWeight: "600" },
-  scheduleChipTextOn: { color: theme.colors.onPrimary },
-  integrityTitle: { color: theme.colors.onSurface, fontSize: 14.5, fontWeight: "700" },
-  integritySub: { color: theme.colors.onSurfaceVariant, fontSize: 12, marginTop: 2 },
-  integrityBrokenTitle: {
-    color: theme.colors.error,
-    fontSize: 12.5,
-    fontWeight: "600",
-    marginTop: theme.spacing.sm,
-    marginBottom: 4,
-  },
-  runBtn: {
-    backgroundColor: theme.colors.primaryContainer,
-    borderRadius: theme.radius.full,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-  },
-  btnDisabled: { opacity: 0.5 },
-  runBtnText: { color: theme.colors.onPrimaryContainer, fontWeight: "700", fontSize: 12 },
-  brokenRow: { flexDirection: "row", alignItems: "center", gap: theme.spacing.md, paddingVertical: 6 },
-  brokenThumb: { width: 40, height: 40, borderRadius: 8, backgroundColor: theme.colors.surfaceHighest },
-  row: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: theme.spacing.md,
+  skeletonRoot: {
     paddingHorizontal: theme.spacing.md,
-    paddingVertical: 8,
+    paddingTop: theme.spacing.sm,
+    gap: theme.spacing.md,
   },
-  thumb: { width: 44, height: 44, borderRadius: 8, backgroundColor: theme.colors.surfaceHighest },
-  rowName: { color: theme.colors.onSurface, fontSize: 13.5 },
-  rowState: { color: theme.colors.onSurfaceVariant, fontSize: 11.5, marginTop: 2 },
-  rowFailed: { color: theme.colors.error },
-  rowSize: { color: theme.colors.onSurfaceVariant, fontSize: 12 },
-  listContent: { paddingBottom: 40 },
-  empty: { color: theme.colors.onSurfaceVariant, textAlign: "center", marginTop: 40 },
+  skeletonStatRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+  },
 });

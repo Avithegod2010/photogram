@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Alert, Pressable, StyleSheet, Text, View } from "react-native";
+import { StyleSheet, View } from "react-native";
 import { FlashList } from "@shopify/flash-list";
 import { Image } from "expo-image";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -19,6 +19,22 @@ import {
 } from "../lib/junk";
 import { formatBytes } from "../lib/stats";
 import { theme } from "../theme";
+import { t } from "../lib/i18n";
+import {
+  AppBar,
+  AppText,
+  Button,
+  Chip,
+  EmptyState,
+  ErrorState,
+  ListRow,
+  Screen,
+  Section,
+  Skeleton,
+  StatusBadge,
+  alertDialog,
+  confirmDialog,
+} from "../ui";
 
 // F2 Junk Sweeper review screen. Every pending finding is pre-selected;
 // unselecting one records it as "kept" on confirm so the sweeper never
@@ -46,13 +62,6 @@ const CATEGORY_NOTE: Record<JunkCategory, string> = {
   stale_screenshot: "Screenshots older than 90 days.",
 };
 
-const STATE_LABEL: Record<string, string> = {
-  local: "Not yet backed up",
-  queued: "Waiting in queue",
-  uploading: "Uploading…",
-  failed: "Upload failed",
-};
-
 function scopeSentence(scope: JunkScope, count: number, bytes: number): string {
   const items = `${count} item${count === 1 ? "" : "s"} (${formatBytes(bytes)})`;
   switch (scope) {
@@ -78,6 +87,7 @@ export function JunkSweeperScreen({
   const insets = useSafeAreaInsets();
   const [findings, setFindings] = useState<DisplayFinding[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
   const [sweeping, setSweeping] = useState(false);
   const [sweepNote, setSweepNote] = useState<string | null>(null);
   const [scope, setScope] = useState<JunkScope>("local");
@@ -87,6 +97,7 @@ export function JunkSweeperScreen({
 
   const reload = useCallback(async () => {
     setLoading(true);
+    setLoadError(false);
     try {
       const rows = await listFindingsByStatus("pending");
       setFindings(
@@ -98,6 +109,7 @@ export function JunkSweeperScreen({
       );
     } catch {
       setFindings([]);
+      setLoadError(true);
     } finally {
       setLoading(false);
     }
@@ -168,10 +180,11 @@ export function JunkSweeperScreen({
       setSweeping(false);
       if (summary === null) {
         setSweepNote(null);
-        Alert.alert(
-          "Junk sweeper is off",
-          "Turn on the Junk sweeper toggle in Settings to let Photogram scan for junk."
-        );
+        void alertDialog({
+          title: "Junk sweeper is off",
+          message:
+            "Turn on the Junk sweeper toggle in Settings to let Photogram scan for junk.",
+        });
         return;
       }
       const total =
@@ -194,289 +207,300 @@ export function JunkSweeperScreen({
     if (selected.length === 0 || deleting) return;
     const count = selected.length;
     const bytes = selectedBytes;
-    Alert.alert(
-      scope === "both" ? "Delete everywhere?" : `Delete (${SCOPE_LABEL[scope]})?`,
-      scopeSentence(scope, count, bytes),
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Delete",
-          style: "destructive",
-          onPress: () => {
-            setDeleting(true);
-            setDeleteDone(null);
-            void (async () => {
-              const outcome = await deleteJunkFindings(selected, scope, (deleted) =>
-                setDeleteDone(`Deleting… ${deleted}/${count}`)
-              );
-              setDeleting(false);
-              setDeleteDone(
-                outcome.failed > 0
-                  ? `Deleted ${outcome.deleted}, ${outcome.failed} failed (try again or free up space via system dialog).`
-                  : `Deleted ${outcome.deleted} item${outcome.deleted === 1 ? "" : "s"}.`
-              );
-              // Unselected items were never touched: record them as "kept" so
-              // the sweeper never re-suggests them.
-              for (const item of findings) {
-                if (!item.selected && item.deletable) {
-                  try {
-                    await setFindingStatus(item.id, "kept");
-                  } catch {}
-                }
-              }
-              await reload();
-            })();
-          },
-        },
-      ]
-    );
+    void confirmDialog({
+      title: scope === "both" ? "Delete everywhere?" : `Delete (${SCOPE_LABEL[scope]})?`,
+      message: scopeSentence(scope, count, bytes),
+      confirmLabel: t("common.delete"),
+      destructive: true,
+    }).then((ok) => {
+      if (!ok) return;
+      setDeleting(true);
+      setDeleteDone(null);
+      void (async () => {
+        const outcome = await deleteJunkFindings(selected, scope, (deleted) =>
+          setDeleteDone(`Deleting… ${deleted}/${count}`)
+        );
+        setDeleting(false);
+        setDeleteDone(
+          outcome.failed > 0
+            ? `Deleted ${outcome.deleted}, ${outcome.failed} failed (try again or free up space via system dialog).`
+            : `Deleted ${outcome.deleted} item${outcome.deleted === 1 ? "" : "s"}.`
+        );
+        // Unselected items were never touched: record them as "kept" so
+        // the sweeper never re-suggests them.
+        for (const item of findings) {
+          if (!item.selected && item.deletable) {
+            try {
+              await setFindingStatus(item.id, "kept");
+            } catch {}
+          }
+        }
+        await reload();
+      })();
+    });
   }, [selected, selectedBytes, deleting, scope, findings, reload]);
 
   const keptNote =
     findings.some((row) => !row.deletable) && scope !== "telegram"
-      ? "Items marked “not yet backed up” can't be deleted until their upload finishes."
+      ? "Items marked “Local only”, “Queued” or “Uploading” can't be deleted until their upload finishes."
       : null;
 
+  const scopeNote =
+    scope === "local"
+      ? "Local files are removed; Telegram keeps the originals as the undo."
+      : scope === "telegram"
+        ? "Telegram messages are deleted; files stay on this phone. No undo copy remains."
+        : "Files are removed from this phone AND from Telegram. This cannot be undone.";
+
   return (
-    <View style={[styles.root, { paddingTop: insets.top }]}>
-      <View style={styles.header}>
-        <Pressable onPress={() => navigation.goBack()} hitSlop={12}>
-          <Text style={styles.back}>←</Text>
-        </Pressable>
-        <Text style={styles.title}>Junk sweeper</Text>
-        <Pressable
-          onPress={startSweep}
-          disabled={deleting}
-          style={[styles.sweepBtn, deleting && styles.btnDisabled]}
-        >
-          <Text style={styles.sweepBtnText}>{sweeping ? "Cancel" : "Sweep now"}</Text>
-        </Pressable>
-      </View>
+    <Screen>
+      <AppBar
+        title="Junk sweeper"
+        subtitle={
+          loading
+            ? t("state.loading")
+            : findings.length > 0
+              ? `${findings.length} findings · ${selected.length} selected`
+              : "Review blurry, accidental and duplicate shots"
+        }
+        large
+        onBack={() => navigation.goBack()}
+        backLabel={t("common.back")}
+        actions={
+          <Button
+            label={sweeping ? "Stop sweep" : "Sweep now"}
+            variant="secondary"
+            size="sm"
+            icon={sweeping ? "stop-circle-outline" : "scan-outline"}
+            onPress={startSweep}
+            disabled={deleting}
+          />
+        }
+      />
 
-      {(sweeping || deleteDone !== null || sweepNote !== null) && (
-        <Text style={styles.note}>
-          {sweeping ? sweepNote ?? "Sweeping…" : deleteDone ?? sweepNote}
-        </Text>
-      )}
+      {sweeping || deleteDone !== null || sweepNote !== null ? (
+        <View style={styles.statusStrip}>
+          <AppText
+            variant="footnote"
+            color={theme.colors.onSurfaceVariant}
+            accessibilityLiveRegion="polite"
+          >
+            {sweeping ? sweepNote ?? "Sweeping…" : deleteDone ?? sweepNote}
+          </AppText>
+        </View>
+      ) : null}
 
-      {loading ? (
-        <Text style={styles.empty}>Loading…</Text>
+      {loadError ? (
+        <ErrorState
+          title={t("state.error")}
+          body="The junk findings could not be read. Your photos are untouched."
+          retryLabel={t("common.retry")}
+          onRetry={() => void reload()}
+        />
+      ) : loading ? (
+        <FindingsSkeleton />
       ) : findings.length === 0 ? (
-        <Text style={styles.empty}>
-          No junk found — run a sweep first.{"\n"}Photogram looks at thumbnails on this phone only;
-          nothing is deleted without your review.
-        </Text>
+        <EmptyState
+          icon="sparkles-outline"
+          title="No junk found"
+          body="Run a sweep first. Photogram looks at thumbnails on this phone only — nothing is deleted without your review."
+          actionLabel="Sweep now"
+          onAction={startSweep}
+        />
       ) : (
         <>
-          <Text style={styles.scopeTitle}>Delete from where?</Text>
-          <View style={styles.scopeRow}>
-            {(["local", "telegram", "both"] as JunkScope[]).map((s) => (
-              <Pressable
-                key={s}
-                onPress={() => setScope(s)}
-                style={[styles.scopeChip, scope === s && styles.scopeChipActive]}
-              >
-                <Text
-                  style={[
-                    styles.scopeChipText,
-                    scope === s && styles.scopeChipTextActive,
-                  ]}
-                >
-                  {SCOPE_LABEL[s]}
-                </Text>
-              </Pressable>
-            ))}
+          <Section
+            title="Delete from where?"
+            card={false}
+            footer={scopeNote}
+            style={styles.scopeSection}
+          >
+            <View style={styles.chipRow}>
+              {(["local", "telegram", "both"] as JunkScope[]).map((s) => (
+                <Chip
+                  key={s}
+                  label={SCOPE_LABEL[s]}
+                  selected={scope === s}
+                  onPress={() => setScope(s)}
+                  accessibilityLabel={`Delete from: ${SCOPE_LABEL[s]}`}
+                />
+              ))}
+            </View>
+          </Section>
+
+          <View style={styles.fill}>
+            <FlashList
+              style={styles.fill}
+              data={categories}
+              keyExtractor={([category]) => category}
+              renderItem={({ item: [category, rows] }) => {
+                const deletableRows = rows.filter((r) => r.deletable);
+                const allSelected =
+                  deletableRows.length > 0 && deletableRows.every((r) => r.selected);
+                const categoryBytes = rows.reduce(
+                  (sum, r) => sum + (r.byte_size || 0),
+                  0
+                );
+                return (
+                  <Section
+                    title={`${CATEGORY_LABEL[category]} · ${rows.length}`}
+                    subtitle={`${formatBytes(categoryBytes)} · ${CATEGORY_NOTE[category]}`}
+                    action={
+                      <Button
+                        label={allSelected ? "Deselect all" : "Select all"}
+                        variant="ghost"
+                        size="sm"
+                        disabled={deletableRows.length === 0}
+                        onPress={() => setCategoryAll(category, !allSelected)}
+                        accessibilityLabel={`${
+                          allSelected ? "Deselect all" : "Select all"
+                        } ${CATEGORY_LABEL[category]}`}
+                      />
+                    }
+                    style={styles.categorySection}
+                  >
+                    {rows.map((row) => (
+                      <FindingRow key={row.id} row={row} onToggle={() => toggle(row)} />
+                    ))}
+                  </Section>
+                );
+              }}
+              contentContainerStyle={styles.listContent}
+              showsVerticalScrollIndicator={false}
+              ListFooterComponent={
+                keptNote ? (
+                  <AppText
+                    variant="footnote"
+                    color={theme.colors.onSurfaceVariant}
+                    style={styles.footerNote}
+                  >
+                    {keptNote}
+                  </AppText>
+                ) : null
+              }
+            />
           </View>
-          <Text style={styles.scopeNote}>
-            {scope === "local"
-              ? "Local files are removed; Telegram keeps the originals as the undo."
-              : scope === "telegram"
-              ? "Telegram messages are deleted; files stay on this phone. No undo copy remains."
-              : "Files are removed from this phone AND from Telegram. This cannot be undone."}
-          </Text>
         </>
       )}
 
-      <FlashList
-        data={categories}
-        keyExtractor={([category]) => category}
-        renderItem={({ item: [category, rows] }) => {
-          const deletableRows = rows.filter((r) => r.deletable);
-          const allSelected = deletableRows.length > 0 && deletableRows.every((r) => r.selected);
-          return (
-            <View style={styles.section}>
-              <View style={styles.sectionHeader}>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.sectionTitle}>
-                    {CATEGORY_LABEL[category]} · {rows.length}
-                  </Text>
-                  <Text style={styles.sectionSub}>
-                    {formatBytes(rows.reduce((sum, r) => sum + (r.byte_size || 0), 0))} ·{" "}
-                    {CATEGORY_NOTE[category]}
-                  </Text>
-                </View>
-                <Pressable
-                  onPress={() => setCategoryAll(category, !allSelected)}
-                  disabled={deletableRows.length === 0}
-                  style={[styles.selectAllBtn, deletableRows.length === 0 && styles.btnDisabled]}
-                >
-                  <Text style={styles.selectAllText}>{allSelected ? "Deselect all" : "Select all"}</Text>
-                </Pressable>
-              </View>
-              {rows.map((row) => (
-                <FindingRow key={row.id} row={row} onToggle={() => toggle(row)} />
-              ))}
-            </View>
-          );
-        }}
-        contentContainerStyle={styles.listContent}
-        ListFooterComponent={keptNote ? <Text style={styles.note}>{keptNote}</Text> : null}
-      />
-
-      {findings.length > 0 ? (
-        <View style={[styles.bottomBar, { paddingBottom: insets.bottom + 12 }]}>
-          <Pressable
-            onPress={confirmDelete}
-            disabled={deleting || selected.length === 0}
-            style={[styles.deleteBtn, (deleting || selected.length === 0) && styles.btnDisabled]}
-          >
-            <Text style={styles.deleteBtnText}>
-              {deleting
+      {!loading && !loadError && findings.length > 0 ? (
+        <View
+          style={[
+            styles.bottomBar,
+            { paddingBottom: insets.bottom + theme.spacing.compact },
+          ]}
+        >
+          <Button
+            label={
+              deleting
                 ? deleteDone ?? "Deleting…"
-                : `Delete ${selected.length} item${selected.length === 1 ? "" : "s"} (${formatBytes(selectedBytes)})`}
-            </Text>
-          </Pressable>
+                : `Delete ${selected.length} item${
+                    selected.length === 1 ? "" : "s"
+                  } (${formatBytes(selectedBytes)})`
+            }
+            variant="danger"
+            size="lg"
+            icon="trash-outline"
+            fullWidth
+            disabled={deleting || selected.length === 0}
+            loading={deleting && deleteDone === null}
+            onPress={confirmDelete}
+            accessibilityHint="Shows a confirmation before anything is deleted."
+          />
           {selected.length > 0 && !deleting ? (
-            <Text style={styles.bottomHint}>
+            <AppText
+              variant="caption2Regular"
+              color={theme.colors.onSurfaceVariant}
+              align="center"
+            >
               Unselected items are kept — the sweeper won't suggest them again.
-            </Text>
+            </AppText>
           ) : null}
         </View>
       ) : null}
-    </View>
+    </Screen>
   );
 }
 
 function FindingRow({ row, onToggle }: { row: DisplayFinding; onToggle: () => void }) {
   return (
-    <Pressable
-      onPress={onToggle}
+    <ListRow
+      title={row.file_name ?? "Untitled"}
+      subtitle={`${formatBytes(row.byte_size)}${
+        row.detail ? ` · ${row.detail}` : ""
+      }`}
+      leading={
+        <Image
+          source={{ uri: row.thumb_uri }}
+          style={styles.thumb}
+          contentFit="cover"
+          recyclingKey={`junk-${row.id}`}
+          accessible={false}
+        />
+      }
+      trailing={row.deletable ? undefined : <StatusBadge status={row.state} />}
+      accessory="check"
+      selected={row.selected && row.deletable}
       disabled={!row.deletable}
-      style={[styles.row, !row.deletable && styles.rowDisabled]}
+      onPress={onToggle}
+      accessibilityLabel={`${row.file_name ?? "Untitled"}, ${formatBytes(
+        row.byte_size
+      )}${row.deletable ? "" : ", cannot be deleted yet"}`}
+      accessibilityHint={
+        row.deletable ? "Toggles whether this item is deleted." : undefined
+      }
+    />
+  );
+}
+
+function FindingsSkeleton() {
+  return (
+    <View
+      style={styles.skeletonRoot}
+      accessible
+      accessibilityRole="progressbar"
+      accessibilityLabel="Loading junk findings"
     >
-      <Image
-        source={{ uri: row.thumb_uri }}
-        style={styles.thumb}
-        contentFit="cover"
-        recyclingKey={`junk-${row.id}`}
-      />
-      <View style={{ flex: 1 }}>
-        <Text style={styles.rowName} numberOfLines={1}>
-          {row.file_name ?? "Untitled"}
-        </Text>
-        <Text style={styles.rowMeta}>
-          {formatBytes(row.byte_size)} · {row.detail ?? ""}
-        </Text>
-        {!row.deletable ? (
-          <Text style={styles.rowWarning}>{STATE_LABEL[row.state] ?? "Not yet backed up"}</Text>
-        ) : null}
-      </View>
-      <View style={[styles.checkbox, row.selected && row.deletable && styles.checkboxOn]}>
-        {row.selected && row.deletable ? <Text style={styles.checkmark}>✓</Text> : null}
-      </View>
-    </Pressable>
+      {Array.from({ length: 5 }).map((_, i) => (
+        <View key={i} style={styles.skeletonRow}>
+          <Skeleton width={52} height={52} radius={theme.radius.control} />
+          <View style={styles.skeletonText}>
+            <Skeleton width="75%" height={14} />
+            <Skeleton width="45%" height={12} />
+          </View>
+        </View>
+      ))}
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: theme.colors.background },
-  header: {
+  fill: { flex: 1 },
+  statusStrip: {
+    paddingHorizontal: theme.spacing.md,
+    paddingBottom: theme.spacing.xs,
+  },
+  scopeSection: { marginBottom: theme.spacing.compact },
+  chipRow: {
     flexDirection: "row",
-    alignItems: "center",
-    gap: theme.spacing.md,
+    flexWrap: "wrap",
+    gap: theme.spacing.sm,
+  },
+  categorySection: { marginBottom: theme.spacing.compact },
+  thumb: {
+    width: 52,
+    height: 52,
+    borderRadius: theme.radius.control,
+    backgroundColor: theme.colors.surfaceHighest,
+  },
+  listContent: {
     paddingHorizontal: theme.spacing.md,
-    paddingBottom: 4,
+    paddingBottom: 200,
   },
-  back: { color: theme.colors.onSurface, fontSize: 24 },
-  title: { color: theme.colors.onSurface, fontSize: 24, fontWeight: "700", flex: 1 },
-  sweepBtn: {
-    borderRadius: theme.radius.full,
-    borderWidth: 1,
-    borderColor: theme.colors.outline,
-    paddingVertical: 7,
-    paddingHorizontal: 14,
+  footerNote: {
+    paddingTop: theme.spacing.sm,
+    paddingHorizontal: theme.spacing.xs,
   },
-  sweepBtnText: { color: theme.colors.primary, fontWeight: "600", fontSize: 13 },
-  btnDisabled: { opacity: 0.45 },
-  note: {
-    color: theme.colors.onSurfaceVariant,
-    fontSize: 12.5,
-    paddingHorizontal: theme.spacing.md,
-    paddingVertical: 4,
-  },
-  empty: {
-    color: theme.colors.onSurfaceVariant,
-    textAlign: "center",
-    marginTop: 60,
-    paddingHorizontal: theme.spacing.lg,
-    lineHeight: 19,
-  },
-  scopeTitle: {
-    color: theme.colors.primary,
-    fontSize: 13,
-    fontWeight: "700",
-    letterSpacing: 0.8,
-    textTransform: "uppercase",
-    marginLeft: theme.spacing.md + theme.spacing.sm,
-    marginTop: theme.spacing.sm,
-  },
-  scopeRow: { flexDirection: "row", gap: theme.spacing.sm, paddingHorizontal: theme.spacing.md, marginTop: theme.spacing.sm },
-  scopeChip: {
-    flex: 1,
-    borderRadius: theme.radius.full,
-    borderWidth: 1,
-    borderColor: theme.colors.outline,
-    paddingVertical: 9,
-    alignItems: "center",
-  },
-  scopeChipActive: { backgroundColor: theme.colors.primaryContainer, borderColor: theme.colors.primary },
-  scopeChipText: { color: theme.colors.onSurfaceVariant, fontSize: 13, fontWeight: "600" },
-  scopeChipTextActive: { color: theme.colors.onPrimaryContainer },
-  scopeNote: {
-    color: theme.colors.onSurfaceVariant,
-    fontSize: 12,
-    paddingHorizontal: theme.spacing.md,
-    marginTop: theme.spacing.sm,
-  },
-  listContent: { paddingBottom: 160 },
-  section: { marginTop: theme.spacing.md, paddingHorizontal: theme.spacing.md },
-  sectionHeader: { flexDirection: "row", alignItems: "center", marginBottom: theme.spacing.sm, gap: theme.spacing.sm },
-  sectionTitle: { color: theme.colors.onSurface, fontSize: 15, fontWeight: "700" },
-  sectionSub: { color: theme.colors.onSurfaceVariant, fontSize: 12, marginTop: 1 },
-  selectAllBtn: { borderRadius: theme.radius.full, borderWidth: 1, borderColor: theme.colors.outline, paddingVertical: 5, paddingHorizontal: 10 },
-  selectAllText: { color: theme.colors.primary, fontSize: 12, fontWeight: "600" },
-  row: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: theme.spacing.md,
-    paddingVertical: 8,
-  },
-  rowDisabled: { opacity: 0.5 },
-  thumb: { width: 52, height: 52, borderRadius: 8, backgroundColor: theme.colors.surfaceHighest },
-  rowName: { color: theme.colors.onSurface, fontSize: 13.5 },
-  rowMeta: { color: theme.colors.onSurfaceVariant, fontSize: 11.5, marginTop: 2 },
-  rowWarning: { color: theme.colors.error, fontSize: 11.5, marginTop: 2 },
-  checkbox: {
-    width: 24,
-    height: 24,
-    borderRadius: 7,
-    borderWidth: 2,
-    borderColor: theme.colors.outline,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  checkboxOn: { backgroundColor: theme.colors.primary, borderColor: theme.colors.primary },
-  checkmark: { color: theme.colors.onPrimary, fontSize: 15, fontWeight: "800" },
   bottomBar: {
     position: "absolute",
     left: 0,
@@ -484,21 +508,19 @@ const styles = StyleSheet.create({
     bottom: 0,
     paddingHorizontal: theme.spacing.md,
     paddingTop: theme.spacing.sm,
+    gap: theme.spacing.sm,
     backgroundColor: theme.colors.surfaceContainer,
-    borderTopWidth: 1,
-    borderTopColor: theme.colors.outlineVariant,
+    ...theme.elevation.floating,
   },
-  deleteBtn: {
-    borderRadius: theme.radius.full,
-    backgroundColor: theme.colors.primary,
-    paddingVertical: 13,
+  skeletonRoot: {
+    paddingHorizontal: theme.spacing.md,
+    paddingTop: theme.spacing.sm,
+    gap: theme.spacing.md,
+  },
+  skeletonRow: {
+    flexDirection: "row",
     alignItems: "center",
+    gap: theme.spacing.md,
   },
-  deleteBtnText: { color: theme.colors.onPrimary, fontWeight: "700", fontSize: 14.5 },
-  bottomHint: {
-    color: theme.colors.onSurfaceVariant,
-    fontSize: 11.5,
-    textAlign: "center",
-    marginTop: 6,
-  },
+  skeletonText: { flex: 1, gap: theme.spacing.sm },
 });

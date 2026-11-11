@@ -1,159 +1,143 @@
 import React, { useCallback, useEffect, useState } from "react";
-import { Pressable, StyleSheet, Text, View } from "react-native";
-import { StatusBar } from "expo-status-bar";
-import { Image } from "expo-image";
-import { Ionicons } from "@expo/vector-icons";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { StyleSheet, View } from "react-native";
 import { FlashList } from "@shopify/flash-list";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { listFavorites, MediaRow } from "../db/queries";
 import { theme } from "../theme";
+import { t, tCount, tf } from "../lib/i18n";
+import {
+  AppBar,
+  Button,
+  EmptyState,
+  ErrorState,
+  MediaTile,
+  Screen,
+  Skeleton,
+  type MediaStatus,
+} from "../ui";
 
 export function FavoritesScreen({
   navigation,
 }: {
   navigation: NativeStackNavigationProp<{ Viewer: { ids: number[]; index: number }; Slideshow: { ids: number[]; index: number } }>;
 }) {
-  const insets = useSafeAreaInsets();
   const [rows, setRows] = useState<MediaRow[]>([]);
   const [loaded, setLoaded] = useState(false);
+  const [loadError, setLoadError] = useState(false);
 
-  useEffect(() => {
+  const load = useCallback(() => {
+    setLoadError(false);
+    setLoaded(false);
     void listFavorites()
       .then(setRows)
-      .catch(() => setRows([]))
+      .catch(() => {
+        setRows([]);
+        setLoadError(true);
+      })
       .finally(() => setLoaded(true));
   }, []);
 
+  useEffect(() => {
+    load();
+  }, [load]);
+
   const renderItem = useCallback(
-    ({ item }: { item: MediaRow }) => (
-      <Pressable
-        style={styles.cell}
-        onPress={() =>
-          navigation.navigate("Viewer", {
-            ids: rows.map((r) => r.id),
-            index: rows.findIndex((r) => r.id === item.id),
-          })
-        }
-      >
-        <Image
-          source={{ uri: item.thumb_uri }}
-          style={StyleSheet.absoluteFill}
-          contentFit="cover"
-          recyclingKey={`f-${item.id}`}
-          transition={120}
-        />
-        {item.mime_type.startsWith("video/") ? (
-          <View style={styles.videoFlag}>
-            <Text style={styles.videoFlagText}>▶</Text>
-          </View>
-        ) : null}
-        <Ionicons name="heart" size={13} style={styles.favIcon} />
-        {item.state !== "synced" ? (
-          <View style={[styles.stateDot, styles[`dot_${item.state}` as const]]} />
-        ) : null}
-      </Pressable>
-    ),
+    ({ item }: { item: MediaRow }) => {
+      const date = new Date(item.taken_at).toLocaleDateString();
+      const status = item.state === "synced" ? null : (item.state as MediaStatus);
+      return (
+        <View style={styles.cell}>
+          <MediaTile
+            uri={item.thumb_uri}
+            aspectRatio={1}
+            video={item.mime_type.startsWith("video/")}
+            favorite
+            status={status}
+            onPress={() =>
+              navigation.navigate("Viewer", {
+                ids: rows.map((r) => r.id),
+                index: rows.findIndex((r) => r.id === item.id),
+              })
+            }
+            accessibilityLabel={tf("gallery.tileLabel", { date })}
+            accessibilityHint={t("viewer.tileHint")}
+          />
+        </View>
+      );
+    },
     [navigation, rows]
   );
 
   return (
-    <View style={[styles.root, { paddingTop: insets.top }]}>
-      <StatusBar style="light" />
-      <View style={styles.header}>
-        <Pressable onPress={() => navigation.goBack()} hitSlop={12}>
-          <Text style={styles.back}>←</Text>
-        </Pressable>
-        <Text style={styles.title}>Favorites</Text>
-        <Text style={styles.count}>{rows.length > 0 ? `${rows.length}` : ""}</Text>
-        {rows.length > 1 ? (
-          <Pressable
-            style={styles.playBtn}
-            hitSlop={8}
-            onPress={() =>
-              navigation.navigate("Slideshow", {
-                ids: rows.map((r) => r.id),
-                index: 0,
-              })
-            }
-          >
-            <Text style={styles.playBtnText}>▶ Play</Text>
-          </Pressable>
-        ) : null}
-      </View>
-      <FlashList
-        data={rows}
-        numColumns={3}
-        masonry
-        keyExtractor={(r) => String(r.id)}
-        renderItem={renderItem}
-        contentContainerStyle={styles.listContent}
-        ListEmptyComponent={
-          loaded ? (
-            <View style={styles.emptyWrap}>
-              <Text style={styles.empty}>No favorites yet</Text>
-              <Text style={styles.emptyHint}>Tap the ♥ on any photo to keep it here.</Text>
-            </View>
+    <Screen>
+      <AppBar
+        title={t("collections.favorites")}
+        subtitle={loaded ? tCount("albums.count", rows.length) : t("state.loading")}
+        large
+        onBack={() => navigation.goBack()}
+        backLabel={t("common.back")}
+        actions={
+          rows.length > 1 ? (
+            <Button
+              label={t("album.play")}
+              icon="play"
+              size="sm"
+              onPress={() => navigation.navigate("Slideshow", { ids: rows.map((r) => r.id), index: 0 })}
+            />
           ) : null
         }
       />
-    </View>
+
+      {loadError ? (
+        <ErrorState
+          title={t("state.error")}
+          body="Photogram couldn't read your favorites on this phone."
+          retryLabel={t("common.retry")}
+          onRetry={load}
+        />
+      ) : !loaded ? (
+        <View style={styles.skeletonGrid}>
+          {Array.from({ length: 9 }).map((_, i) => (
+            <Skeleton
+              key={i}
+              width="31%"
+              height={110}
+              radius={theme.radius.thumb}
+              style={styles.skeletonCell}
+              label={i === 0 ? t("common.loading") : undefined}
+            />
+          ))}
+        </View>
+      ) : (
+        <FlashList
+          data={rows}
+          numColumns={3}
+          keyExtractor={(r) => String(r.id)}
+          renderItem={renderItem}
+          contentContainerStyle={styles.listContent}
+          showsVerticalScrollIndicator={false}
+          ListEmptyComponent={
+            <EmptyState
+              icon="heart-outline"
+              title="No favorites yet"
+              body="Tap the ♥ on any photo to keep it here."
+              actionLabel={t("common.back")}
+              onAction={() => navigation.goBack()}
+            />
+          }
+        />
+      )}
+    </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: theme.colors.background },
-  header: {
+  listContent: { paddingBottom: theme.spacing.xl },
+  cell: { flex: 1, margin: 1 },
+  skeletonGrid: {
     flexDirection: "row",
-    alignItems: "center",
-    gap: theme.spacing.md,
-    paddingHorizontal: theme.spacing.md,
-    paddingBottom: 4,
+    flexWrap: "wrap",
+    padding: theme.spacing.xs,
   },
-  back: { color: theme.colors.onSurface, fontSize: 24 },
-  title: { color: theme.colors.onSurface, fontSize: 24, fontWeight: "700", flex: 1 },
-  count: { color: theme.colors.onSurfaceVariant, fontSize: 14 },
-  playBtn: {
-    backgroundColor: theme.colors.primaryContainer,
-    borderRadius: theme.radius.full,
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-  },
-  playBtnText: { color: theme.colors.onPrimaryContainer, fontSize: 12, fontWeight: "700" },
-  listContent: { paddingBottom: 40, paddingTop: theme.spacing.sm },
-  cell: {
-    flex: 1,
-    margin: 1,
-    aspectRatio: 1,
-    borderRadius: 4,
-    overflow: "hidden",
-    backgroundColor: theme.colors.surfaceHighest,
-  },
-  videoFlag: {
-    position: "absolute",
-    bottom: 5,
-    left: 5,
-    width: 18,
-    height: 18,
-    borderRadius: 9,
-    backgroundColor: "#00000088",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  videoFlagText: { color: "#FFFFFF", fontSize: 9 },
-  favIcon: { position: "absolute", top: 5, left: 5, color: "#EA4335" },
-  stateDot: { position: "absolute", bottom: 6, right: 6, width: 8, height: 8, borderRadius: 4 },
-  dot_local: { backgroundColor: "#9AA0A6" },
-  dot_queued: { backgroundColor: "#FBBC05" },
-  dot_uploading: { backgroundColor: "#FBBC05" },
-  dot_failed: { backgroundColor: "#EA4335" },
-  emptyWrap: { alignItems: "center", marginTop: 60, paddingHorizontal: theme.spacing.xl },
-  empty: { color: theme.colors.onSurfaceVariant, textAlign: "center", fontSize: 16 },
-  emptyHint: {
-    color: theme.colors.onSurfaceVariant,
-    textAlign: "center",
-    fontSize: 13,
-    marginTop: theme.spacing.sm,
-    opacity: 0.8,
-  },
+  skeletonCell: { margin: 2 },
 });

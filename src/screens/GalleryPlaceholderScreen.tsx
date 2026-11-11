@@ -1,35 +1,35 @@
 import React from "react";
-import { StyleSheet, Text, View } from "react-native";
-import { StatusBar } from "expo-status-bar";
+import { StyleSheet, View } from "react-native";
 import { theme } from "../theme";
+import { t } from "../lib/i18n";
+import { AppBar, AppText, Screen, Section } from "../ui";
 
 export function GalleryPlaceholderScreen() {
   return (
-    <View style={styles.root}>
-      <StatusBar style="light" />
-      <Text style={styles.title}>Gallery</Text>
-      <View style={styles.card}>
-        <Text style={styles.body}>
-          The masonry timeline reads exclusively from your local SQLite cache.
-          It arrives in Step 5 together with the photo viewer.
-        </Text>
-        <Text style={styles.hint}>Login engine: live · Database schema: ready</Text>
-      </View>
-    </View>
+    <Screen>
+      <AppBar title={t("tabs.gallery")} large />
+      <Section style={styles.section}>
+        <View style={styles.card}>
+          <AppText variant="body" color={theme.colors.onSurfaceVariant}>
+            The masonry timeline reads exclusively from your local SQLite cache. It arrives in Step 5
+            together with the photo viewer.
+          </AppText>
+          <AppText variant="caption" color={theme.colors.onSurfaceVariant}>
+            Login engine: live · Database schema: ready
+          </AppText>
+        </View>
+      </Section>
+    </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: theme.colors.background, padding: theme.spacing.md },
-  title: { color: theme.colors.onSurface, fontSize: 28, fontWeight: "700", marginBottom: theme.spacing.md },
+  section: {
+    paddingHorizontal: theme.spacing.md,
+    marginTop: theme.spacing.md,
+  },
   card: {
-    backgroundColor: theme.colors.surfaceContainer,
-    borderRadius: theme.radius.xl,
     padding: theme.spacing.lg,
-    borderWidth: 1,
-    borderColor: theme.colors.outlineVariant,
     gap: theme.spacing.sm,
   },
-  body: { color: theme.colors.onSurfaceVariant, fontSize: 14, lineHeight: 21 },
-  hint: { color: theme.colors.primary, fontSize: 12.5 },
 });

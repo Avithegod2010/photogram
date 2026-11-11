@@ -7,59 +7,71 @@ import {
   Pressable,
   ScrollView,
   StyleSheet,
-  Text,
-  TextInput,
   View,
 } from "react-native";
-import { StatusBar } from "expo-status-bar";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import QRCode from "react-native-qrcode-svg";
 import { useAuthStore } from "../auth/authStore";
 import { theme } from "../theme";
+import { t } from "../lib/i18n";
+import { AppText, Button, ErrorState, Input } from "../ui";
 
+/**
+ * Visual-only restyle. The auth state machine, QR payloads, TDLib calls and
+ * transitions below are untouched — this screen only changes layout, type,
+ * colour and copy presentation.
+ */
 export function LoginScreen() {
-  const {
-    phase,
-    busy,
-    error,
-    qrLinks,
-    boot,
-    beginQrLogin,
-    usePhoneInstead,
-    submitPhone,
-    submitCode,
-    submitPassword,
-    openTelegramHandoff,
-    clearError,
-  } = useAuthStore();
+  const { phase, busy, error, qrLinks, boot, clearError } = useAuthStore();
+  const insets = useSafeAreaInsets();
 
   useEffect(() => {
     void boot();
   }, [boot]);
 
   return (
-    <View style={styles.root}>
-      <StatusBar style="light" />
+    <View style={[styles.root, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
       <KeyboardAvoidingView
         style={styles.flex}
         behavior={Platform.OS === "android" ? undefined : "padding"}
       >
-        <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
-          <View style={styles.header}>
-            <View style={styles.logoGlyph}>
-              <View style={styles.logoInner} />
+        <ScrollView
+          contentContainerStyle={styles.scroll}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+        >
+          <View style={styles.shell}>
+            <View style={styles.header}>
+              <View style={styles.logoGlyph} accessible={false} importantForAccessibility="no-hide-descendants">
+                <View style={styles.logoRing} />
+                <View style={styles.logoInner} />
+              </View>
+              <AppText variant="display" align="center">
+                {t("login.title")}
+              </AppText>
+              <AppText variant="body" color={theme.colors.onSurfaceVariant} align="center" style={styles.tagline}>
+                {t("login.tagline")}
+              </AppText>
             </View>
-            <Text style={styles.title}>Photogram</Text>
-            <Text style={styles.subtitle}>Your photos, backed up to your own Telegram.</Text>
+
+            {error ? (
+              <Pressable
+                onPress={clearError}
+                accessibilityRole="button"
+                accessibilityLabel={`${error}. ${t("common.dismiss")}`}
+                style={({ pressed }) => [styles.errorCard, pressed && styles.pressed]}
+              >
+                <AppText variant="body" color={theme.colors.error}>
+                  {error}
+                </AppText>
+                <AppText variant="caption" color={theme.colors.onSurfaceVariant}>
+                  {t("common.dismiss")}
+                </AppText>
+              </Pressable>
+            ) : null}
+
+            <Body phase={phase} busy={busy} qrLinks={qrLinks} />
           </View>
-
-          {error ? (
-            <Pressable onPress={clearError} style={[styles.card, styles.errorCard]}>
-              <Text style={styles.errorText}>{error}</Text>
-              <Text style={styles.errorDismiss}>Tap to dismiss</Text>
-            </Pressable>
-          ) : null}
-
-          <Body phase={phase} busy={busy} qrLinks={qrLinks} />
         </ScrollView>
       </KeyboardAvoidingView>
     </View>
@@ -84,55 +96,98 @@ function Body(props: {
     case "booting":
       return (
         <Card>
-          <ActivityIndicator color={theme.colors.primary} size="large" />
-          <Text style={styles.center}>Connecting to Telegram…</Text>
+          <View style={styles.loadingRow}>
+            <ActivityIndicator color={theme.colors.accent} />
+            <AppText variant="body" color={theme.colors.onSurfaceVariant}>
+              Connecting to Telegram…
+            </AppText>
+          </View>
         </Card>
       );
     case "fatal":
       return (
         <Card>
-          <Text style={styles.center}>Something went wrong starting Photogram.</Text>
-          <PrimaryButton label="Retry" onPress={() => void boot()} />
+          <ErrorState
+            compact
+            title="Photogram couldn't start"
+            body="The Telegram connection did not open. Your photos and login are untouched."
+            retryLabel={t("login.retry")}
+            onRetry={() => void boot()}
+          />
         </Card>
       );
     case "choose":
       return (
         <Card>
-          <Text style={styles.headline}>Log in with Telegram</Text>
-          <Text style={styles.body}>
-            Use the Telegram account you already have. No passwords are stored in Photogram.
-          </Text>
-          <PrimaryButton label="Continue with QR" disabled={busy} onPress={() => void beginQrLogin()} />
-          <SecondaryButton label="Use phone number instead" disabled={busy} onPress={usePhoneInstead} />
+          <AppText variant="title2" accessibilityRole="header">
+            Log in with Telegram
+          </AppText>
+          <AppText variant="body" color={theme.colors.onSurfaceVariant}>
+            Use the Telegram account you already have. No password is stored in Photogram.
+          </AppText>
+          <Button
+            label={t("login.continueQr")}
+            icon="qr-code-outline"
+            onPress={() => void beginQrLogin()}
+            disabled={busy}
+            loading={busy}
+            fullWidth
+          />
+          <Button
+            label={t("login.usePhone")}
+            variant="secondary"
+            onPress={usePhoneInstead}
+            disabled={busy}
+            fullWidth
+          />
         </Card>
       );
     case "qr":
       return (
         <Card>
-          <Text style={styles.headline}>Confirm on Telegram</Text>
+          <AppText variant="title2" accessibilityRole="header">
+            Confirm on Telegram
+          </AppText>
           {qrLinks?.handoffUrl ? (
             <>
-              <Text style={styles.body}>
+              <AppText variant="body" color={theme.colors.onSurfaceVariant}>
                 Tap below and confirm in the Telegram app on this phone.
-              </Text>
-              <PrimaryButton label="Open Telegram" disabled={busy} onPress={() => void openTelegramHandoff()} />
+              </AppText>
+              <Button
+                label={t("login.openTelegram")}
+                icon="paper-plane-outline"
+                onPress={() => void openTelegramHandoff()}
+                disabled={busy}
+                fullWidth
+              />
             </>
           ) : (
-            <Text style={styles.body}>
+            <AppText variant="body" color={theme.colors.onSurfaceVariant}>
               Open Telegram on another device: Settings → Devices → Link Desktop Device, then scan:
-            </Text>
+            </AppText>
           )}
-          <View style={styles.qrBox}>
+          <View
+            style={styles.qrBox}
+            accessible
+            accessibilityRole="image"
+            accessibilityLabel="Telegram login QR code"
+          >
             {qrLinks ? (
-              <QRCode value={qrLinks.qrPayload} size={208} backgroundColor="#FFFFFF" color="#101014" />
+              <QRCode value={qrLinks.qrPayload} size={208} backgroundColor={theme.colors.white} color={theme.colors.black} />
             ) : (
-              <ActivityIndicator color={theme.colors.primary} />
+              <ActivityIndicator color={theme.colors.accent} />
             )}
           </View>
-          <Text style={styles.hint}>
+          <AppText variant="caption" color={theme.colors.onSurfaceFaint} align="center">
             The code refreshes automatically if it expires.
-          </Text>
-          <SecondaryButton label="Use phone number instead" disabled={busy} onPress={usePhoneInstead} />
+          </AppText>
+          <Button
+            label={t("login.usePhone")}
+            variant="quiet"
+            onPress={usePhoneInstead}
+            disabled={busy}
+            fullWidth
+          />
         </Card>
       );
     case "phone":
@@ -174,18 +229,39 @@ function PhoneForm({ busy, onSubmit }: { busy: boolean; onSubmit: (v: string) =>
 
   return (
     <Card>
-      <Text style={styles.headline}>Your phone number</Text>
-      <Text style={styles.body}>Include the country code. The login code arrives inside your Telegram app.</Text>
-      <OutlinedInput
+      <AppText variant="title2" accessibilityRole="header">
+        Your phone number
+      </AppText>
+      <AppText variant="body" color={theme.colors.onSurfaceVariant}>
+        Include the country code. The login code arrives inside your Telegram app.
+      </AppText>
+      <Input
         value={value}
         onChangeText={setValue}
+        label="Phone number"
         placeholder="+1 555 123 4567"
         keyboardType="phone-pad"
         autoComplete="tel"
+        textContentType="telephoneNumber"
       />
-      <PrimaryButton label="Next" disabled={busy || value.length < 6} onPress={() => onSubmit(value)} />
+      <Button
+        label="Next"
+        onPress={() => onSubmit(value)}
+        disabled={busy || value.length < 6}
+        loading={busy}
+        fullWidth
+      />
       {canOpenTg ? (
-        <SecondaryButton label="Install Telegram first" onPress={() => void Linking.openURL("https://play.google.com/store/apps/details?id=org.telegram.messenger")} />
+        <Button
+          label="Install Telegram first"
+          variant="quiet"
+          onPress={() =>
+            void Linking.openURL(
+              "https://play.google.com/store/apps/details?id=org.telegram.messenger"
+            )
+          }
+          fullWidth
+        />
       ) : null}
     </Card>
   );
@@ -202,17 +278,28 @@ function CodeForm(props: {
   const [value, setValue] = useState("");
   return (
     <Card>
-      <Text style={styles.headline}>{props.title}</Text>
-      <Text style={styles.body}>{props.caption}</Text>
-      <OutlinedInput
+      <AppText variant="title2" accessibilityRole="header">
+        {props.title}
+      </AppText>
+      <AppText variant="body" color={theme.colors.onSurfaceVariant}>
+        {props.caption}
+      </AppText>
+      <Input
         value={value}
         onChangeText={setValue}
+        label={props.placeholder}
         placeholder={props.placeholder}
         secureTextEntry={props.secure}
         keyboardType={props.secure ? "default" : "number-pad"}
         autoFocus
       />
-      <PrimaryButton label="Verify" disabled={props.busy || value.length === 0} onPress={() => props.onSubmit(value)} />
+      <Button
+        label="Verify"
+        onPress={() => props.onSubmit(value)}
+        disabled={props.busy || value.length === 0}
+        loading={props.busy}
+        fullWidth
+      />
     </Card>
   );
 }
@@ -221,140 +308,55 @@ function Card({ children }: { children: React.ReactNode }) {
   return <View style={styles.card}>{children}</View>;
 }
 
-function PrimaryButton({ label, disabled, onPress }: { label: string; disabled?: boolean; onPress: () => void }) {
-  return (
-    <Pressable
-      onPress={onPress}
-      disabled={disabled}
-      style={({ pressed }) => [
-        styles.btnPrimary,
-        (disabled || pressed) && styles.btnDisabled,
-      ]}
-      android_ripple={{ color: theme.colors.onPrimary + "22" }}
-    >
-      <Text style={[styles.btnPrimaryText, disabled && { opacity: 0.5 }]}>{label}</Text>
-    </Pressable>
-  );
-}
-
-function SecondaryButton({ label, disabled, onPress }: { label: string; disabled?: boolean; onPress: () => void }) {
-  return (
-    <Pressable
-      onPress={onPress}
-      disabled={disabled}
-      style={({ pressed }) => [styles.btnSecondary, pressed && styles.btnPressed]}
-      android_ripple={{ color: theme.colors.onSurface + "18" }}
-    >
-      <Text style={styles.btnSecondaryText}>{label}</Text>
-    </Pressable>
-  );
-}
-
-function OutlinedInput(props: React.ComponentProps<typeof TextInput>) {
-  const [focused, setFocused] = useState(false);
-  return (
-    <TextInput
-      {...props}
-      onFocus={(e) => {
-        setFocused(true);
-        props.onFocus?.(e);
-      }}
-      onBlur={(e) => {
-        setFocused(false);
-        props.onBlur?.(e);
-      }}
-      placeholderTextColor={theme.colors.onSurfaceVariant + "88"}
-      style={[
-        styles.input,
-        focused && styles.inputFocused,
-      ]}
-    />
-  );
-}
-
 const styles = StyleSheet.create({
   flex: { flex: 1 },
   root: { flex: 1, backgroundColor: theme.colors.background },
   scroll: { flexGrow: 1, justifyContent: "center", padding: theme.spacing.lg },
-  header: { alignItems: "center", marginBottom: theme.spacing.xl },
+  shell: { width: "100%", maxWidth: 440, alignSelf: "center", gap: theme.spacing.lg },
+  header: { alignItems: "center", gap: theme.spacing.sm },
   logoGlyph: {
-    width: 76,
-    height: 76,
-    borderRadius: theme.radius.lg,
-    backgroundColor: theme.colors.primaryContainer,
+    width: 64,
+    height: 64,
+    borderRadius: theme.radius.card,
+    backgroundColor: theme.colors.surfaceContainer,
     alignItems: "center",
     justifyContent: "center",
-    marginBottom: theme.spacing.md,
+    marginBottom: theme.spacing.sm,
+  },
+  logoRing: {
+    position: "absolute",
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    borderWidth: 2,
+    borderColor: theme.colors.accent,
+    opacity: 0.55,
   },
   logoInner: {
-    width: 34,
-    height: 34,
-    borderRadius: theme.radius.full,
-    backgroundColor: theme.colors.primary,
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    backgroundColor: theme.colors.accent,
   },
-  title: {
-    color: theme.colors.onSurface,
-    fontSize: 28,
-    fontWeight: "700",
-    letterSpacing: 0.2,
-  },
-  subtitle: {
-    color: theme.colors.onSurfaceVariant,
-    fontSize: 14,
-    marginTop: theme.spacing.sm,
-    textAlign: "center",
-  },
+  tagline: { maxWidth: 320 },
   card: {
     backgroundColor: theme.colors.surfaceContainer,
-    borderRadius: theme.radius.xl,
+    borderRadius: theme.radius.card,
     padding: theme.spacing.lg,
-    gap: theme.spacing.md,
-    borderWidth: 1,
-    borderColor: theme.colors.outlineVariant,
+    gap: theme.spacing.compact,
   },
   errorCard: {
-    backgroundColor: theme.colors.errorContainer,
-    borderColor: "transparent",
-    marginBottom: theme.spacing.md,
+    backgroundColor: theme.colors.errorSoft,
+    borderRadius: theme.radius.card,
+    padding: theme.spacing.md,
+    gap: theme.spacing.xs,
   },
-  errorText: { color: theme.colors.error, fontSize: 14, lineHeight: 20 },
-  errorDismiss: { color: theme.colors.onSurfaceVariant, fontSize: 12, marginTop: 4 },
-  headline: { color: theme.colors.onSurface, fontSize: 22, fontWeight: "600" },
-  body: { color: theme.colors.onSurfaceVariant, fontSize: 14, lineHeight: 21 },
-  hint: { color: theme.colors.onSurfaceVariant, fontSize: 12 },
-  center: { color: theme.colors.onSurfaceVariant, textAlign: "center", marginTop: theme.spacing.sm },
+  pressed: { opacity: 0.85 },
+  loadingRow: { flexDirection: "row", alignItems: "center", gap: theme.spacing.compact },
   qrBox: {
     alignSelf: "center",
-    backgroundColor: "#FFFFFF",
+    backgroundColor: theme.colors.white,
     padding: theme.spacing.md,
-    borderRadius: theme.radius.lg,
+    borderRadius: theme.radius.control,
   },
-  input: {
-    backgroundColor: theme.colors.surfaceHighest,
-    borderRadius: theme.radius.md,
-    borderWidth: 1,
-    borderColor: theme.colors.outline,
-    color: theme.colors.onSurface,
-    fontSize: 16,
-    paddingHorizontal: theme.spacing.md,
-    paddingVertical: 14,
-  },
-  inputFocused: { borderColor: theme.colors.primary, borderWidth: 2 },
-  btnPrimary: {
-    backgroundColor: theme.colors.primary,
-    borderRadius: theme.radius.full,
-    paddingVertical: 14,
-    alignItems: "center",
-  },
-  btnPrimaryText: { color: theme.colors.onPrimary, fontWeight: "700", fontSize: 15 },
-  btnDisabled: { opacity: 0.6 },
-  btnSecondary: {
-    borderRadius: theme.radius.full,
-    paddingVertical: 12,
-    alignItems: "center",
-    borderWidth: 1,
-    borderColor: theme.colors.outline,
-  },
-  btnSecondaryText: { color: theme.colors.primary, fontWeight: "600", fontSize: 14 },
-  btnPressed: { opacity: 0.85 },
 });

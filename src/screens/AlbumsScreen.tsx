@@ -1,23 +1,33 @@
-import React, { useEffect, useState } from "react";
-import { Pressable, StyleSheet, Text, View } from "react-native";
-import { StatusBar } from "expo-status-bar";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { Pressable, StyleSheet, View } from "react-native";
 import { Image } from "expo-image";
 import { Ionicons } from "@expo/vector-icons";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { FlashList } from "@shopify/flash-list";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
-import { getAutoAlbums, AutoAlbum } from "../lib/albums";
+import { getAutoAlbums, type AutoAlbum } from "../lib/albums";
 import { authenticateLocal, canUseBiometrics } from "../lib/biometrics";
 import { useSettingsStore } from "../store/settingsStore";
 import { theme } from "../theme";
+import { t, tCount, tf } from "../lib/i18n";
+import {
+  AppBar,
+  AppText,
+  Badge,
+  EmptyState,
+  ErrorState,
+  IconButton,
+  PressableScale,
+  Screen,
+  Skeleton,
+} from "../ui";
 
 export function AlbumsScreen({
   navigation,
 }: {
   navigation: NativeStackNavigationProp<{ Album: { key: string; label: string } }>;
 }) {
-  const insets = useSafeAreaInsets();
   const [albums, setAlbums] = useState<AutoAlbum[] | null>(null);
+  const [loadError, setLoadError] = useState(false);
   // v0.28 Album locks: per-album biometric gate. Locking needs the device to
   // have enrolled biometrics (same requirement as the Hidden lock); removing
   // a lock asks for biometrics so a peeker can't just switch it off.
@@ -31,14 +41,31 @@ export function AlbumsScreen({
     void canUseBiometrics().then(({ hardware, enrolled }) => setBioReady(hardware && enrolled));
   }, []);
 
+  const load = useCallback(async () => {
+    setLoadError(false);
+    try {
+      const list = await getAutoAlbums();
+      setAlbums(list);
+    } catch {
+      setAlbums([]);
+      setLoadError(true);
+    }
+  }, []);
+
   useEffect(() => {
     const unsub = navigation.addListener("focus", () => {
-      void getAutoAlbums()
-        .then(setAlbums)
-        .catch(() => setAlbums([]));
+      void load();
     });
     return unsub;
-  }, [navigation]);
+  }, [navigation, load]);
+
+  const sorted = useMemo(
+    () =>
+      [...(albums ?? [])].sort(
+        (a, b) => (pinnedKeys.includes(b.key) ? 1 : 0) - (pinnedKeys.includes(a.key) ? 1 : 0)
+      ),
+    [albums, pinnedKeys]
+  );
 
   const toggleLock = (album: AutoAlbum) => {
     if (!bioReady) return;
@@ -52,122 +79,166 @@ export function AlbumsScreen({
   };
 
   return (
-    <View style={[styles.root, { paddingTop: insets.top }]}>
-      <StatusBar style="light" />
-      <View style={styles.header}>
-        <Pressable onPress={() => navigation.goBack()} hitSlop={12}>
-          <Text style={styles.back}>←</Text>
-        </Pressable>
-        <Text style={styles.title}>Albums</Text>
-      </View>
-      <Text style={styles.note}>Auto-grouped from your library — updated on every scan.</Text>
-      {albums === null ? null : (
+    <Screen>
+      <AppBar
+        title={t("albums.title")}
+        subtitle={t("albums.note")}
+        large
+        onBack={() => navigation.goBack()}
+        backLabel={t("common.back")}
+      />
+      {loadError ? (
+        <ErrorState
+          title={t("state.error")}
+          body="Photogram couldn't read the auto-albums on this phone."
+          retryLabel={t("common.retry")}
+          onRetry={() => void load()}
+        />
+      ) : albums === null ? (
+        <View style={styles.skeletonGrid}>
+          {Array.from({ length: 4 }).map((_, i) => (
+            <View key={i} style={styles.skeletonCell}>
+              <Skeleton width="100%" height={150} radius={theme.radius.card} />
+              <Skeleton width="70%" height={16} />
+              <Skeleton width="40%" height={12} />
+            </View>
+          ))}
+        </View>
+      ) : (
         <FlashList
-          data={[...albums].sort(
-            (a, b) =>
-              (pinnedKeys.includes(b.key) ? 1 : 0) - (pinnedKeys.includes(a.key) ? 1 : 0)
-          )}
+          data={sorted}
           numColumns={2}
           keyExtractor={(a) => a.key}
-          renderItem={({ item }) => (
-            <Pressable
-              style={styles.card}
-              onPress={() => navigation.navigate("Album", { key: item.key, label: item.label })}
-            >
-              <View style={styles.coverWrap}>
-                {item.coverThumb ? (
-                  <Image
-                    source={{ uri: item.coverThumb }}
-                    style={StyleSheet.absoluteFill}
-                    contentFit="cover"
-                    transition={150}
-                  />
-                ) : (
-                  <View style={[StyleSheet.absoluteFill, styles.coverPlaceholder]} />
-                )}
-                <Pressable
-                  style={[styles.lockBadge, !bioReady && styles.lockBadgeOff]}
-                  onPress={() => toggleLock(item)}
-                  hitSlop={8}
-                >
-                  <Ionicons
-                    name={lockedKeys.includes(item.key) ? "lock-closed" : "lock-open-outline"}
-                    size={15}
-                    color={lockedKeys.includes(item.key) ? theme.colors.primary : "#FFFFFFCC"}
-                  />
-                </Pressable>
-              </View>
-              <View style={styles.labelRow}>
-                <Text style={styles.cardLabel} numberOfLines={1}>
-                  {item.label}
-                </Text>
-                <Pressable
-                  hitSlop={8}
-                  onPress={() => setAlbumPinned(item.key, !pinnedKeys.includes(item.key))}
-                >
-                  <Ionicons
-                    name={pinnedKeys.includes(item.key) ? "pin" : "pin-outline"}
-                    size={15}
-                    color={pinnedKeys.includes(item.key) ? theme.colors.primary : theme.colors.onSurfaceVariant}
-                  />
-                </Pressable>
-              </View>
-              <Text style={styles.cardCount}>
-                {pinnedKeys.includes(item.key) ? "Pinned · " : ""}
-                {item.count} item{item.count === 1 ? "" : "s"}
-              </Text>
-            </Pressable>
-          )}
           contentContainerStyle={styles.listContent}
-          ListEmptyComponent={<Text style={styles.empty}>Nothing scanned yet — scan your library first.</Text>}
+          showsVerticalScrollIndicator={false}
+          ListEmptyComponent={
+            <EmptyState
+              icon="albums-outline"
+              title={t("albums.empty.title")}
+              body={t("albums.empty.body")}
+              actionLabel={t("albums.empty.action")}
+              onAction={() => navigation.goBack()}
+            />
+          }
+          renderItem={({ item }) => {
+            const pinned = pinnedKeys.includes(item.key);
+            const locked = lockedKeys.includes(item.key);
+            return (
+              <View style={styles.cell}>
+                <PressableScale
+                  onPress={() => navigation.navigate("Album", { key: item.key, label: item.label })}
+                  accessibilityRole="button"
+                  accessibilityLabel={`${item.label}, ${tCount("albums.count", item.count)}${
+                    pinned ? `, ${t("albums.pinned")}` : ""
+                  }${locked ? ", locked" : ""}`}
+                  style={styles.card}
+                  contentStyle={styles.cardContent}
+                >
+                  <View style={styles.coverWrap}>
+                    {item.coverThumb ? (
+                      <Image
+                        source={{ uri: item.coverThumb }}
+                        style={StyleSheet.absoluteFill}
+                        contentFit="cover"
+                        recyclingKey={`album-${item.key}`}
+                        cachePolicy="memory-disk"
+                        transition={120}
+                        accessible={false}
+                      />
+                    ) : (
+                      <View style={[StyleSheet.absoluteFill, styles.coverPlaceholder]}>
+                        <Ionicons name="images-outline" size={32} color={theme.colors.onSurfaceFaint} importantForAccessibility="no" />
+                      </View>
+                    )}
+                    <IconButton
+                      icon={locked ? "lock-closed" : "lock-open-outline"}
+                      label={
+                        !bioReady
+                          ? t("albums.lockUnavailable")
+                          : locked
+                            ? t("albums.unlock")
+                            : t("albums.lock")
+                      }
+                      variant="onMedia"
+                      size={40}
+                      disabled={!bioReady}
+                      selected={locked}
+                      onPress={() => toggleLock(item)}
+                      style={styles.lockButton}
+                    />
+                  </View>
+                  <View style={styles.labelRow}>
+                    <AppText variant="body" weight="semibold" numberOfLines={1} style={styles.label}>
+                      {item.label}
+                    </AppText>
+                    <Pressable
+                      onPress={() => setAlbumPinned(item.key, !pinned)}
+                      hitSlop={6}
+                      accessibilityRole="button"
+                      accessibilityLabel={pinned ? t("albums.unpin") : t("albums.pin")}
+                      accessibilityState={{ selected: pinned }}
+                      style={styles.pinButton}
+                    >
+                      <Ionicons
+                        name={pinned ? "pin" : "pin-outline"}
+                        size={18}
+                        color={pinned ? theme.colors.accent : theme.colors.onSurfaceVariant}
+                      />
+                    </Pressable>
+                  </View>
+                  <View style={styles.metaRow}>
+                    <AppText variant="caption" color={theme.colors.onSurfaceVariant}>
+                      {tCount("albums.count", item.count)}
+                    </AppText>
+                    {pinned ? <Badge label={t("albums.pinned")} tone="accent" icon="pin" /> : null}
+                  </View>
+                </PressableScale>
+              </View>
+            );
+          }}
         />
       )}
-    </View>
+    </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: theme.colors.background },
-  header: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: theme.spacing.md,
-    paddingHorizontal: theme.spacing.md,
-    paddingBottom: 4,
-  },
-  back: { color: theme.colors.onSurface, fontSize: 24 },
-  title: { color: theme.colors.onSurface, fontSize: 24, fontWeight: "700" },
-  note: {
-    color: theme.colors.onSurfaceVariant,
-    fontSize: 12.5,
-    paddingHorizontal: theme.spacing.md,
-    marginBottom: theme.spacing.sm,
-  },
-  listContent: { padding: theme.spacing.sm, paddingBottom: 40 },
-  card: { flex: 1, margin: theme.spacing.sm, flexBasis: "45%" },
+  listContent: { paddingHorizontal: theme.spacing.sm, paddingBottom: theme.spacing.xl },
+  cell: { flex: 1, padding: theme.spacing.sm },
+  card: { flex: 1 },
+  cardContent: { flex: 1, flexDirection: "column", alignItems: "stretch" },
   coverWrap: {
     aspectRatio: 1,
-    borderRadius: theme.radius.lg,
+    borderRadius: theme.radius.card,
     overflow: "hidden",
     backgroundColor: theme.colors.surfaceHighest,
   },
-  lockBadge: {
-    position: "absolute",
-    top: 8,
-    right: 8,
-    padding: 6,
-    borderRadius: 999,
-    backgroundColor: "#00000099",
+  coverPlaceholder: { alignItems: "center", justifyContent: "center" },
+  lockButton: { position: "absolute", top: theme.spacing.xs, right: theme.spacing.xs },
+  labelRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: theme.spacing.xs,
+    marginTop: theme.spacing.sm,
   },
-  lockBadgeOff: { opacity: 0.35 },
-  coverPlaceholder: { backgroundColor: theme.colors.surfaceHighest },
-  cardLabel: {
-    color: theme.colors.onSurface,
-    fontSize: 15,
-    fontWeight: "600",
-    flex: 1,
+  label: { flex: 1 },
+  pinButton: {
+    width: 40,
+    height: 40,
+    alignItems: "center",
+    justifyContent: "center",
   },
-  labelRow: { flexDirection: "row", alignItems: "center", gap: 6, marginTop: theme.spacing.sm },
-  cardCount: { color: theme.colors.onSurfaceVariant, fontSize: 12.5, marginTop: 2 },
-  empty: { color: theme.colors.onSurfaceVariant, textAlign: "center", marginTop: 60 },
+  metaRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: theme.spacing.xs,
+    marginTop: -theme.spacing.xs,
+  },
+  skeletonGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    padding: theme.spacing.sm,
+  },
+  skeletonCell: { width: "50%", padding: theme.spacing.sm, gap: theme.spacing.sm },
 });

@@ -1,12 +1,22 @@
-import React, { useEffect, useState } from "react";
-import { Dimensions, FlatList, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
-import { StatusBar } from "expo-status-bar";
-import { Image } from "expo-image";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
+import React, { useCallback, useEffect, useState } from "react";
+import { ScrollView, StyleSheet, View } from "react-native";
+import { FlashList } from "@shopify/flash-list";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { MediaRow } from "../db/queries";
-import { Scene, SCENES, getSceneMedia, getSceneOverview } from "../lib/scenes";
+import { Scene, getSceneMedia, getSceneOverview } from "../lib/scenes";
 import { theme } from "../theme";
+import { t, tCount, tf } from "../lib/i18n";
+import {
+  AppBar,
+  AppText,
+  Chip,
+  EmptyState,
+  ErrorState,
+  MediaTile,
+  Screen,
+  Skeleton,
+  type MediaStatus,
+} from "../ui";
 
 // v0.36 scene auto-albums: curated scenes ("Beach days", "Food", …) rendered
 // like albums, auto-built from the on-device ML tags vibe search already
@@ -17,154 +27,195 @@ export function ScenesScreen({
 }: {
   navigation: NativeStackNavigationProp<{ Viewer: { ids: number[]; index: number } }>;
 }) {
-  const insets = useSafeAreaInsets();
   const [overview, setOverview] = useState<{ scene: Scene; count: number }[] | null>(null);
+  const [overviewError, setOverviewError] = useState(false);
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
   const [rows, setRows] = useState<MediaRow[] | null>(null);
+  const [rowsError, setRowsError] = useState(false);
+
+  const loadOverview = useCallback(() => {
+    setOverviewError(false);
+    setOverview(null);
+    void getSceneOverview()
+      .then((ov) => {
+        setOverview(ov);
+        const firstNonEmpty = ov.find((o) => o.count > 0) ?? ov[0];
+        if (firstNonEmpty) setSelectedKey(firstNonEmpty.scene.key);
+      })
+      .catch(() => {
+        setOverview([]);
+        setOverviewError(true);
+      });
+  }, []);
 
   useEffect(() => {
-    void (async () => {
-      const ov = await getSceneOverview().catch(() => []);
-      setOverview(ov);
-      const firstNonEmpty = ov.find((o) => o.count > 0) ?? ov[0];
-      if (firstNonEmpty) setSelectedKey(firstNonEmpty.scene.key);
-    })();
+    loadOverview();
+  }, [loadOverview]);
+
+  const loadRows = useCallback((key: string) => {
+    setRows(null);
+    setRowsError(false);
+    void getSceneMedia(key)
+      .then((media) => setRows(media ?? []))
+      .catch(() => {
+        setRows([]);
+        setRowsError(true);
+      });
   }, []);
 
   useEffect(() => {
     if (!selectedKey) return;
-    setRows(null);
-    void (async () => {
-      const media = await getSceneMedia(selectedKey).catch(() => null);
-      if (media) setRows(media);
-    })();
-  }, [selectedKey]);
+    loadRows(selectedKey);
+  }, [selectedKey, loadRows]);
 
   const selectedScene = overview?.find((o) => o.scene.key === selectedKey)?.scene ?? null;
+  const mediaRows = rows ?? [];
 
   return (
-    <View style={[styles.root, { paddingTop: insets.top }]}>
-      <StatusBar style="light" />
-      <View style={styles.header}>
-        <Pressable onPress={() => navigation.goBack()} hitSlop={12}>
-          <Text style={styles.back}>←</Text>
-        </Pressable>
-        <View style={{ flex: 1 }}>
-          <Text style={styles.title}>Scene albums</Text>
-          <Text style={styles.sub}>Auto-built from photo tags · updates live</Text>
-        </View>
-      </View>
-
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={styles.chips}
-      >
-        {(overview ?? SCENES.map((scene) => ({ scene, count: 0 }))).map(({ scene, count }) => {
-          const active = scene.key === selectedKey;
-          return (
-            <Pressable
-              key={scene.key}
-              style={[styles.chip, active && styles.chipActive]}
-              onPress={() => setSelectedKey(scene.key)}
+    <Screen>
+      <AppBar
+        title={t("collections.scenes")}
+        subtitle="Auto-built from photo tags · updates live"
+        large
+        onBack={() => navigation.goBack()}
+        backLabel={t("common.back")}
+        bottom={
+          overview && overview.length > 0 ? (
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.chips}
             >
-              <Text style={[styles.chipText, active && styles.chipTextActive]}>
-                {scene.title} · {count}
-              </Text>
-            </Pressable>
-          );
-        })}
-      </ScrollView>
+              {overview.map(({ scene, count }) => (
+                <Chip
+                  key={scene.key}
+                  label={`${scene.title} · ${count}`}
+                  selected={scene.key === selectedKey}
+                  onPress={() => setSelectedKey(scene.key)}
+                  accessibilityLabel={`${scene.title}, ${tCount("albums.count", count)}`}
+                />
+              ))}
+            </ScrollView>
+          ) : null
+        }
+      />
 
-      {selectedScene ? (
-        <View style={styles.sceneHeader}>
-          <Text style={styles.sceneTitle}>{selectedScene.title}</Text>
-          <Text style={styles.sceneSub}>{selectedScene.sub}</Text>
-        </View>
-      ) : null}
-
-      {overview === null ? (
-        <View style={styles.center}>
-          <Text style={styles.centerText}>Looking at your library.</Text>
-        </View>
-      ) : rows === null ? (
-        <View style={styles.center}>
-          <Text style={styles.centerText}>Loading photos.</Text>
-        </View>
-      ) : rows.length === 0 ? (
-        <View style={styles.center}>
-          <Text style={styles.centerText}>No photos in this album yet.</Text>
-          <Text style={styles.centerSub}>
-            Scene albums fill in as photo scans add tags (Search → AI tags on).
-          </Text>
-        </View>
-      ) : (
-        <FlatList
-          data={rows}
-          numColumns={3}
-          keyExtractor={(r) => String(r.id)}
-          renderItem={({ item, index }) => (
-            <Pressable
-              style={styles.cell}
-              onPress={() => navigation.navigate("Viewer", { ids: rows.map((r) => r.id), index })}
-            >
-              <Image
-                source={{ uri: item.thumb_uri }}
-                style={styles.cellImg}
-                contentFit="cover"
-                transition={120}
-                recyclingKey={`sc-${item.id}`}
-              />
-            </Pressable>
-          )}
-          contentContainerStyle={styles.listContent}
+      {overviewError ? (
+        <ErrorState
+          title={t("state.error")}
+          body="Photogram couldn't read the scene counts on this phone."
+          retryLabel={t("common.retry")}
+          onRetry={loadOverview}
         />
+      ) : overview === null ? (
+        <View style={styles.skeletonWrap}>
+          <Skeleton width="55%" height={18} label={t("common.loading")} />
+          <View style={styles.skeletonGrid}>
+            {Array.from({ length: 9 }).map((_, i) => (
+              <Skeleton
+                key={i}
+                width="31%"
+                height={110}
+                radius={theme.radius.thumb}
+                style={styles.skeletonCell}
+              />
+            ))}
+          </View>
+        </View>
+      ) : overview.length === 0 ? (
+        <EmptyState
+          icon="sparkles-outline"
+          title="No scene albums yet"
+          body="Scene albums are built from on-device photo tags. Turn on smart tags in Settings → Search, then scan your library."
+          actionLabel={t("common.back")}
+          onAction={() => navigation.goBack()}
+        />
+      ) : (
+        <>
+          {selectedScene ? (
+            <AppText
+              variant="callout"
+              color={theme.colors.onSurfaceVariant}
+              style={styles.sceneSub}
+            >
+              {selectedScene.sub}
+            </AppText>
+          ) : null}
+
+          {rowsError ? (
+            <ErrorState
+              title={t("state.error")}
+              body="This scene's photos could not be read. Try again."
+              retryLabel={t("common.retry")}
+              onRetry={() => {
+                if (selectedKey) loadRows(selectedKey);
+                else loadOverview();
+              }}
+            />
+          ) : rows === null ? (
+            <View style={styles.skeletonGrid}>
+              {Array.from({ length: 9 }).map((_, i) => (
+                <Skeleton
+                  key={i}
+                  width="31%"
+                  height={110}
+                  radius={theme.radius.thumb}
+                  style={styles.skeletonCell}
+                  label={i === 0 ? t("common.loading") : undefined}
+                />
+              ))}
+            </View>
+          ) : mediaRows.length === 0 ? (
+            <EmptyState
+              icon="sparkles-outline"
+              title="No photos in this album yet"
+              body="Scene albums fill in as photo scans add tags (Search → AI tags on)."
+              actionLabel={t("common.back")}
+              onAction={() => navigation.goBack()}
+            />
+          ) : (
+            <FlashList
+              data={mediaRows}
+              numColumns={3}
+              keyExtractor={(r) => String(r.id)}
+              renderItem={({ item, index }) => {
+                const date = new Date(item.taken_at).toLocaleDateString();
+                const status = item.state === "synced" ? null : (item.state as MediaStatus);
+                return (
+                  <View style={styles.cell}>
+                    <MediaTile
+                      uri={item.thumb_uri}
+                      aspectRatio={1}
+                      video={item.mime_type.startsWith("video/")}
+                      status={status}
+                      onPress={() =>
+                        navigation.navigate("Viewer", {
+                          ids: mediaRows.map((r) => r.id),
+                          index,
+                        })
+                      }
+                      accessibilityLabel={tf("gallery.tileLabel", { date })}
+                      accessibilityHint={t("viewer.tileHint")}
+                    />
+                  </View>
+                );
+              }}
+              contentContainerStyle={styles.listContent}
+              showsVerticalScrollIndicator={false}
+            />
+          )}
+        </>
       )}
-    </View>
+    </Screen>
   );
 }
 
-const CELL = Math.floor(Dimensions.get("window").width / 3) - 2;
-
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: theme.colors.background },
-  header: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: theme.spacing.md,
-    paddingHorizontal: theme.spacing.lg,
-    paddingTop: theme.spacing.md,
-    paddingBottom: theme.spacing.xs,
-  },
-  back: { color: theme.colors.onSurface, fontSize: 24 },
-  title: { color: theme.colors.onSurface, fontSize: 22, fontWeight: "700" },
-  sub: { color: theme.colors.onSurfaceVariant, fontSize: 12.5, marginTop: 2 },
-  chips: {
-    paddingHorizontal: theme.spacing.lg,
-    paddingVertical: theme.spacing.sm,
-    gap: theme.spacing.sm,
-  },
-  chip: {
-    borderRadius: theme.radius.full,
-    backgroundColor: theme.colors.surfaceContainer,
-    borderWidth: 1,
-    borderColor: theme.colors.outlineVariant,
-    paddingHorizontal: theme.spacing.md,
-    paddingVertical: 8,
-  },
-  chipActive: {
-    backgroundColor: theme.colors.primary,
-    borderColor: theme.colors.primary,
-  },
-  chipText: { color: theme.colors.onSurfaceVariant, fontSize: 13, fontWeight: "600" },
-  chipTextActive: { color: theme.colors.onPrimary },
-  sceneHeader: { paddingHorizontal: theme.spacing.lg, paddingBottom: theme.spacing.sm },
-  sceneTitle: { color: theme.colors.onSurface, fontSize: 15.5, fontWeight: "600" },
-  sceneSub: { color: theme.colors.onSurfaceVariant, fontSize: 12, marginTop: 2 },
-  center: { flex: 1, alignItems: "center", justifyContent: "center", padding: theme.spacing.xl },
-  centerText: { color: theme.colors.onSurfaceVariant, fontSize: 14.5, textAlign: "center" },
-  centerSub: { color: theme.colors.onSurfaceVariant, fontSize: 12.5, marginTop: 6, textAlign: "center" },
-  listContent: { paddingBottom: 32 },
-  cell: { width: CELL, height: CELL, margin: 1, backgroundColor: theme.colors.surfaceContainer },
-  cellImg: { width: "100%", height: "100%" },
+  chips: { gap: theme.spacing.sm, paddingRight: theme.spacing.md },
+  sceneSub: { paddingHorizontal: theme.spacing.md, paddingBottom: theme.spacing.sm },
+  listContent: { paddingBottom: theme.spacing.xl },
+  cell: { flex: 1, margin: 1 },
+  skeletonWrap: { paddingHorizontal: theme.spacing.md, gap: theme.spacing.sm },
+  skeletonGrid: { flexDirection: "row", flexWrap: "wrap", padding: theme.spacing.xs },
+  skeletonCell: { margin: 2 },
 });
