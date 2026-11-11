@@ -51,6 +51,11 @@ Each entry below documents what a commit adds and what comes next. Newest first.
   crashed the Reanimated UI thread with `TypeError: undefined is not a function` at
   `timing -> repeat -> set` and killed the process on first load. The skeleton is now a static
   tonal block, which still shows the layout before the data.
+- **Gallery header**: moved the "Back up N" pill into the status row under the title. In the
+  first device screenshot it squeezed "Photogram" into two lines. The title now has the full
+  width; the backup action sits beside the heartbeat.
+- **Memories cards**: the pressable content inherited a row direction, so the label/scrim laid
+  out sideways. Set the card content to a column; covers now fill the card correctly.
 
 ### Docs: README + release checklist
 - **`README.md`** — what Photogram is, the feature map, how to build (EAS), the repo layout, and

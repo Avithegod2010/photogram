@@ -925,20 +925,6 @@ export function GalleryScreen() {
             style={styles.transparentBar}
             actions={
               <>
-                {localOnlyCount > 0 ? (
-                  <Button
-                    label={
-                      localOnlyCount > 999
-                        ? t("gallery.backupAction")
-                        : tf("gallery.backupPill", { count: localOnlyCount })
-                    }
-                    accessibilityLabel={tf("gallery.backupPill", { count: localOnlyCount.toLocaleString() })}
-                    icon="cloud-upload-outline"
-                    size="sm"
-                    onPress={backUpAll}
-                    style={styles.backupPill}
-                  />
-                ) : null}
                 <IconButton icon="search" label={t("common.search")} onPress={openSearch} />
                 <IconButton
                   icon="ellipsis-horizontal"
@@ -948,40 +934,76 @@ export function GalleryScreen() {
               </>
             }
             bottom={
-              queueNote ? (
-                <View style={styles.heartbeatRow} accessibilityLiveRegion="polite">
-                  <Ionicons name="checkmark-circle" size={14} color={theme.colors.success} importantForAccessibility="no" />
-                  <AppText variant="caption" color={theme.colors.success} numberOfLines={2} style={styles.flex}>
-                    {queueNote}
-                  </AppText>
+              queueNote || (heartbeat && heartbeat.total > 0) || localOnlyCount > 0 ? (
+                <View style={styles.statusRow}>
+                  {queueNote ? (
+                    <View style={styles.statusText} accessibilityLiveRegion="polite">
+                      <Ionicons
+                        name="checkmark-circle"
+                        size={14}
+                        color={theme.colors.success}
+                        importantForAccessibility="no"
+                      />
+                      <AppText
+                        variant="caption"
+                        color={theme.colors.success}
+                        numberOfLines={2}
+                        style={styles.flex}
+                      >
+                        {queueNote}
+                      </AppText>
+                    </View>
+                  ) : heartbeat && heartbeat.total > 0 ? (
+                    <Pressable
+                      onPress={() => navigation.navigate("SafetyCheck")}
+                      accessibilityRole="button"
+                      accessibilityLabel={heartbeatText}
+                      style={styles.statusText}
+                    >
+                      <Ionicons
+                        name={heartbeat.synced >= heartbeat.total ? "shield-checkmark" : "cloud-upload-outline"}
+                        size={14}
+                        importantForAccessibility="no"
+                        color={
+                          heartbeat.synced >= heartbeat.total
+                            ? theme.colors.success
+                            : theme.colors.onSurfaceVariant
+                        }
+                      />
+                      <AppText
+                        variant="caption"
+                        color={theme.colors.onSurfaceVariant}
+                        numberOfLines={2}
+                        style={styles.flex}
+                      >
+                        {heartbeatText}
+                      </AppText>
+                      <Ionicons
+                        name="chevron-forward"
+                        size={14}
+                        color={theme.colors.onSurfaceFaint}
+                        importantForAccessibility="no"
+                      />
+                    </Pressable>
+                  ) : (
+                    <View style={styles.flex} />
+                  )}
+                  {localOnlyCount > 0 ? (
+                    <Button
+                      label={
+                        localOnlyCount > 999
+                          ? t("gallery.backupAction")
+                          : tf("gallery.backupPill", { count: localOnlyCount })
+                      }
+                      accessibilityLabel={tf("gallery.backupPill", {
+                        count: localOnlyCount.toLocaleString(),
+                      })}
+                      icon="cloud-upload-outline"
+                      size="sm"
+                      onPress={backUpAll}
+                    />
+                  ) : null}
                 </View>
-              ) : heartbeat && heartbeat.total > 0 ? (
-                <Pressable
-                  onPress={() => navigation.navigate("SafetyCheck")}
-                  accessibilityRole="button"
-                  accessibilityLabel={heartbeatText}
-                  style={styles.heartbeatRow}
-                >
-                  <Ionicons
-                    name={heartbeat.synced >= heartbeat.total ? "shield-checkmark" : "cloud-upload-outline"}
-                    size={14}
-                    importantForAccessibility="no"
-                    color={
-                      heartbeat.synced >= heartbeat.total
-                        ? theme.colors.success
-                        : theme.colors.onSurfaceVariant
-                    }
-                  />
-                  <AppText
-                    variant="caption"
-                    color={theme.colors.onSurfaceVariant}
-                    numberOfLines={2}
-                    style={styles.flex}
-                  >
-                    {heartbeatText}
-                  </AppText>
-                  <Ionicons name="chevron-forward" size={14} color={theme.colors.onSurfaceFaint} importantForAccessibility="no" />
-                </Pressable>
               ) : null
             }
           />
@@ -1474,6 +1496,20 @@ const styles = StyleSheet.create({
   },
   transparentBar: { backgroundColor: "transparent" },
   backupPill: { marginRight: theme.spacing.xs },
+  statusRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    flexWrap: "wrap",
+    gap: theme.spacing.sm,
+  },
+  statusText: {
+    flex: 1,
+    minWidth: 0,
+    minHeight: 32,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: theme.spacing.xs,
+  },
   searchRow: {
     flexDirection: "row",
     alignItems: "center",

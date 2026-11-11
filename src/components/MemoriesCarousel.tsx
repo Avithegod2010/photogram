@@ -88,7 +88,7 @@ const styles = StyleSheet.create({
     overflow: "hidden",
     backgroundColor: theme.colors.surfaceHighest,
   },
-  cardContent: { flex: 1, justifyContent: "flex-end", alignItems: "stretch" },
+  cardContent: { flex: 1, flexDirection: "column", justifyContent: "flex-end", alignItems: "stretch" },
   scrim: {
     position: "absolute",
     left: 0,
