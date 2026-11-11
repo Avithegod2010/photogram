@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { StyleSheet, View } from "react-native";
 import { ScrollView } from "react-native-gesture-handler";
 import { Image } from "expo-image";
+import { Ionicons } from "@expo/vector-icons";
 import { getMemories, type MemoryGroup } from "../lib/memories";
 import { theme } from "../theme";
 import { AppText, PressableScale } from "../ui";
@@ -40,33 +41,13 @@ export function MemoriesCarousel({
           });
           const title = g.yearsAgo === 1 ? t("memories.oneYearAgo") : tf("memories.yearsAgo", { count: g.yearsAgo });
           return (
-            <PressableScale
+            <MemoryCard
               key={g.key}
-              onPress={() => onOpen(g.mediaIds, title)}
-              accessibilityRole="button"
-              accessibilityLabel={`${title}, ${date}, ${tCount("gallery.itemsCount", g.count)}`}
-              style={styles.card}
-              contentStyle={styles.cardContent}
-            >
-              <Image
-                source={{ uri: g.coverThumb }}
-                style={StyleSheet.absoluteFill}
-                contentFit="cover"
-                recyclingKey={`mem-${g.key}`}
-                cachePolicy="memory-disk"
-                transition={120}
-                accessible={false}
-              />
-              <View style={styles.scrim} />
-              <View style={styles.textBlock}>
-                <AppText variant="bodyLarge" weight="bold" color={theme.colors.onViewer}>
-                  {title}
-                </AppText>
-                <AppText variant="caption" color={theme.colors.onViewerMuted} numberOfLines={1}>
-                  {date} · {tCount("gallery.itemsCount", g.count)}
-                </AppText>
-              </View>
-            </PressableScale>
+              group={g}
+              title={title}
+              date={date}
+              onOpen={() => onOpen(g.mediaIds, title)}
+            />
           );
         })}
       </ScrollView>
@@ -97,5 +78,70 @@ const styles = StyleSheet.create({
     height: CARD_H * 0.45,
     backgroundColor: theme.colors.mediaScrim,
   },
+  coverFallback: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: theme.colors.surfaceHighest,
+  },
   textBlock: { padding: theme.spacing.sm, gap: 2 },
 });
+
+function MemoryCard({
+  group,
+  title,
+  date,
+  onOpen,
+}: {
+  group: MemoryGroup;
+  title: string;
+  date: string;
+  onOpen: () => void;
+}) {
+  const [failed, setFailed] = useState(!group.coverThumb);
+
+  return (
+    <PressableScale
+      onPress={onOpen}
+      accessibilityRole="button"
+      accessibilityLabel={`${title}, ${date}, ${tCount("gallery.itemsCount", group.count)}`}
+      style={styles.card}
+      contentStyle={styles.cardContent}
+    >
+      {!failed ? (
+        <Image
+          source={{ uri: group.coverThumb }}
+          style={StyleSheet.absoluteFill}
+          contentFit="cover"
+          recyclingKey={`mem-${group.key}`}
+          cachePolicy="memory-disk"
+          transition={120}
+          onError={() => setFailed(true)}
+          accessible={false}
+        />
+      ) : (
+        <View style={styles.coverFallback}>
+          <Ionicons
+            name="images-outline"
+            size={28}
+            color={theme.colors.onSurfaceFaint}
+            importantForAccessibility="no"
+          />
+        </View>
+      )}
+      <View style={styles.scrim} />
+      <View style={styles.textBlock}>
+        <AppText variant="bodyLarge" weight="bold" color={theme.colors.onViewer}>
+          {title}
+        </AppText>
+        <AppText variant="caption" color={theme.colors.onViewerMuted} numberOfLines={1}>
+          {date} · {tCount("gallery.itemsCount", group.count)}
+        </AppText>
+      </View>
+    </PressableScale>
+  );
+}
