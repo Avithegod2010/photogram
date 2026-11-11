@@ -33,7 +33,12 @@ export function MemoriesCarousel({
       <AppText variant="title3" style={styles.heading}>
         {t("memories.title")}
       </AppText>
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.row}>
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        style={styles.scroll}
+        contentContainerStyle={styles.row}
+      >
         {groups.map((g) => {
           const date = new Date(g.key + "T00:00:00").toLocaleDateString(undefined, {
             month: "short",
@@ -61,7 +66,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: theme.spacing.md,
     marginBottom: theme.spacing.sm,
   },
-  row: { gap: theme.spacing.sm, paddingHorizontal: theme.spacing.md },
+  row: { gap: theme.spacing.sm, paddingHorizontal: theme.spacing.md, alignItems: "stretch" },
+  scroll: { height: CARD_H },
   card: {
     width: CARD_W,
     height: CARD_H,
@@ -133,7 +139,7 @@ function MemoryCard({
           />
         </View>
       )}
-      <View style={styles.scrim} />
+      {!failed ? <View style={styles.scrim} /> : null}
       <View style={styles.textBlock}>
         <AppText variant="bodyLarge" weight="bold" color={theme.colors.onViewer}>
           {title}
