@@ -37,6 +37,14 @@ Each entry below documents what a commit adds and what comes next. Newest first.
   `docs/UI-MIGRATION-RECIPE.md` (safe migration recipe).
 - Probe **322/322**, static **69/69**, tsc 0.
 
+### Build fixes found by the first EAS preview
+- **TypeScript pinned to 5.9.3** (from 6.0.3). `expo-quick-actions` pulls
+  `@expo/require-utils`, whose peer range is TypeScript 5.x; `npm ci` on EAS refused the 6.0.3
+  lock and the build died in `INSTALL_DEPENDENCIES`.
+- **`plugins/withPhotogramWidget.js`**: `WallpaperRotation.kt` called `arr.length` on an
+  `org.json.JSONArray` in three places. Kotlin requires `length()`; the earlier local compile-only
+  build did not exercise this revision. The preview build now compiles the widget/tile Kotlin.
+
 ### Docs: README + release checklist
 - **`README.md`** — what Photogram is, the feature map, how to build (EAS), the repo layout, and
   the privacy/licence one-liners. The repo is public and MIT, so this is the front door.

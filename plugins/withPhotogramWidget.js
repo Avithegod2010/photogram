@@ -95,11 +95,11 @@ object WallpaperRotation {
             val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
             var idx = prefs.getInt("index", 0)
             if (idx < 0) idx = 0
-            idx %= arr.length
+            idx %= arr.length()
             val path = arr.optString(idx, "")
             val file = File(path)
             if (!file.exists()) {
-                prefs.edit().putInt("index", (idx + 1) % arr.length).apply()
+                prefs.edit().putInt("index", (idx + 1) % arr.length()).apply()
                 return
             }
             val bitmap = BitmapFactory.decodeFile(path) ?: return
@@ -112,7 +112,7 @@ object WallpaperRotation {
             } catch (_: Exception) {
                 // Lock-screen wallpaper needs API 24+; home already succeeded.
             }
-            prefs.edit().putInt("index", (idx + 1) % arr.length).apply()
+            prefs.edit().putInt("index", (idx + 1) % arr.length()).apply()
         } catch (_: Exception) {
             // A malformed config or a revoked permission must never crash the app.
         }
