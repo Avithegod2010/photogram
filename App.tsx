@@ -4,6 +4,7 @@ import { StatusBar } from "expo-status-bar";
 import * as QuickActions from "expo-quick-actions";
 import { createNavigationContainerRef } from "@react-navigation/native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
+import { SafeAreaProvider } from "react-native-safe-area-context";
 import { NavigationContainer } from "@react-navigation/native";
 import { useAuthStore } from "./src/auth/authStore";
 import { LoginScreen } from "./src/screens/LoginScreen";
@@ -107,20 +108,22 @@ export default function App() {
 
   return (
     <GestureHandlerRootView style={styles.container}>
-      <StatusBar style="light" />
-      {phase === "ready" ? (
-        <ErrorBoundary>
-          <NavigationContainer ref={navigationRef}>
-            <RootNavigator />
-          </NavigationContainer>
-        </ErrorBoundary>
-      ) : (
-        <ErrorBoundary>
-          <LoginScreen />
-        </ErrorBoundary>
-      )}
-      {/* One imperative dialog host for the whole app (confirmDialog/alertDialog). */}
-      <DialogHost />
+      <SafeAreaProvider>
+        <StatusBar style="light" />
+        {phase === "ready" ? (
+          <ErrorBoundary>
+            <NavigationContainer ref={navigationRef}>
+              <RootNavigator />
+            </NavigationContainer>
+          </ErrorBoundary>
+        ) : (
+          <ErrorBoundary>
+            <LoginScreen />
+          </ErrorBoundary>
+        )}
+        {/* One imperative dialog host for the whole app (confirmDialog/alertDialog). */}
+        <DialogHost />
+      </SafeAreaProvider>
     </GestureHandlerRootView>
   );
 }

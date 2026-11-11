@@ -44,6 +44,9 @@ Each entry below documents what a commit adds and what comes next. Newest first.
 - **`plugins/withPhotogramWidget.js`**: `WallpaperRotation.kt` called `arr.length` on an
   `org.json.JSONArray` in three places. Kotlin requires `length()`; the earlier local compile-only
   build did not exercise this revision. The preview build now compiles the widget/tile Kotlin.
+- **`App.tsx`**: added `SafeAreaProvider` at the root. `LoginScreen` now uses
+  `useSafeAreaInsets` outside the navigator, and without a provider the ErrorBoundary caught
+  "No safe area value available" on launch.
 
 ### Docs: README + release checklist
 - **`README.md`** — what Photogram is, the feature map, how to build (EAS), the repo layout, and
