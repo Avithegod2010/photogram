@@ -47,6 +47,10 @@ Each entry below documents what a commit adds and what comes next. Newest first.
 - **`App.tsx`**: added `SafeAreaProvider` at the root. `LoginScreen` now uses
   `useSafeAreaInsets` outside the navigator, and without a provider the ErrorBoundary caught
   "No safe area value available" on launch.
+- **`src/ui/Skeleton.tsx`**: removed the `withRepeat(withTiming(...))` shimmer. On device it
+  crashed the Reanimated UI thread with `TypeError: undefined is not a function` at
+  `timing -> repeat -> set` and killed the process on first load. The skeleton is now a static
+  tonal block, which still shows the layout before the data.
 
 ### Docs: README + release checklist
 - **`README.md`** — what Photogram is, the feature map, how to build (EAS), the repo layout, and

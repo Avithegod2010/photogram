@@ -1,12 +1,5 @@
-import React, { useEffect } from "react";
+import React from "react";
 import { StyleSheet, View, type DimensionValue, type StyleProp, type ViewStyle } from "react-native";
-import Animated, {
-  useAnimatedStyle,
-  useReducedMotion,
-  useSharedValue,
-  withRepeat,
-  withTiming,
-} from "react-native-reanimated";
 import { theme } from "../theme";
 
 export type SkeletonProps = {
@@ -19,8 +12,11 @@ export type SkeletonProps = {
 };
 
 /**
- * A tonal placeholder that pulses. No spinner-on-blank: the layout is visible
- * before the data is. Reduced motion gets a static tone.
+ * A tonal placeholder for a first load. This is deliberately static: the old
+ * withRepeat/withTiming pulse crashed the Reanimated UI thread on device
+ * ("undefined is not a function" at timing -> repeat -> set) and took the whole
+ * process down. A static block still gives the layout before the data, without
+ * an infinite loop or a UI-runtime animation.
  */
 export function Skeleton({
   width = "100%",
@@ -29,29 +25,16 @@ export function Skeleton({
   style,
   label,
 }: SkeletonProps) {
-  const reduced = useReducedMotion();
-  const pulse = useSharedValue(0.55);
-
-  useEffect(() => {
-    if (reduced) {
-      pulse.set(0.7);
-      return;
-    }
-    pulse.set(withRepeat(withTiming(1, { duration: 900, easing: undefined }), -1, true));
-  }, [pulse, reduced]);
-
-  const animated = useAnimatedStyle(() => ({ opacity: pulse.get() }));
-
   return (
-    <Animated.View
+    <View
       accessible={!!label}
       accessibilityRole={label ? "progressbar" : undefined}
       accessibilityLabel={label}
       importantForAccessibility={label ? "auto" : "no-hide-descendants"}
       style={[
-        { width, height, borderRadius: radius, backgroundColor: theme.colors.surfaceHighest },
+        styles.block,
+        { width, height, borderRadius: radius },
         style,
-        animated,
       ]}
     />
   );
@@ -75,6 +58,10 @@ export function GallerySkeleton({ label = "Loading photos" }: { label?: string }
 }
 
 const styles = StyleSheet.create({
+  block: {
+    backgroundColor: theme.colors.surfaceHighest,
+    opacity: 0.75,
+  },
   grid: {
     flexDirection: "row",
     flexWrap: "wrap",

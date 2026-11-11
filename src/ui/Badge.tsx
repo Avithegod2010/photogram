@@ -57,7 +57,8 @@ const STATUS_ICON: Record<MediaStatus, keyof typeof Ionicons.glyphMap> = {
  * the gallery, the viewer, storage and the heartbeat line. Never colour alone.
  */
 export function StatusBadge({ status, style }: { status: MediaStatus; style?: StyleProp<ViewStyle> }) {
-  const c = theme.status[status];
+  const c = theme.status[status] ?? theme.status.local;
+  const icon = STATUS_ICON[status] ?? STATUS_ICON.local;
   const label = t(`status.${status}`);
   return (
     <View
@@ -65,7 +66,7 @@ export function StatusBadge({ status, style }: { status: MediaStatus; style?: St
       accessible
       accessibilityLabel={label}
     >
-      <Ionicons name={STATUS_ICON[status]} size={13} color={c.color} importantForAccessibility="no" />
+      <Ionicons name={icon} size={13} color={c.color} importantForAccessibility="no" />
       <AppText variant="caption" weight="semibold" color={c.color} numberOfLines={1}>
         {label}
       </AppText>

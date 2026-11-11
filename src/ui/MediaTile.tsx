@@ -65,7 +65,8 @@ export function MediaTile({
   style,
   testID,
 }: MediaTileProps) {
-  const label = `${accessibilityLabel}${status ? `, ${t(`status.${status}`)}` : ""}${
+  const statusMeta = status ? theme.status[status] : undefined;
+  const label = `${accessibilityLabel}${statusMeta ? `, ${t(`status.${status}`)}` : ""}${
     selectionMode ? `. ${selected ? t("common.selected") : t("common.notSelected")}` : ""
   }`;
 
@@ -114,9 +115,9 @@ export function MediaTile({
         </View>
       ) : null}
 
-      {status && status !== "synced" ? (
-        <View style={[styles.status, { backgroundColor: theme.status[status].soft }]}>
-          <Ionicons name={STATUS_ICON[status]} size={12} color={theme.status[status].color} />
+      {status && status !== "synced" && statusMeta ? (
+        <View style={[styles.status, { backgroundColor: statusMeta.soft }]}>
+          <Ionicons name={STATUS_ICON[status]} size={12} color={statusMeta.color} />
         </View>
       ) : null}
 
