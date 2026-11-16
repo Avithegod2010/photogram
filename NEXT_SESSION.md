@@ -5,22 +5,49 @@ Last updated: 2026-11-16 (§0, v0.55.0 + Quiet Archive). Read §0, then §1–§
 
 ---
 
-## 0. CURRENT STATE - 2026-11-16 - v0.55.0 "Quiet Archive" IN GIT - DEVICE VERIFICATION IS THE ONLY BLOCKER
+## 0. CURRENT STATE - 2026-11-16 - v0.55.0 "Quiet Archive" INSTALLED AND DEVICE-VERIFIED
 
-**Where the project actually is (HEAD 5190488, master == origin/master, tree clean, gate green):**
-- **v0.55.0** is the version in `app.config.ts`. The release batch landed: health score, restore
-  drill, checksum proof (schema **v21**), natural-language search, bulk tagging, integrity alerts,
-  re-upload missing, EAS Update (OTA), share-sheet intake, wallpaper rotation, widget v2 photo,
-  dynamic shortcuts, weekly DB maintenance, error boundary, startup budget.
+**Where the project actually is (master == origin/master after this handoff commit, tree clean, probe green on 5190488):**
+- **v0.55.0** is the version in `app.config.ts` and tag `v0.55.0` on GitHub. The release batch
+  landed: health score, restore drill, checksum proof (schema **v21**), natural-language search,
+  bulk tagging, integrity alerts, re-upload missing, EAS Update (OTA), share-sheet intake,
+  wallpaper rotation, widget v2 photo, dynamic shortcuts, weekly DB maintenance, error boundary,
+  startup budget.
 - **Quiet Archive UI overhaul** (`a4a0516` + 7 follow-ups): every screen rebuilt on `src/ui/`
   (23 components), tokens in `src/theme.ts`, rules in `AGENTS.md` 11-18 and `docs/UI-SYSTEM.md`.
   Static checks enforce: no raw hex/fontSize in screens, no `Alert.alert` in-app, no raw `<Modal>`.
-- **Gate:** `npm run probe` = probe + **static 69/69** + tsc, ALL GREEN on this commit. CI runs the
+- **Gate:** `npm run probe` = probe + **static 69/69** + tsc, ALL GREEN on `5190488`. CI runs the
   same command on every push.
 - **Nothing is uncommitted.** `.agents/` and `skills-lock.json` are local tooling, gitignored.
-- **Device verification is the only thing left before Play:** the phone has an older build. Install
-  the v0.55.0 preview APK (`adb install -r`, same signing key; DB migrates 20 -> 21), then walk
-  `docs/DEVICE-VERIFY.md` + `DEVICE-CHECKLIST.local.md` (free-up-space strictly last).
+- **The standalone release APK is built and installed (2026-11-14/15).** 121 MB, arm64-v8a,
+  debug-keystore signing (same cert as the installed app), `assets/index.android.bundle` embedded
+  (no Metro, no dev server). Artifact: `E:\Dev\photogram-v0.55.0-standalone.apk`. It is archived
+  privately at `github.com/Avithegod2010/photogram-builds` release `v0.55.0` (APK + SHA-256).
+  **Never make that APK public:** `assets/app.config` embeds the TDLib `api_id`/`api_hash`.
+- **Device verification ran on 2026-11-15 on SM-S942B (Android 17)** — full run log in
+  `docs/DEVICE-VERIFY.md` §7c; screenshots + `REPORT.md` live outside the repo at
+  `E:\Dev\device-verify\`. Temporary animation scales were restored; uploads were left **paused**
+  (queue 1,259, 2,185 still waiting).
+- **Findings to fix next (priority order):**
+  1. **OOM crash:** one recorded `OutOfMemoryError` in ExoPlayer at the 268 MB heap limit after a
+     long session (system dropbox, 2026-11-15 00:31). Not reproducible on a fresh process opening
+     a video. Consider releasing the player on exit, image-cache limits, or `largeHeap`.
+  2. **Hindi tabs:** bottom tab labels stay English when locale=hi (Settings headers translate).
+  3. **Favorites list** stays stale after unfavoriting in the Viewer until you re-enter it.
+  4. **Album header** shows the loaded page count (e.g. `600 items`) instead of the album total
+     (`3,896 items`).
+  5. **Video tiles** are announced as "Photo from ..." in the Videos album (accessibility label).
+  6. **Junk sweeper** shows its empty state while a sweep is running (cosmetic).
+  7. **Map** needs `google_maps_api_key` in `tdlib.secrets.json` (honest error state, no crash).
+- **Still owner-only:** resume the bulk backup (~8 GB; uploads are paused), FaceNet backfill
+  (1,903 photos left to detect / 1,942 faces to embed), biometric Hidden unlock, widget and
+  quick-settings tile OS checks, Play Console track.
+- **Rebuilds:** `E:\Dev\build-photogram-release.ps1` runs `:app:assembleRelease` with the isolated
+  `GRADLE_USER_HOME=E:\Dev\.gradle-photogram2` (hard-linked dependency cache), waits for RAM,
+  retries, and copies the final APK. Never use the shared `E:\Dev\.gradle` while other agents
+  build, and never junction the artifact cache (it breaks Kotlin script compilation; hard links
+  only). `android/` is gitignored CNG — `npx expo prebuild --platform android --no-install`
+  regenerates it.
 - **Deferred native work** queued in `docs/DEFERRED-NATIVE.md` (camera, ML Kit document scanner,
   WorkManager/foreground service - touches the PROTECTED uploader, collage, video, Cast, Sentry).
 - **Owner actions:** rotate the Expo token used for builds; Play Console signing/AAB/data-safety

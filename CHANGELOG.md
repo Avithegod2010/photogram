@@ -4,6 +4,25 @@ Each entry below documents what a commit adds and what comes next. Newest first.
 
 ---
 
+## 2026-11-16 — Device verification run log + handoff corrections (docs only)
+
+- Ran the v0.55.0 standalone release APK (121 MB, embedded JS, debug-keystore signing) on the
+  SM-S942B: `install -r` over the existing app kept all data (`1,958 / 4,143` in Telegram).
+- Verified on device: Gallery (Memories, OCR search, multi-select, photo/video Viewer, Note,
+  Favorite round-trip), all Collections screens (Albums/pin/cover, shared albums + topics,
+  Receipts, Scenes, People & Pets, Highlights, Journal, Wrapped, duplicates, Archive, Trash,
+  Safety check, Junk sweeper — 488 findings, nothing deleted; Export → share sheet), Settings
+  (upload queue/health, storage stats, search toggles, notifications, Hindi switch, danger
+  zone), and 3 registered launcher shortcuts.
+- Open findings in `docs/DEVICE-VERIFY.md` §7c: one ExoPlayer OOM crash under memory pressure,
+  Hindi tab labels not translated, stale Favorites list, album header page count, video tiles
+  labelled "Photo from", junk empty state during a sweep, missing Google Maps key.
+- `NEXT_SESSION.md` §0 corrected: the APK is built/installed, verification is done, uploads are
+  paused, and the private build archive (`photogram-builds`) is documented.
+- No source changes; probe/static/tsc unchanged.
+
+---
+
 ## v0.55.0 — Quiet Archive UI overhaul + release build
 
 ### Quiet Archive: the designer pass

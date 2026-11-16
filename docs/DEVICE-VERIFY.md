@@ -211,6 +211,56 @@ is killed it opens the dev launcher until the bundle is served again.
 
 ---
 
+## 7c. Run log — 2026-11-15/16 (v0.55.0 standalone release APK, SM-S942B / Android 17)
+
+Installed the locally built release APK (121 MB, arm64-v8a, `assets/index.android.bundle`,
+debug-keystore signing) with `adb install -r` over the previous app. Data preserved:
+heartbeat started at `1,958 / 4,143 in Telegram`, gallery + Memories populated. No Metro.
+Animation scales were set to 0 for uiautomator and restored to 1 afterwards. Uploads
+auto-resumed when the app opened and were **paused again at the end** (queue 1,259).
+
+Passing on the device:
+- Gallery: Memories carousel with real items, heartbeat, timeline + scrubber, OCR search
+  (`receipt` → receipt/bank-SMS photos), multi-select bar (Back up/Favorite/Archive/Tag/Hide/
+  Delete + Select all), photo Viewer (date/status/pager, Details/Share/Favorite/Note/More),
+  video Viewer (play, ±5/15 s, progress, settings, fullscreen), Note sheet (caption-in-Telegram
+  copy, 1000-char counter), Favorite round-trip (heart fills → Favorites 1 → unfavorite → 0
+  after re-entry).
+- Collections: Albums (Camera 3,896 / Screenshots 257 / WhatsApp 45 / Videos 542, lock + pin),
+  pin/unpin reorders the grid, album cover picker (Auto selected + photo grid), shared albums
+  (activity feed, Claim new), shared-album topic chips (All/General/1/2/3/4), Favorites,
+  Map (863 geotagged; honest "Google Maps key needed"), Receipts 14, Scene albums (4 scenes,
+  0 items while Smart tags are OFF), People & Pets (FaceNet-128 selected; 1,903 to detect /
+  1,942 to embed / 0 grouped), Highlights (7 months), Journal (empty state), Wrapped (3,299
+  captured, 21 GB, November 1,659, top day 896), duplicates (168 groups + Merge buttons),
+  Archive (1), Trash (empty), Safety check (2,185 waiting / 29 GB phone-only), Junk sweeper
+  (full sweep: 488 findings, 76 pre-selected, nothing deleted), Export (Full manifest JSON →
+  system share sheet), 3 launcher shortcuts registered.
+- Settings: live upload queue + health card (56 FAIR), backup preferences (preview-first, EXIF,
+  Wi-Fi-only, auto-backup, time window, populated device-folder list), storage stats (local
+  3,602 photos / 541 videos; cloud 22 GB; queue 1,259), Search (OCR ON, Smart tags OFF, Find
+  faces ON), Library toggles, Notifications master OFF, Privacy biometric lock ON, Language
+  (हिंदी switches Settings headers; English restored), Account, Danger zone (25 GB budget,
+  status Normal, zero rate-limit hits).
+
+Findings (open):
+1. **OOM crash** — `java.lang.OutOfMemoryError` in `ExoPlayerImplInternal.scheduleNextWork` at
+   the 268 MB heap limit, 2026-11-15 00:31, after ~18 min of heavy navigation. Recorded in the
+   system dropbox. Opening a video on a fresh process did not reproduce it.
+2. Hindi bottom tab labels stay English while Settings headers translate.
+3. Favorites list is stale after unfavoriting in the Viewer until the screen is re-entered.
+4. Album header shows the loaded page (`600 items`) instead of the album total (`3,896`).
+5. Video tiles are announced as "Photo from ..." in the Videos album (a11y label).
+6. Junk sweeper shows "No junk found" while the sweep is still running (cosmetic).
+7. Map needs `google_maps_api_key` in `tdlib.secrets.json` (configuration, not a crash).
+
+Skipped deliberately: People & Pets backfill (1,903 photos), biometric Hidden unlock, widget +
+quick-settings tile, onboarding (not a fresh install), slideshow/music (audio + OOM risk), merge/
+trash/free-space mutations (screens verified, actions not run), restore drill (8-photo download),
+shared-album Claim/Ask (Telegram writes), bulk backup (~8 GB, owner decision).
+
+Screenshots + a fuller report: `E:\Dev\device-verify\` (outside the repo).
+
 ## 8. Report template
 
 For each unchecked box, note: screen, what you did, what you expected, what happened, and grab
