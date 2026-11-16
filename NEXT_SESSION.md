@@ -1,11 +1,32 @@
 # PHOTOGRAM — MASTER HANDOFF (read this fully before coding)
 
 _This file is the single source of truth for any AI agent or developer picking up this project cold.
-Last updated: 2026-11-05 (§0, v0.54.3 + EAS cloud builds). Read §0, then §1–§17. CHANGELOG.md has per-version notes._
+Last updated: 2026-11-16 (§0, v0.55.0 + Quiet Archive). Read §0, then §1–§17. CHANGELOG.md has per-version notes._
 
 ---
 
-## 0. CURRENT STATE — 2026-11-05 (late) · v0.54.3 PUSHED · CLOUD BUILD RUNNING · PHONE APP STOPPED (UPLOADS PAUSED)
+## 0. CURRENT STATE - 2026-11-16 - v0.55.0 "Quiet Archive" IN GIT - DEVICE VERIFICATION IS THE ONLY BLOCKER
+
+**Where the project actually is (HEAD 5190488, master == origin/master, tree clean, gate green):**
+- **v0.55.0** is the version in `app.config.ts`. The release batch landed: health score, restore
+  drill, checksum proof (schema **v21**), natural-language search, bulk tagging, integrity alerts,
+  re-upload missing, EAS Update (OTA), share-sheet intake, wallpaper rotation, widget v2 photo,
+  dynamic shortcuts, weekly DB maintenance, error boundary, startup budget.
+- **Quiet Archive UI overhaul** (`a4a0516` + 7 follow-ups): every screen rebuilt on `src/ui/`
+  (23 components), tokens in `src/theme.ts`, rules in `AGENTS.md` 11-18 and `docs/UI-SYSTEM.md`.
+  Static checks enforce: no raw hex/fontSize in screens, no `Alert.alert` in-app, no raw `<Modal>`.
+- **Gate:** `npm run probe` = probe + **static 69/69** + tsc, ALL GREEN on this commit. CI runs the
+  same command on every push.
+- **Nothing is uncommitted.** `.agents/` and `skills-lock.json` are local tooling, gitignored.
+- **Device verification is the only thing left before Play:** the phone has an older build. Install
+  the v0.55.0 preview APK (`adb install -r`, same signing key; DB migrates 20 -> 21), then walk
+  `docs/DEVICE-VERIFY.md` + `DEVICE-CHECKLIST.local.md` (free-up-space strictly last).
+- **Deferred native work** queued in `docs/DEFERRED-NATIVE.md` (camera, ML Kit document scanner,
+  WorkManager/foreground service - touches the PROTECTED uploader, collage, video, Cast, Sentry).
+- **Owner actions:** rotate the Expo token used for builds; Play Console signing/AAB/data-safety
+  (`docs/RELEASE-CHECKLIST.md`); PRIVACY.md 11 contact email + GitHub Pages.
+
+### 2026-11-05 state (history)
 
 **2026-11-05 late — moving builds off this PC (owner request).**
 - **EAS Build configured** (`eas.json`, project `@avithegod-team/photogram`,

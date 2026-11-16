@@ -57,3 +57,8 @@ DEVICE-CHECKLIST.local.md
 # probe bundle output
 scripts/probe/.build/
 
+
+# local agent tooling (skills installer)
+.agents/
+skills-lock.json
+
