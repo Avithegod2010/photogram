@@ -92,13 +92,40 @@ jobs:
           chmod 600 android/app/debug.keystore
           keytool -list -keystore android/app/debug.keystore -storepass android | head -4
 
+      - name: Tune Gradle for the runner
+        # The template's 2 GB heap is sized for a laptop. On a cold runner the
+        # release build runs several Kotlin/Java compile + lint workers at once and
+        # died with "OutOfMemoryError: Metaspace" (run 44054094114, 2026-11-17).
+        run: |
+          cd android
+          grep -v -E "^org\.gradle\.jvmargs|^kotlin\.daemon\.jvmargs" gradle.properties > gradle.properties.tmp || true
+          mv gradle.properties.tmp gradle.properties
+          {
+            echo "org.gradle.jvmargs=-Xmx4g -XX:MaxMetaspaceSize=1536m -XX:+HeapDumpOnOutOfMemoryError"
+            echo "kotlin.daemon.jvmargs=-Xmx2g -XX:MaxMetaspaceSize=768m"
+          } >> gradle.properties
+          tail -3 gradle.properties
+
+      - name: Cache Gradle
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches/modules-2
+            ~/.gradle/wrapper
+            ~/.gradle/caches/build-cache-1
+          key: gradle-${{ runner.os }}-${{ hashFiles('package-lock.json', 'android/build.gradle', 'android/gradle.properties') }}
+          restore-keys: gradle-${{ runner.os }}-
+
       - name: Build the release APK
         env:
           ORG_GRADLE_PROJECT_reactNativeArchitectures: arm64-v8a
         run: |
           cd android
           chmod +x gradlew
-          ./gradlew :app:assembleRelease --no-daemon --stacktrace
+          # No lint: it is not part of the artifact, it costs minutes, and its
+          # analyzers are what exhausted the daemon's metaspace on this runner.
+          ./gradlew :app:assembleRelease --no-daemon --stacktrace \
+            -x lintVitalRelease -x lintVitalAnalyzeRelease
 
       - name: Prepare the artifact
         id: package
