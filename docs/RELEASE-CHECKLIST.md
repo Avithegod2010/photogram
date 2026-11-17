@@ -9,6 +9,7 @@ Everything here is an **owner action** except where marked (agent). Keep it in s
 - [ ] `CHANGELOG.md` has an entry for the version (`app.config.ts` → `version`).
 - [ ] Bump `version` when native code changed (the OTA runtime is the app version).
 - [ ] Build: `npx eas-cli@latest build --platform android --profile preview`.
+- [ ] Or without EAS: Actions → **Android APK** → Run workflow (`docs/BUILD-AUTOMATION.md`).
 - [ ] Install with `adb install -r` (same signing key → data survives).
 - [ ] Device pass: `docs/DEVICE-VERIFY.md` + `DEVICE-CHECKLIST.local.md` (free-up-space last).
 
@@ -18,6 +19,8 @@ Everything here is an **owner action** except where marked (agent). Keep it in s
       used a pasted token. Never commit it — it lives at `E:\Dev\expo-token.txt` on the dev PC.
 - [ ] `tdlib.secrets.json` and `credentials/` are gitignored; confirm with `git status`.
 - [ ] EAS **secret** env vars exist for `TDLIB_API_ID` / `TDLIB_API_HASH` (development + preview).
+- [ ] GitHub Actions secrets exist for the APK workflow: `TDLIB_API_ID`, `TDLIB_API_HASH`,
+      `DEBUG_KEYSTORE_BASE64`, `BUILDS_REPO_TOKEN` (`docs/BUILD-AUTOMATION.md` §Required secrets).
 
 ## 2. Play Store (first submission)
 
