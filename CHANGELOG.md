@@ -21,6 +21,18 @@ Each entry below documents what a commit adds and what comes next. Newest first.
 - `AGENTS.md` rule 8 + `docs/PLAN-ROADMAP.md`: the "2 features at a time" rule is retired.
 - No app-code change in this commit; probe/static/tsc unaffected (334 / 70 / clean).
 
+### What the first runs taught (all fixed)
+- **Run 44054094114 failed:** `OutOfMemoryError: Metaspace` in `lintVitalAnalyzeRelease` — the
+  template's 2 GB Gradle JVM plus parallel lint analyzers on a cold runner. Now 4 GB heap /
+  1.5 GB metaspace, and both lint tasks are excluded (they never touch the APK).
+- **Run 44073049789 succeeded and published**, but as `v1.0.0`: the tag came from
+  `package.json` (the repo's private package name) instead of `app.config.ts` (0.55.0). The
+  workflow now reads the version from the Expo config and publishes to a rolling
+  `v<version>-ci` tag, so the owner's hand-built `v0.55.0` archive is never clobbered.
+- Downloaded the published APK and verified with `apksigner`: certificate SHA-256
+  `FA:C6:17:45:…:3B:9C` — the key the phone's app was installed with, so `adb install -r`
+  upgrades in place instead of forcing an uninstall.
+
 ---
 
 ## v0.55.0 patch — the device-verification findings (2026-11-17, ships over the air)

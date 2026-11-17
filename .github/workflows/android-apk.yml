@@ -130,7 +130,13 @@ jobs:
       - name: Prepare the artifact
         id: package
         run: |
-          VERSION=$(node -e 'console.log(require("./package.json").version)')
+          # The app version lives in app.config.ts (0.55.0), not package.json
+          # (1.0.0 — the repo's private package name). Getting this wrong labelled
+          # the first successful build "v1.0.0" (run 44073049789).
+          VERSION=$(npx expo config --json --type public 2>/dev/null \
+            | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{try{process.stdout.write(String(JSON.parse(s).version))}catch{process.exit(1)}})')
+          if [ -z "$VERSION" ]; then echo "::error::Could not read version from app.config.ts"; exit 1; fi
+          echo "app version: $VERSION"
           APK=android/app/build/outputs/apk/release/app-release.apk
           if [ ! -f "$APK" ]; then echo "::error::No APK at $APK"; exit 1; fi
           # Two things that must be inside a standalone build: the JS bundle and
@@ -158,8 +164,10 @@ jobs:
             exit 0
           fi
           REPO="Avithegod2010/photogram-builds"
-          TAG="${LABEL:-v$VERSION}"
-          NOTES=$(printf 'Photogram %s (%s, arm64-v8a)\n\nBuilt by GitHub Actions run %s from %s.\nSigning: restored debug keystore (installs over the existing app with adb install -r).\n\nAttach with: adb install -r %s\n' \
+          # A rolling tag per app version. The version-only tag (v0.55.0) is the
+          # owner's archived hand-built APK — never clobber that one.
+          TAG="${LABEL:-v$VERSION-ci}"
+          NOTES=$(printf 'Photogram %s, CI build (arm64-v8a, %s)\n\nWorkflow run %s from %s.\nSigning: restored debug keystore — installs over the existing app with adb install -r.\n\nAttach with: adb install -r %s\n' \
             "$VERSION" "$SIZE" "$GITHUB_RUN_NUMBER" "$GITHUB_SHA" "$(basename "$OUT")")
           if gh release view "$TAG" --repo "$REPO" >/dev/null 2>&1; then
             gh release upload "$TAG" "$OUT" "$OUT.sha256" --clobber --repo "$REPO"
