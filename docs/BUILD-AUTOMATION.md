@@ -30,7 +30,13 @@ what `E:\Dev\build-photogram-release.ps1` does, on a fresh Ubuntu runner:
    widget/tile plugin re-applies itself).
 6. Copies the restored keystore over `android/app/debug.keystore` — this is the step that makes
    the APK installable **over** the current app.
-7. `./gradlew :app:assembleRelease` with `arm64-v8a` only.
+7. `./gradlew :app:assembleRelease` with `arm64-v8a` only, `-x lintVitalRelease -x lintVitalAnalyzeRelease`,
+   and the runner's JVM raised to 4 GB heap / 1.5 GB metaspace in `android/gradle.properties`.
+
+   Both of those came from the first real run (2026-11-17): the template's 2 GB JVM died with
+   `OutOfMemoryError: Metaspace` while several lint analyzers ran in parallel, and the run sat
+   there until the 120-minute timeout. Lint is not part of the artifact, so it is skipped.
+
 8. Asserts the APK really contains `assets/index.android.bundle` and `assets/app.config`, then
    writes the SHA-256.
 9. Publishes both files to a release in the **private** `Avithegod2010/photogram-builds` repo.
