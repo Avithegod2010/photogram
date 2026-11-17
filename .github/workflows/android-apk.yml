@@ -1,0 +1,142 @@
+name: Android APK
+
+# Builds the standalone release APK (embedded JS bundle, no Metro, no PC) on
+# GitHub's runners and publishes it to the PRIVATE photogram-builds repository.
+#
+# Why not a plain workflow artifact: this repository is public, and the APK
+# contains `assets/app.config` with the TDLib api_id/api_hash. Workflow artifacts
+# on a public repository are not a safe place for that file, so the artifact is
+# only ever uploaded to the private builds repo with a token the owner holds.
+#
+# Secrets required (Settings -> Secrets and variables -> Actions):
+#   TDLIB_API_ID        - number from https://my.telegram.org
+#   TDLIB_API_HASH      - string from the same page
+#   BUILDS_REPO_TOKEN   - token with `repo` scope on Avithegod2010/photogram-builds
+#
+# Signing: expo prebuild copies ~/.android/debug.keystore into android/app, so the
+# runner writes the SAME keystore the installed app was signed with
+# (DEBUG_KEYSTORE_BASE64). Without it `adb install -r` would refuse the APK and the
+# owner would have to uninstall, losing the SQLite library and the upload queue.
+on:
+  workflow_dispatch:
+    inputs:
+      label:
+        description: Release tag in photogram-builds (defaults to the app version)
+        required: false
+        type: string
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: android-apk-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Write TDLib credentials
+        env:
+          TDLIB_API_ID: ${{ secrets.TDLIB_API_ID }}
+          TDLIB_API_HASH: ${{ secrets.TDLIB_API_HASH }}
+        run: |
+          if [ -z "$TDLIB_API_ID" ] || [ -z "$TDLIB_API_HASH" ]; then
+            echo "::error::Missing TDLIB_API_ID / TDLIB_API_HASH repository secrets."
+            exit 1
+          fi
+          node -e 'require("fs").writeFileSync("tdlib.secrets.json", JSON.stringify({ api_id: Number(process.env.TDLIB_API_ID), api_hash: process.env.TDLIB_API_HASH }, null, 2))'
+          echo "tdlib.secrets.json written (values not printed)"
+
+      - name: Restore the signing keystore
+        env:
+          DEBUG_KEYSTORE_BASE64: ${{ secrets.DEBUG_KEYSTORE_BASE64 }}
+        run: |
+          if [ -z "$DEBUG_KEYSTORE_BASE64" ]; then
+            echo "::error::Missing DEBUG_KEYSTORE_BASE64 — a build signed with a different key cannot be installed over the current app."
+            exit 1
+          fi
+          mkdir -p "$HOME/.android"
+          printf '%s' "$DEBUG_KEYSTORE_BASE64" | base64 -d > "$HOME/.android/debug.keystore"
+          chmod 600 "$HOME/.android/debug.keystore"
+          echo "keystore restored"
+
+      - name: Keep react-native-fast-tflite cheap to compile
+        run: node scripts/ci/patch-fast-tflite.cjs
+
+      - name: Generate the Android project (CNG)
+        run: npx expo prebuild --platform android --no-install
+
+      - name: Use the same signing key as the installed app
+        run: |
+          cp "$HOME/.android/debug.keystore" android/app/debug.keystore
+          chmod 600 android/app/debug.keystore
+          keytool -list -keystore android/app/debug.keystore -storepass android | head -4
+
+      - name: Build the release APK
+        env:
+          ORG_GRADLE_PROJECT_reactNativeArchitectures: arm64-v8a
+        run: |
+          cd android
+          chmod +x gradlew
+          ./gradlew :app:assembleRelease --no-daemon --stacktrace
+
+      - name: Prepare the artifact
+        id: package
+        run: |
+          VERSION=$(node -e 'console.log(require("./package.json").version)')
+          APK=android/app/build/outputs/apk/release/app-release.apk
+          if [ ! -f "$APK" ]; then echo "::error::No APK at $APK"; exit 1; fi
+          # Two things that must be inside a standalone build: the JS bundle and
+          # the injected TDLib credentials.
+          unzip -l "$APK" | grep -q "assets/index.android.bundle" || { echo "::error::APK has no embedded JS bundle (it would need Metro)"; exit 1; }
+          unzip -l "$APK" | grep -q "assets/app.config" || { echo "::error::APK has no assets/app.config"; exit 1; }
+          mkdir -p dist
+          OUT="dist/photogram-$VERSION-arm64-v8a.apk"
+          cp "$APK" "$OUT"
+          sha256sum "$OUT" | tee "$OUT.sha256"
+          echo "size=$(du -h "$OUT" | cut -f1)" >> "$GITHUB_OUTPUT"
+          echo "out=$OUT" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Publish to the private builds repo
+        env:
+          GH_TOKEN: ${{ secrets.BUILDS_REPO_TOKEN }}
+          LABEL: ${{ inputs.label }}
+          VERSION: ${{ steps.package.outputs.version }}
+          OUT: ${{ steps.package.outputs.out }}
+          SIZE: ${{ steps.package.outputs.size }}
+        run: |
+          if [ -z "$GH_TOKEN" ]; then
+            echo "::warning::BUILDS_REPO_TOKEN is not set — the APK stays on the runner and is discarded. Add the secret to publish."
+            exit 0
+          fi
+          REPO="Avithegod2010/photogram-builds"
+          TAG="${LABEL:-v$VERSION}"
+          NOTES=$(printf 'Photogram %s (%s, arm64-v8a)\n\nBuilt by GitHub Actions run %s from %s.\nSigning: restored debug keystore (installs over the existing app with adb install -r).\n\nAttach with: adb install -r %s\n' \
+            "$VERSION" "$SIZE" "$GITHUB_RUN_NUMBER" "$GITHUB_SHA" "$(basename "$OUT")")
+          if gh release view "$TAG" --repo "$REPO" >/dev/null 2>&1; then
+            gh release upload "$TAG" "$OUT" "$OUT.sha256" --clobber --repo "$REPO"
+          else
+            gh release create "$TAG" "$OUT" "$OUT.sha256" --repo "$REPO" --title "Photogram $VERSION ($SIZE)" --notes "$NOTES"
+          fi
+          echo "published: https://github.com/$REPO/releases/tag/$TAG"

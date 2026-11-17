@@ -4,6 +4,25 @@ Each entry below documents what a commit adds and what comes next. Newest first.
 
 ---
 
+## 2026-11-17 — GitHub Actions APK pipeline, repo topics, rule change
+
+- **`.github/workflows/android-apk.yml`** (new): manual dispatch or `v*` tag builds the standalone
+  release APK on an Ubuntu runner — `npm ci`, TDLib credentials from secrets, the signing keystore
+  restored, the fast-tflite compile fix, `expo prebuild`, `assembleRelease` (arm64-v8a), an
+  assertion that the bundle and `assets/app.config` are inside, SHA-256, and a publish to the
+  PRIVATE `photogram-builds` repo. Public artifacts are avoided on purpose: the APK embeds the
+  TDLib keys (same reason the v0.55.0 release is source-only).
+- **`scripts/ci/patch-fast-tflite.cjs`** (new): idempotent version of the `-O1 -g0` node_modules
+  patch from `docs/NATIVE-REAPPLY.md` §0, so a CI build cannot die on TFLite debug info.
+- **`docs/BUILD-AUTOMATION.md`** (new): the three build paths, the four required secrets, why the
+  APK is never a public artifact, and an honest note on what the pipeline costs to maintain.
+- Repo topics added on GitHub (expo, react-native, android, telegram, tdlib, photo-backup,
+  privacy, sqlite, …) so the project is discoverable.
+- `AGENTS.md` rule 8 + `docs/PLAN-ROADMAP.md`: the "2 features at a time" rule is retired.
+- No app-code change in this commit; probe/static/tsc unaffected (334 / 70 / clean).
+
+---
+
 ## v0.55.0 patch — the device-verification findings (2026-11-17, ships over the air)
 
 Every open finding from the 2026-11-15/16 device run except the Maps key (owner configuration).

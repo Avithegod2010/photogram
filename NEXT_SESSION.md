@@ -50,7 +50,10 @@ Last updated: 2026-11-16 (§0, v0.55.0 + Quiet Archive). Read §0, then §1–§
   regenerates it.
 - **Deferred native work** queued in `docs/DEFERRED-NATIVE.md` (camera, ML Kit document scanner,
   WorkManager/foreground service - touches the PROTECTED uploader, collage, video, Cast, Sentry).
-- **Owner actions:** rotate the Expo token used for builds; Play Console signing/AAB/data-safety
+- **Owner actions:** rotate the Expo token used for builds (the `EXPO_TOKEN` in this shell is
+  rejected by the Expo API — `me: null` — so `eas update` / `eas build` need a fresh login);
+  add `BUILDS_REPO_TOKEN` so the new GitHub APK workflow can publish (see
+  `docs/BUILD-AUTOMATION.md`); Play Console signing/AAB/data-safety
   (`docs/RELEASE-CHECKLIST.md`); PRIVACY.md 11 contact email + GitHub Pages.
 
 ### 2026-11-05 state (history)
