@@ -50,7 +50,7 @@ import {
 } from "../lib/onboarding";
 import { useSettingsStore } from "../store/settingsStore";
 import { theme } from "../theme";
-import { t, tCount, tf } from "../lib/i18n";
+import { t, tCount, tf, mediaTileLabel } from "../lib/i18n";
 import {
   AppBar,
   AppText,
@@ -743,6 +743,7 @@ export function GalleryScreen() {
             selected={isSelected}
             selectionMode={selectionMode}
             favorite={item.is_favorite === 1}
+            video={item.mime_type.startsWith("video/")}
             dateBadge={cols >= 4 && showDateOnPhotos ? date : null}
             status={status}
             onPress={() => openViewer(item, results ?? rows)}
@@ -753,9 +754,7 @@ export function GalleryScreen() {
             }
             onFavoritePress={item.is_favorite === 1 ? () => void toggleFavorite(item) : undefined}
             favoriteLabel={t("gallery.removeFavorite")}
-            accessibilityLabel={
-              tf("gallery.tileLabel", { date })
-            }
+            accessibilityLabel={mediaTileLabel(date, item.mime_type.startsWith("video/"))}
             accessibilityHint={t("gallery.selectHint")}
           />
         </View>

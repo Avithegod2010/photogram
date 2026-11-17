@@ -5,7 +5,7 @@ import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { MediaRow } from "../db/queries";
 import { Scene, getSceneMedia, getSceneOverview } from "../lib/scenes";
 import { theme } from "../theme";
-import { t, tCount, tf } from "../lib/i18n";
+import { t, tCount, mediaTileLabel } from "../lib/i18n";
 import {
   AppBar,
   AppText,
@@ -194,7 +194,7 @@ export function ScenesScreen({
                           index,
                         })
                       }
-                      accessibilityLabel={tf("gallery.tileLabel", { date })}
+                      accessibilityLabel={mediaTileLabel(date, item.mime_type.startsWith("video/"))}
                       accessibilityHint={t("viewer.tileHint")}
                     />
                   </View>

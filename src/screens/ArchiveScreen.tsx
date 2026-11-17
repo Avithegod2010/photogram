@@ -4,7 +4,7 @@ import { FlashList } from "@shopify/flash-list";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { listArchived, MediaRow, setMediaVisibility } from "../db/queries";
 import { theme } from "../theme";
-import { t, tCount, tf } from "../lib/i18n";
+import { t, tCount, mediaTileLabel } from "../lib/i18n";
 import {
   AppBar,
   EmptyState,
@@ -97,7 +97,7 @@ export function ArchiveScreen({
                       index: rows.findIndex((r) => r.id === item.id),
                     })
                   }
-                  accessibilityLabel={tf("gallery.tileLabel", { date })}
+                  accessibilityLabel={mediaTileLabel(date, item.mime_type.startsWith("video/"))}
                   accessibilityHint={t("viewer.tileHint")}
                 />
                 <IconButton

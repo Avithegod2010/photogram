@@ -18,7 +18,10 @@ This folder (`E:\Opencode CLI\Projects\photogram`) is **Photogram**, the TDLib-b
 5. **Expo SDK 57:** read exact versioned docs at https://docs.expo.dev/versions/v57.0.0/ before writing any code.
 6. **NEVER edit `src/lib/uploader.ts`** (safety-critical FLOOD_WAIT ladder / budgets) while the bulk backup could resume mid-flight.
 7. **Commits ONLY when the owner explicitly approves**, and every commit must include a CHANGELOG.md entry (newest-first at top). The repo git identity is already the safe noreply one — never commit with any other email.
-8. **Owner workflow rule (2026-10-05):** code **2 features at a time, then STOP and ask permission** before the next batch. The owner is not a professional developer — explain plainly.
+8. **Owner workflow rule (2026-11-17, supersedes the 2026-10-05 "2 at a time" rule):** the owner
+   removed the batch limit — work continuously through the backlog and report at natural stopping
+   points instead of pausing every two features. Commits still need explicit approval (rule 7), and
+   the owner is not a professional developer — explain plainly.
 9. **Public repo discipline:** https://github.com/Avithegod2010/photogram is PUBLIC (MIT, history was rewritten pre-public to scrub PII). No personal data in commits, ever. Dependabot's 4 high + 3 moderate alerts are all known build-toolchain packages (none ship in the APK); the only patchable one is brace-expansion (owner-run override). NEVER `npm audit fix --force` (it would downgrade expo/RN).
 
 ## Session handoff

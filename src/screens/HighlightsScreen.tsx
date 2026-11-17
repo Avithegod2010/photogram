@@ -5,7 +5,7 @@ import { countMissingAnalysis } from "../db/queries";
 import { HighlightMonth, getHighlights } from "../lib/highlights";
 import { backfillAnalysis } from "../lib/similar";
 import { theme } from "../theme";
-import { t, tf } from "../lib/i18n";
+import { t, mediaTileLabel } from "../lib/i18n";
 import {
   AppBar,
   AppText,
@@ -126,9 +126,10 @@ export function HighlightsScreen({
                           index: i,
                         })
                       }
-                      accessibilityLabel={tf("gallery.tileLabel", {
-                        date: new Date(r.taken_at).toLocaleDateString(),
-                      })}
+                      accessibilityLabel={mediaTileLabel(
+                        new Date(r.taken_at).toLocaleDateString(),
+                        r.mime_type.startsWith("video/")
+                      )}
                       accessibilityHint={t("viewer.tileHint")}
                     />
                   </View>

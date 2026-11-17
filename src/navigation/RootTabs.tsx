@@ -13,7 +13,8 @@ import { GalleryScreen } from "../screens/GalleryScreen";
 import { CollectionsScreen } from "../screens/CollectionsScreen";
 import { SettingsScreen } from "../screens/SettingsScreen";
 import { theme } from "../theme";
-import { t } from "../lib/i18n";
+import { tIn } from "../lib/i18n";
+import { useLocale } from "../lib/useLocale";
 import { easing } from "../ui/motion";
 
 export type RootTabParamList = {
@@ -89,6 +90,9 @@ function TabIcon({
 export function RootTabs() {
   const insets = useSafeAreaInsets();
   const { fontScale } = useWindowDimensions();
+  // Subscribed on purpose: navigator options are evaluated per render, so
+  // without this the tab labels kept their first language for the whole session.
+  const locale = useLocale();
   // Let the bar grow with the OS font scale instead of clipping 11dp labels.
   const labelGrowth = Math.min(12, Math.round((fontScale - 1) * 12));
 
@@ -96,14 +100,15 @@ export function RootTabs() {
     <Tab.Navigator
       screenOptions={({ route }) => {
         const name = route.name as keyof RootTabParamList;
+        const label = tIn(locale, TAB_LABEL[name]);
         return {
           headerShown: false,
           animation: "none",
           tabBarHideOnKeyboard: true,
           tabBarActiveTintColor: theme.colors.accent,
           tabBarInactiveTintColor: theme.colors.onSurfaceVariant,
-          tabBarAccessibilityLabel: t(TAB_LABEL[name]),
-          tabBarLabel: t(TAB_LABEL[name]),
+          tabBarAccessibilityLabel: label,
+          tabBarLabel: label,
           tabBarStyle: [
             styles.tabBar,
             { height: theme.layout.tabBar + insets.bottom + labelGrowth },

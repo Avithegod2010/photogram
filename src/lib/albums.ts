@@ -126,3 +126,18 @@ export async function getAlbumMedia(key: string, limit = 600): Promise<MediaRow[
     [limit]
   );
 }
+
+/**
+ * How many items the album really holds, ignoring the page cap above.
+ * The header used to print the loaded page (600 of a 3,896-photo Camera album
+ * said "600 items"), which read as if the rest had been lost.
+ */
+export async function getAlbumMediaCount(key: string): Promise<number> {
+  const def = albumDef(key);
+  if (!def) return 0;
+  const db = await getDb();
+  const row = await db.getFirstAsync<{ n: number }>(
+    `SELECT COUNT(*) AS n FROM media WHERE visibility = 'visible' AND ${def.cond}`
+  );
+  return row?.n ?? 0;
+}

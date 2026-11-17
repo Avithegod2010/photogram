@@ -4,6 +4,73 @@ Each entry below documents what a commit adds and what comes next. Newest first.
 
 ---
 
+## v0.55.0 patch — the device-verification findings (2026-11-17, ships over the air)
+
+Every open finding from the 2026-11-15/16 device run except the Maps key (owner configuration).
+All JS-only: no new native module, no schema change (still v21).
+
+The version number deliberately stays **0.55.0**: `runtimeVersion` is `appVersion`, so bumping it
+would make an OTA update skip the installed APK. This patch is published to the `preview` channel.
+
+### Language changes now propagate
+- `src/lib/i18n.ts`: `setLocale()` broadcasts to subscribers (`subscribeLocale`), and is silent
+  when the language did not actually change. New `tIn(locale, key)` for components that hold their
+  own copy of a label.
+- `src/lib/useLocale.ts` (new): `useSyncExternalStore` wrapper.
+- `RootTabs.tsx`: subscribes, so the bottom tabs switch to गैलरी / कलेक्शन / सेटिंग्स immediately.
+  Previously navigator options were built once and kept the first language for the whole session.
+- `SettingsScreen.tsx`: its private re-render counter is gone (one mechanism instead of two).
+
+### Favorites reload when you come back to them
+- `FavoritesScreen.tsx`: `useFocusEffect` instead of a mount-only effect. First load owns the
+  skeleton, later refreshes are silent, and a failed silent refresh keeps the visible list instead
+  of replacing it with an error page. Empty/error copy moved into the dictionary (it was English).
+
+### Video tiles are announced as videos
+- New `mediaTileLabel(date, isVideo)`; a static check now fails if a screen uses the photo sentence
+  directly. Applied to Gallery, Album, Favorites, Archive, Hidden, Scenes, Highlights, People,
+  Saved search, Similar, Doc albums and Then & Now. The Gallery grid also gained the play glyph it
+  never had.
+
+### Album header shows the album, not the page
+- `src/lib/albums.ts`: new `getAlbumMediaCount(key)` (same visibility rule as the page query).
+- `AlbumScreen.tsx`: header counts the album total (3,896), the topic count for a filtered shared
+  album, and a "Show N more" footer loads the next 600 instead of silently hiding them.
+
+### Junk sweeper no longer claims "No junk found" mid-sweep
+- A sweep in progress with nothing found yet shows "Looking for junk…" with a Stop sweep action.
+
+### Memory: the ExoPlayer OOM (2026-11-15, 268 MB heap)
+Three causes, all addressed:
+- **`ViewerScreen` pre-rendered `index + 2` pages.** Opening photo #600 mounted 602 full-screen
+  cells. Now `initialNumToRender={3}`, `windowSize={7}`, `maxToRenderPerBatch={3}` — jumping is
+  still instant because `getItemLayout` is provided.
+- **One video player per buffered page.** Now only the page being looked at loads a source; its
+  neighbours show the poster instead of a native surface plus codecs.
+- **Nothing ever freed decoded bitmaps.** New `src/lib/memory.ts` trims expo-image's memory cache
+  when the app backgrounds and when the Viewer closes (disk cache untouched). `App.tsx` registers
+  the background trim once the app is ready.
+- `StoryScreen`: video slides are keyed per item, so a second video no longer reuses the first
+  player.
+- Not done: `largeHeap` — that is a protected `app.config.ts` change and needs a rebuild.
+
+### Docs
+- `AGENTS.md` rule 8 and `docs/PLAN-ROADMAP.md`: the owner retired the "2 features at a time" rule
+  on 2026-11-17; work continues and reports at natural stopping points.
+- Probe **334/334** (+12: locale broadcast, tab translations, tile nouns, album count), static
+  **70/70** (+1: the tile-label guard), tsc clean.
+
+**Device-verify checklist for this patch**
+- Settings → Language → हिंदी: the bottom tabs read गैलरी / कलेक्शन / सेटिंग्स without a restart.
+- Favorites → open a photo → un-heart it → back: the tile is gone (no re-entry needed).
+- Videos album: TalkBack/accessibility reads "Video from …"; the Gallery grid shows a play glyph.
+- Camera album: header says 3,896 items, footer offers "Show … more" and loads the next page.
+- Junk sweeper → Sweep now: the empty state says "Looking for junk…" while it scans.
+- Memory: 15–20 minutes of Viewer/album swiping, then check `adb logcat` for `OutOfMemoryError`
+  (the original crash was one event, so absence here is evidence, not proof).
+
+---
+
 ## 2026-11-16 — Device verification run log + handoff corrections (docs only)
 
 - Ran the v0.55.0 standalone release APK (121 MB, embedded JS, debug-keystore signing) on the

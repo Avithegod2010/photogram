@@ -213,5 +213,31 @@ function check(name, cond, extra) {
   }
 }
 
+// R) Grid tiles must describe the media they actually show. Video tiles were
+// announced as "Photo from …" (device run 2026-11-16), so screens must go
+// through mediaTileLabel(date, isVideo) rather than the photo sentence.
+{
+  const walk = (dir) =>
+    fs.existsSync(dir)
+      ? fs.readdirSync(dir, { withFileTypes: true }).flatMap((e) => {
+          const p = dir + "/" + e.name;
+          return e.isDirectory() ? walk(p) : [p];
+        })
+      : [];
+  const files = walk("src/screens").filter((f) => /\.tsx$/.test(f));
+  const hits = [];
+  for (const file of files) {
+    const src = fs.readFileSync(file, "utf8");
+    if (/tf\(\s*["'`]gallery\.tileLabel["'`]/.test(src)) {
+      hits.push(file.replace("src/screens/", ""));
+    }
+  }
+  check(
+    "grid tiles use mediaTileLabel(date, isVideo), not the photo sentence",
+    hits.length === 0,
+    hits.slice(0, 12).join(", ") || "none"
+  );
+}
+
 console.log("\nRESULT: " + passed + " passed, " + failed + " failed");
 process.exitCode = failed > 0 ? 1 : 0;

@@ -299,6 +299,16 @@ export function JunkSweeperScreen({
         />
       ) : loading ? (
         <FindingsSkeleton />
+      ) : findings.length === 0 && sweeping ? (
+        // A sweep can run for a minute or two. Showing "No junk found" while it
+        // is still scanning told the owner the opposite of the truth.
+        <EmptyState
+          icon="search-outline"
+          title="Looking for junk…"
+          body="Checking thumbnails on this phone. Nothing is deleted without your review."
+          secondaryLabel="Stop sweep"
+          onSecondary={startSweep}
+        />
       ) : findings.length === 0 ? (
         <EmptyState
           icon="sparkles-outline"

@@ -27,7 +27,8 @@ import { useSettingsStore, type UploadQuality } from "../store/settingsStore";
 import { enableNotifications } from "../lib/notify";
 import { useAuthStore } from "../auth/authStore";
 import { theme } from "../theme";
-import { t, getLocale, setLocale, type Locale } from "../lib/i18n";
+import { t, setLocale, type Locale } from "../lib/i18n";
+import { useLocale } from "../lib/useLocale";
 import {
   AppBar,
   AppText,
@@ -125,7 +126,9 @@ export function SettingsScreen() {
   const setShowDateOnPhotos = useSettingsStore((s) => s.setShowDateOnPhotos);
   const storyMusic = useSettingsStore((s) => s.storyMusic);
   const setStoryMusic = useSettingsStore((s) => s.setStoryMusic);
-  const [, setLocaleTick] = useState(0);
+  // Language changes arrive through the shared subscription (src/lib/i18n.ts),
+  // so this screen no longer keeps a private re-render counter.
+  const locale = useLocale();
   const uploadGapSeconds = useSettingsStore((s) => s.uploadGapSeconds);
   const setUploadGapSeconds = useSettingsStore((s) => s.setUploadGapSeconds);
   const dailyBudgetGb = useSettingsStore((s) => s.dailyBudgetGb);
@@ -850,11 +853,8 @@ export function SettingsScreen() {
               key={loc}
               title={loc === "en" ? "English" : "हिंदी"}
               accessory="check"
-              selected={getLocale() === loc}
-              onPress={() => {
-                setLocale(loc);
-                setLocaleTick((n) => n + 1);
-              }}
+              selected={locale === loc}
+              onPress={() => setLocale(loc)}
             />
           ))}
         </Section>

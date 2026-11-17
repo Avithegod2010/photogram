@@ -105,6 +105,7 @@ const DICT: Record<string, Entry> = {
     hi: "खोलने के लिए टैप करें, चुनने के लिए दबाए रखें",
   },
   "gallery.tileLabel": { en: "Photo from {date}", hi: "{date} की तस्वीर" },
+  "gallery.videoTileLabel": { en: "Video from {date}", hi: "{date} का वीडियो" },
   "gallery.tileStatus": { en: "{date}, {status}", hi: "{date}, {status}" },
   "gallery.top": { en: "Top", hi: "ऊपर" },
   "gallery.itemsCount": { en: "{count} items", hi: "{count} आइटम" },
@@ -191,6 +192,7 @@ const DICT: Record<string, Entry> = {
   "albums.count": { en: "{count} items", hi: "{count} आइटम" },
   "albums.count.one": { en: "{count} item", hi: "{count} आइटम" },
   "album.play": { en: "Play", hi: "चलाएँ" },
+  "album.loadMore": { en: "Show {count} more", hi: "{count} और दिखाएँ" },
   "album.ask": { en: "Ask for photos", hi: "तस्वीरें माँगें" },
   "album.share": { en: "Share album", hi: "एल्बम साझा करें" },
   "album.cover": { en: "Choose cover", hi: "कवर चुनें" },
@@ -322,6 +324,16 @@ const DICT: Record<string, Entry> = {
   },
   "collections.favorites": { en: "Favorites", hi: "पसंदीदा" },
   "collections.favoritesSub": { en: "Every photo you marked with a heart", hi: "आपकी हर पसंदीदा तस्वीर" },
+  // Favorites screen states (the viewer sits on top of this list, so it reloads on focus).
+  "favorites.emptyTitle": { en: "No favorites yet", hi: "अभी कोई पसंदीदा नहीं" },
+  "favorites.emptyBody": {
+    en: "Tap the ♥ on any photo to keep it here.",
+    hi: "किसी भी फ़ोटो पर ♥ दबाएँ, वह यहाँ रहेगी।",
+  },
+  "favorites.errorBody": {
+    en: "Photogram couldn't read your favorites on this phone.",
+    hi: "इस फ़ोन पर आपके पसंदीदा पढ़े नहीं जा सके।",
+  },
   "collections.wrapped": { en: "{year} Wrapped", hi: "{year} की झलक" },
   "collections.wrappedSub": {
     en: "Your year in photos — totals, top days, favorites",
@@ -452,8 +464,35 @@ export function getLocale(): Locale {
   return v === "hi" ? "hi" : "en";
 }
 
+// Language changes are broadcast, not polled. Before this, a screen only picked
+// up the new language if something happened to re-render it — which is why the
+// bottom tab bar stayed English after switching to हिंदी (device run 2026-11-16).
+// Listeners are plain callbacks so this file stays React-free and probe-testable;
+// src/lib/useLocale.ts wraps them in useSyncExternalStore for components.
+const localeListeners = new Set<() => void>();
+
 export function setLocale(locale: Locale): void {
+  if (getLocale() === locale) return;
   mmkv.set(LOCALE_KEY, locale);
+  // Copy first: a listener may unsubscribe while we are iterating.
+  for (const listener of Array.from(localeListeners)) listener();
+}
+
+/** Subscribe to language changes. Returns the unsubscribe function. */
+export function subscribeLocale(listener: () => void): () => void {
+  localeListeners.add(listener);
+  return () => {
+    localeListeners.delete(listener);
+  };
+}
+
+/**
+ * Translate for an explicit locale. Used where a component holds its own copy of
+ * a label (navigator options, list items built once) instead of calling t() at
+ * render time.
+ */
+export function tIn(locale: Locale, key: string): string {
+  return translate(DICT, key, locale);
 }
 
 // Pure translator — probe-testable without MMKV.
@@ -487,6 +526,15 @@ export function tCount(
     count: count.toLocaleString(),
     ...extra,
   });
+}
+
+/**
+ * TalkBack sentence for one grid tile: "Photo from …" / "Video from …".
+ * Every grid used the photo sentence, so the Videos album announced its content
+ * as photos (device run 2026-11-16). Call sites pass the item's own kind.
+ */
+export function mediaTileLabel(date: string, video: boolean): string {
+  return tf(video ? "gallery.videoTileLabel" : "gallery.tileLabel", { date });
 }
 
 export const I18N_DICT = DICT;

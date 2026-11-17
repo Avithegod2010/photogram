@@ -26,7 +26,7 @@ import {
   type PersonCandidate,
 } from "../lib/people";
 import { theme } from "../theme";
-import { t, tCount, tf } from "../lib/i18n";
+import { t, tCount, tf, mediaTileLabel } from "../lib/i18n";
 import {
   AppBar,
   AppText,
@@ -491,9 +491,10 @@ export function PeopleScreen({
                       }
                     }}
                     onLongPress={() => !view.selecting && doNotThisPerson(view.person, item.id)}
-                    accessibilityLabel={tf("gallery.tileLabel", {
-                      date: new Date(item.taken_at).toLocaleDateString(),
-                    })}
+                    accessibilityLabel={mediaTileLabel(
+                      new Date(item.taken_at).toLocaleDateString(),
+                      item.mime_type.startsWith("video/")
+                    )}
                     accessibilityHint={t("people.hint")}
                   />
                 </View>

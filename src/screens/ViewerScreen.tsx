@@ -12,6 +12,7 @@ import * as Sharing from "expo-sharing";
 import { Image } from "expo-image";
 import { useVideoPlayer, VideoView } from "expo-video";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { trimImageMemoryCache } from "../lib/memory";
 import Animated, {
   useAnimatedStyle,
   useReducedMotion,
@@ -59,10 +60,13 @@ function ZoomableMedia({
   item,
   width,
   height,
+  active,
 }: {
   item: MediaRow;
   width: number;
   height: number;
+  /** Only the page being looked at may load a video player. */
+  active: boolean;
 }) {
   const isVideo = item.mime_type.startsWith("video/");
   if (isVideo && !item.local_uri) {
@@ -86,7 +90,7 @@ function ZoomableMedia({
     );
   }
   return isVideo ? (
-    <VideoMedia item={item} width={width} height={height} />
+    <VideoMedia item={item} width={width} height={height} active={active} />
   ) : (
     <ScrollView
       style={[styles.zoomScroll, { width, height }]}
@@ -109,17 +113,42 @@ function ZoomableMedia({
   );
 }
 
-function VideoMedia({ item, width, height }: { item: MediaRow; width: number; height: number }) {
-  const player = useVideoPlayer({ uri: item.local_uri as string });
+function VideoMedia({
+  item,
+  width,
+  height,
+  active,
+}: {
+  item: MediaRow;
+  width: number;
+  height: number;
+  active: boolean;
+}) {
+  // One player per *visible* page, not per page in the pager's window: a video
+  // album used to mount a player (and its codecs) for every buffered neighbour,
+  // which is what ended in the 2026-11-15 OutOfMemoryError inside ExoPlayer.
+  const player = useVideoPlayer(active && item.local_uri ? { uri: item.local_uri } : null);
   return (
     <View style={[styles.videoWrap, { width, height }]}>
-      <VideoView
-        player={player}
-        style={StyleSheet.absoluteFill}
-        contentFit="contain"
-        nativeControls
-        allowsPictureInPicture
-      />
+      {active ? (
+        <VideoView
+          player={player}
+          style={StyleSheet.absoluteFill}
+          contentFit="contain"
+          nativeControls
+          allowsPictureInPicture
+        />
+      ) : item.thumb_uri ? (
+        // Buffered neighbours show their poster: cheaper than a native surface,
+        // and the page never flashes black while swiping.
+        <Image
+          source={{ uri: item.thumb_uri }}
+          style={{ width, height: height * 0.78 }}
+          contentFit="contain"
+          cachePolicy="memory-disk"
+          accessible={false}
+        />
+      ) : null}
     </View>
   );
 }
@@ -162,6 +191,16 @@ export function ViewerScreen({ route, navigation }: any) {
     // intentionally reload only when the requested id set changes
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ids]);
+
+  // Closing the Viewer is the cheapest moment to free full-screen bitmaps: the
+  // grid behind it re-decodes thumbnails from the disk cache anyway. Without
+  // this, a long browsing session only ever grew (OOM, 2026-11-15).
+  useEffect(
+    () => () => {
+      void trimImageMemoryCache();
+    },
+    []
+  );
 
   const current = rows.find((r) => r.id === currentId);
 
@@ -422,7 +461,12 @@ export function ViewerScreen({ route, navigation }: any) {
         keyExtractor={(r) => String(r.id)}
         getItemLayout={(_, i) => ({ length: width, offset: width * i, index: i })}
         initialScrollIndex={Math.min(index, Math.max(0, rows.length - 1))}
-        initialNumToRender={Math.min(index + 2, Math.max(3, rows.length))}
+        // Three pages, not `index + 2`. getItemLayout is provided, so jumping
+        // straight to page 600 does not need pages 1–599 mounted first — the old
+        // formula decoded hundreds of full-screen images on open (OOM, 2026-11-15).
+        initialNumToRender={Math.min(3, Math.max(1, rows.length))}
+        maxToRenderPerBatch={3}
+        windowSize={7}
         showsHorizontalScrollIndicator={false}
         onMomentumScrollEnd={(e) => {
           const i = Math.round(e.nativeEvent.contentOffset.x / width);
@@ -439,7 +483,14 @@ export function ViewerScreen({ route, navigation }: any) {
             setChromeVisible((v) => !v);
           }
         }}
-        renderItem={({ item }) => <ZoomableMedia item={item} width={width} height={height} />}
+        renderItem={({ item }) => (
+          <ZoomableMedia
+            item={item}
+            width={width}
+            height={height}
+            active={item.id === currentId}
+          />
+        )}
       />
 
       <Animated.View

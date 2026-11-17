@@ -1,7 +1,8 @@
 # Photogram — Master Roadmap (written 2026-10-19)
 
-Plain-language plan of everything ahead, grouped so we always work **2 features at a time**
-(the owner rule) and each batch ends green (probe + static + tsc). "JS-only" = no APK rebuild
+Plain-language plan of everything ahead. Work proceeds continuously now (the owner retired the
+old "2 features at a time" rule on 2026-11-17); every stopping point still ends green
+(probe + static + tsc). "JS-only" = no APK rebuild
 needed — the change ships to the device via Metro as soon as the code is committed.
 "Rebuild" = rides the pending gradle rebuild.
 
@@ -36,7 +37,7 @@ Everything below is already coded and committed; it just hasn't touched the phon
    answers (no data collected off-device; Telegram storage is the user's own account).
 5. **Closed testing** — owner creates the track; agent has no further work until review.
 
-## Phase C — Feature batches (JS-only, 2 at a time, permission between batches)
+## Phase C — Feature batches (JS-only, continuous, report at stopping points)
 
 Ordered by value per effort. ✅ = already done and shipped.
 

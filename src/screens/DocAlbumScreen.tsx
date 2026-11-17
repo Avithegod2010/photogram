@@ -5,7 +5,7 @@ import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { docAlbumDef, DOC_ALBUMS, getDocMedia } from "../lib/docAlbums";
 import { MediaRow, setMediaVisibility } from "../db/queries";
 import { theme } from "../theme";
-import { t, tCount, tf } from "../lib/i18n";
+import { t, tCount, mediaTileLabel } from "../lib/i18n";
 import {
   AppBar,
   AppText,
@@ -141,7 +141,7 @@ export function DocAlbumScreen({
                     })
                   }
                   onLongPress={() => archiveOne(item)}
-                  accessibilityLabel={tf("gallery.tileLabel", { date })}
+                  accessibilityLabel={mediaTileLabel(date, item.mime_type.startsWith("video/"))}
                   accessibilityHint="Long-press to move a wrong match to Archive"
                 />
               </View>

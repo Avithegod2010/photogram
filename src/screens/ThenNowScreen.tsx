@@ -3,7 +3,7 @@ import { ScrollView, StyleSheet, View } from "react-native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { listOnThisDay, type MediaRow } from "../db/queries";
 import { theme } from "../theme";
-import { t, tf } from "../lib/i18n";
+import { t, mediaTileLabel } from "../lib/i18n";
 import {
   AppBar,
   AppText,
@@ -124,7 +124,7 @@ export function ThenNowScreen({
                               index: Math.max(idxInAll, 0),
                             })
                           }
-                          accessibilityLabel={tf("gallery.tileLabel", { date })}
+                          accessibilityLabel={mediaTileLabel(date, r.mime_type.startsWith("video/"))}
                           accessibilityHint={t("viewer.tileHint")}
                         />
                         <AppText

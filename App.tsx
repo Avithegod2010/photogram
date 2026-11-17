@@ -29,6 +29,7 @@ import { startWidgetStateLoop } from "./src/lib/widgetState";
 import { startGroupSync } from "./src/lib/groupSync";
 import { startNotifyLoop } from "./src/lib/notify";
 import { syncPendingNotes } from "./src/lib/notes";
+import { startMemoryHygiene } from "./src/lib/memory";
 import { theme } from "./src/theme";
 
 const navigationRef = createNavigationContainerRef<any>();
@@ -87,6 +88,9 @@ export default function App() {
     // the worker looks for work (otherwise it is stranded forever).
     void recoverInterruptedUploads().catch(() => {});
     startAutoBackupLoop();
+    // v0.55.1 memory hygiene: drop decoded bitmaps when the app backgrounds, so a
+    // long session cannot creep up on the 268 MB heap limit (2026-11-15 OOM).
+    const stopMemoryHygiene = startMemoryHygiene();
     const t = setTimeout(() => {
       startJunkAutoSweepLoop();
       startScheduledIntegrityLoop();
@@ -103,7 +107,10 @@ export default function App() {
       startNotifyLoop();
       void syncPendingNotes().catch(() => {});
     }, 10_000);
-    return () => clearTimeout(t);
+    return () => {
+      clearTimeout(t);
+      stopMemoryHygiene();
+    };
   }, [phase]);
 
   return (

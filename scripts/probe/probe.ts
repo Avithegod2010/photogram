@@ -86,8 +86,8 @@ import { appendStartupSample, medianStartupMs, STARTUP_KEEP } from "../../src/li
 import { countFreeable, listFreeableAssets, markMediaCloudOnly as clearLocalUri, recoverInterruptedUploads } from "..\/..\/src\/db\/queries";
 import { buildWidgetState, syncWidgetState, tilePauseActive } from "../../src/lib/widgetState";
 import { File, Paths } from "expo-file-system";
-import { getAutoAlbums } from "../../src/lib/albums";
-import { translate, I18N_DICT } from "../../src/lib/i18n";
+import { getAutoAlbums, getAlbumMedia, getAlbumMediaCount } from "../../src/lib/albums";
+import { translate, I18N_DICT, getLocale, setLocale, subscribeLocale, tIn, mediaTileLabel } from "../../src/lib/i18n";
 import { findDuplicateGroups } from "../../src/lib/similar";
 import { setAlbumCover, clearAlbumCover } from "../../src/lib/albumCovers";
 import { collectOnboardingFacts, listPendingOnboardingSteps, shouldShowChecklist } from "../../src/lib/onboarding";
@@ -1636,6 +1636,33 @@ async function main() {
   }
 
   {
+    // ==================== v0.55.1 — album header shows the real total ==========
+    const cameraAlbum = (await getAutoAlbums()).find((a) => a.key === "camera");
+    const cameraTotal = await getAlbumMediaCount("camera");
+    check("albums: header total matches the album list count",
+      !!cameraAlbum && cameraTotal === cameraAlbum.count,
+      `header=${cameraTotal} list=${cameraAlbum?.count}`);
+
+    const onePage = await getAlbumMedia("camera", 1);
+    check("albums: count is the whole album, not the loaded page",
+      onePage.length === 1 && cameraTotal >= onePage.length,
+      `total=${cameraTotal} page=${onePage.length}`);
+
+    // The count must use the same visibility rule as the page it captions.
+    const victim = onePage[0];
+    await db.runAsync("UPDATE media SET visibility = 'hidden' WHERE id = ?", [victim.id]);
+    check("albums: hidden item leaves the count",
+      (await getAlbumMediaCount("camera")) === cameraTotal - 1,
+      `after hide=${await getAlbumMediaCount("camera")} expected=${cameraTotal - 1}`);
+    await db.runAsync("UPDATE media SET visibility = 'visible' WHERE id = ?", [victim.id]);
+    check("albums: count comes back with the item",
+      (await getAlbumMediaCount("camera")) === cameraTotal);
+
+    check("albums: unknown key counts zero instead of throwing",
+      (await getAlbumMediaCount("no-such-album")) === 0);
+  }
+
+  {
     // ==================== v0.54 — duplicate merge ====================
     const d1 = await mk({ byte_size: 100, taken_at: DAY1 });
     const d2 = await mk({ byte_size: 200, taken_at: DAY1 + 5_000 });
@@ -1653,6 +1680,55 @@ async function main() {
       translate(I18N_DICT, "tabs.gallery", "hi") === "गैलरी" &&
       translate(I18N_DICT, "no.such.key", "hi") === "no.such.key",
       translate(I18N_DICT, "tabs.gallery", "hi"));
+
+    // -- locale broadcast (v0.55.1): the tab bar never re-rendered before this --
+    const before = getLocale();
+    let hits = 0;
+    const unsubscribe = subscribeLocale(() => {
+      hits += 1;
+    });
+
+    setLocale(before === "hi" ? "en" : "hi");
+    check("i18n: setLocale notifies subscribers", hits === 1, `hits=${hits}`);
+
+    setLocale(getLocale());
+    check("i18n: re-selecting the same language is silent", hits === 1, `hits=${hits}`);
+
+    unsubscribe();
+    setLocale(before === "hi" ? "en" : "hi");
+    check("i18n: unsubscribe stops delivery", hits === 1, `hits=${hits}`);
+
+    setLocale(before);
+
+    check(
+      "i18n: tIn translates for an explicit locale",
+      tIn("hi", "tabs.gallery") === "गैलरी" && tIn("en", "tabs.gallery") === "Gallery",
+      tIn("hi", "tabs.gallery")
+    );
+
+    check(
+      "i18n: every tab label has a Hindi string",
+      Object.keys(I18N_DICT)
+        .filter((k) => k.startsWith("tabs."))
+        .every((k) => Boolean(I18N_DICT[k].hi) && I18N_DICT[k].hi !== I18N_DICT[k].en),
+      Object.keys(I18N_DICT).filter((k) => k.startsWith("tabs.")).join(", ")
+    );
+
+    check(
+      "i18n: favorites empty/error copy is bilingual",
+      ["favorites.emptyTitle", "favorites.emptyBody", "favorites.errorBody"].every(
+        (k) => Boolean(I18N_DICT[k]?.en) && Boolean(I18N_DICT[k]?.hi)
+      ),
+      "favorites.emptyTitle, favorites.emptyBody, favorites.errorBody"
+    );
+
+    check(
+      "i18n: a video tile is announced as video, a photo tile as photo",
+      mediaTileLabel("3/4/2026", true).includes("Video") &&
+        mediaTileLabel("3/4/2026", false).includes("Photo") &&
+        mediaTileLabel("3/4/2026", true).includes("3/4/2026"),
+      mediaTileLabel("3/4/2026", true)
+    );
   }
 
   {

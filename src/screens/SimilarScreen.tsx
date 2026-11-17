@@ -13,7 +13,7 @@ import {
 import { mergeDuplicateGroup } from "../lib/merge";
 import { formatBytes } from "../lib/stats";
 import { theme } from "../theme";
-import { t, tf } from "../lib/i18n";
+import { t, mediaTileLabel } from "../lib/i18n";
 import {
   AppBar,
   AppText,
@@ -199,7 +199,7 @@ export function SimilarScreen({
                     onPress={() =>
                       navigation.navigate("Viewer", { ids: similar.map((r) => r.id), index })
                     }
-                    accessibilityLabel={tf("gallery.tileLabel", { date })}
+                    accessibilityLabel={mediaTileLabel(date, item.mime_type.startsWith("video/"))}
                   />
                 </View>
               );
@@ -352,9 +352,10 @@ function GroupCard({
               uri={r.thumb_uri}
               aspectRatio={1}
               onPress={() => onOpen(i)}
-              accessibilityLabel={tf("gallery.tileLabel", {
-                date: new Date(r.taken_at).toLocaleDateString(),
-              })}
+              accessibilityLabel={mediaTileLabel(
+                new Date(r.taken_at).toLocaleDateString(),
+                r.mime_type.startsWith("video/")
+              )}
             />
           </View>
         ))}

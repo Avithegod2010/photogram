@@ -5,7 +5,7 @@ import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { deleteSavedSearch, getSavedSearch, parseRules, type MediaRow } from "../db/queries";
 import { runSearch, runRulesSearch } from "../lib/search";
 import { theme } from "../theme";
-import { t, tf } from "../lib/i18n";
+import { t, mediaTileLabel } from "../lib/i18n";
 import {
   AppBar,
   EmptyState,
@@ -140,9 +140,10 @@ export function SavedSearchScreen({
                 onPress={() =>
                   navigation.navigate("Viewer", { ids: rows.map((r) => r.id), index })
                 }
-                accessibilityLabel={tf("gallery.tileLabel", {
-                  date: new Date(item.taken_at).toLocaleDateString(),
-                })}
+                accessibilityLabel={mediaTileLabel(
+                  new Date(item.taken_at).toLocaleDateString(),
+                  item.mime_type.startsWith("video/")
+                )}
               />
             </View>
           )}

@@ -222,7 +222,14 @@ export function StoryScreen({
     <View style={styles.root}>
       <StatusBar style="light" />
       {currentIsVideo ? (
-        <StoryVideoSlide item={current} onEnded={onVideoEnded} paused={false} />
+        // Keyed per item: without this, a second video in the same story reused
+        // the first player (and kept its codecs alive).
+        <StoryVideoSlide
+          key={`sv-${current.id}`}
+          item={current}
+          onEnded={onVideoEnded}
+          paused={false}
+        />
       ) : (
         <Animated.View style={[StyleSheet.absoluteFill, kenStyle]}>
           <Image

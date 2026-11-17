@@ -1,10 +1,11 @@
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useRef, useState } from "react";
 import { StyleSheet, View } from "react-native";
 import { FlashList } from "@shopify/flash-list";
+import { useFocusEffect } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { listFavorites, MediaRow } from "../db/queries";
 import { theme } from "../theme";
-import { t, tCount, tf } from "../lib/i18n";
+import { t, tCount, mediaTileLabel } from "../lib/i18n";
 import {
   AppBar,
   Button,
@@ -24,22 +25,35 @@ export function FavoritesScreen({
   const [rows, setRows] = useState<MediaRow[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [loadError, setLoadError] = useState(false);
+  // The list is reloaded every time this screen gets focus, because the heart can
+  // be tapped in the Viewer that sits on top of it. The first load owns the
+  // skeleton; later reloads are silent so the grid never flashes.
+  const hasLoaded = useRef(false);
 
-  const load = useCallback(() => {
+  const load = useCallback((silent: boolean) => {
+    if (!silent) setLoaded(false);
     setLoadError(false);
-    setLoaded(false);
     void listFavorites()
       .then(setRows)
       .catch(() => {
+        // A silent refresh keeps what is already on screen: a slightly stale grid
+        // beats replacing the user's favorites with an error page.
+        if (silent) return;
         setRows([]);
         setLoadError(true);
       })
       .finally(() => setLoaded(true));
   }, []);
 
-  useEffect(() => {
-    load();
-  }, [load]);
+  useFocusEffect(
+    useCallback(() => {
+      load(hasLoaded.current);
+      hasLoaded.current = true;
+    }, [load])
+  );
+
+  // The retry button is an explicit request, so it may show the skeleton again.
+  const retry = useCallback(() => load(false), [load]);
 
   const renderItem = useCallback(
     ({ item }: { item: MediaRow }) => {
@@ -59,7 +73,7 @@ export function FavoritesScreen({
                 index: rows.findIndex((r) => r.id === item.id),
               })
             }
-            accessibilityLabel={tf("gallery.tileLabel", { date })}
+            accessibilityLabel={mediaTileLabel(date, item.mime_type.startsWith("video/"))}
             accessibilityHint={t("viewer.tileHint")}
           />
         </View>
@@ -91,9 +105,9 @@ export function FavoritesScreen({
       {loadError ? (
         <ErrorState
           title={t("state.error")}
-          body="Photogram couldn't read your favorites on this phone."
+          body={t("favorites.errorBody")}
           retryLabel={t("common.retry")}
-          onRetry={load}
+          onRetry={retry}
         />
       ) : !loaded ? (
         <View style={styles.skeletonGrid}>
@@ -119,8 +133,8 @@ export function FavoritesScreen({
           ListEmptyComponent={
             <EmptyState
               icon="heart-outline"
-              title="No favorites yet"
-              body="Tap the ♥ on any photo to keep it here."
+              title={t("favorites.emptyTitle")}
+              body={t("favorites.emptyBody")}
               actionLabel={t("common.back")}
               onAction={() => navigation.goBack()}
             />

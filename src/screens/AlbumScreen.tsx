@@ -3,7 +3,7 @@ import { Pressable, ScrollView, StyleSheet, View } from "react-native";
 import { Image } from "expo-image";
 import { FlashList } from "@shopify/flash-list";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
-import { getAlbumMedia } from "../lib/albums";
+import { getAlbumMedia, getAlbumMediaCount } from "../lib/albums";
 import { setAlbumCover, clearAlbumCover, getAlbumCoverId } from "../lib/albumCovers";
 import { listMyGroups, resolveSenderNames, type TelegramGroup } from "../lib/chats";
 import { sendPhotoRequest } from "../lib/photoRequest";
@@ -22,7 +22,7 @@ import {
   type AlbumActivityEntry,
 } from "../db/queries";
 import { theme } from "../theme";
-import { t, tCount, tf } from "../lib/i18n";
+import { t, tCount, tf, mediaTileLabel } from "../lib/i18n";
 import {
   AppBar,
   AppText,
@@ -101,6 +101,10 @@ export function AlbumScreen({
   const [topics, setTopics] = useState<AlbumTopicRow[]>([]);
   const [activeTopic, setActiveTopic] = useState<string | "all">("all");
   const [totalCount, setTotalCount] = useState(0);
+  // Device folders are listed 600 at a time; the header must still say how many
+  // the album holds, so the true count is queried separately from the page.
+  const [albumTotal, setAlbumTotal] = useState(0);
+  const [pageSize, setPageSize] = useState(600);
   // Album organizer (shared mode only): chips All / By sender / By month.
   const [groupMode, setGroupMode] = useState<AlbumGroupMode>("all");
   const [senderNames, setSenderNames] = useState<Map<string, string>>(new Map());
@@ -147,8 +151,12 @@ export function AlbumScreen({
     setLoadError(false);
     try {
       if (sharedAlbumId === undefined) {
-        const media = await getAlbumMedia(key);
+        const [media, total] = await Promise.all([
+          getAlbumMedia(key, pageSize),
+          getAlbumMediaCount(key),
+        ]);
         setRows(media);
+        setAlbumTotal(total);
       } else {
         const [media, topicList] = await Promise.all([
           listAlbumMedia(sharedAlbumId, activeTopic === "all" ? undefined : activeTopic),
@@ -164,7 +172,7 @@ export function AlbumScreen({
     } finally {
       setLoaded(true);
     }
-  }, [key, sharedAlbumId, activeTopic, needsUnlock, unlocked]);
+  }, [key, sharedAlbumId, activeTopic, needsUnlock, unlocked, pageSize]);
 
   useEffect(() => {
     void loadRows();
@@ -294,9 +302,10 @@ export function AlbumScreen({
                 index: rows.findIndex((r) => r.id === row.id),
               })
             }
-            accessibilityLabel={tf("gallery.tileLabel", {
-              date: new Date(row.taken_at).toLocaleDateString(),
-            })}
+            accessibilityLabel={mediaTileLabel(
+              new Date(row.taken_at).toLocaleDateString(),
+              row.mime_type.startsWith("video/")
+            )}
             accessibilityHint={t("viewer.tileHint")}
           />
         </View>
@@ -322,11 +331,21 @@ export function AlbumScreen({
 
   const localCount = rows.filter((r) => r.local_uri).length;
 
+  // What the header counts: the whole album for a device folder, the topic for a
+  // filtered shared album (the All chip already carries the album total).
+  const headerTotal =
+    sharedAlbumId === undefined
+      ? albumTotal || rows.length
+      : activeTopic === "all"
+        ? totalCount || rows.length
+        : (topics.find((topic) => topic.thread_id === activeTopic)?.count ?? rows.length);
+  const canLoadMore = sharedAlbumId === undefined && rows.length < albumTotal;
+
   return (
     <Screen>
       <AppBar
         title={label}
-        subtitle={loaded ? tCount("albums.count", rows.length) : t("state.loading")}
+        subtitle={loaded ? tCount("albums.count", headerTotal) : t("state.loading")}
         large
         onBack={() => navigation.goBack()}
         backLabel={t("common.back")}
@@ -449,6 +468,18 @@ export function AlbumScreen({
                     );
                   })}
                 </ScrollView>
+              </View>
+            ) : null
+          }
+          ListFooterComponent={
+            canLoadMore ? (
+              <View style={styles.moreWrap}>
+                <Button
+                  label={tf("album.loadMore", { count: (albumTotal - rows.length).toLocaleString() })}
+                  variant="quiet"
+                  icon="chevron-down"
+                  onPress={() => setPageSize((n) => n + 600)}
+                />
               </View>
             ) : null
           }
@@ -714,6 +745,7 @@ const styles = StyleSheet.create({
     paddingBottom: theme.spacing.sm,
   },
   listContent: { paddingBottom: theme.spacing.xl },
+  moreWrap: { paddingVertical: theme.spacing.md, alignItems: "center" },
   cell: { flex: 1, margin: 1 },
   groupHeaderWrap: {
     flexDirection: "row",
