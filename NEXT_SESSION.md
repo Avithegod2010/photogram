@@ -47,7 +47,10 @@ Last updated: 2026-11-16 (§0, v0.55.0 + Quiet Archive). Read §0, then §1–§
   retries, and copies the final APK. Never use the shared `E:\Dev\.gradle` while other agents
   build, and never junction the artifact cache (it breaks Kotlin script compilation; hard links
   only). `android/` is gitignored CNG — `npx expo prebuild --platform android --no-install`
-  regenerates it.
+  regenerates it. **Or skip the PC entirely:** Actions → "Android APK" runs the same build on a
+  runner and publishes to the private `photogram-builds` release `v<app-version>-ci`
+  (`docs/BUILD-AUTOMATION.md`). First green runs 2026-11-17; the published APK was verified with
+  `apksigner` to carry the same certificate as the installed app, so `adb install -r` keeps data.
 - **Deferred native work** queued in `docs/DEFERRED-NATIVE.md` (camera, ML Kit document scanner,
   WorkManager/foreground service - touches the PROTECTED uploader, collage, video, Cast, Sentry).
 - **Owner actions:** rotate the Expo token used for builds (the `EXPO_TOKEN` in this shell is
