@@ -1,11 +1,14 @@
 # Photogram
 
-A free, self-hosted alternative to Google Photos: your phone's photos are backed up to **your own
-Telegram account** (Saved Messages and family groups/topics), so there is no subscription, no
-third-party server and no lock-in. The gallery is a local SQLite index; Telegram is only the
-byte warehouse.
+<img src="assets/icon.png" width="72" height="72" alt="photogram icon" />
 
-Android · Expo SDK 57 · React Native 0.86 (New Architecture) · TDLib (real user account) · MIT.
+Back up photos to your own Telegram account. Browse and search your library on Android, then check that originals can be restored.
+
+**[Build from source](#build-it)** · [v0.55.0 release notes](https://github.com/Avithegod2010/photogram/releases/tag/v0.55.0) · [Design guide](docs/UI-SYSTEM.md)
+
+![Photogram workflow illustration showing the gallery, backup health and restore drill](workflow-overview.png)
+
+Photogram uses Saved Messages or family groups and topics for storage. The searchable index stays on your phone.
 
 ## What it does
 
