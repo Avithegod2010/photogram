@@ -2,7 +2,7 @@
 
 <h1>Photogram</h1>
 
-<p><strong>Back up your photos and videos to your own Telegram account.</strong></p>
+<p><strong>Back up photos and videos through your own Telegram account.</strong></p>
 
 <p><strong><a href="#build-it">🛠️ Build from source</a></strong> · <a href="#how-it-works">📷 How backup works</a> · <a href="https://github.com/Avithegod2010/photogram/releases/tag/v0.55.0">Release notes</a></p>
 
@@ -16,6 +16,8 @@
 </div>
 
 <a name="what-it-does"></a>
+
+[Looking for bot-based backups to a private channel? See PhotogramBot.](https://github.com/Avithegod2010/photogrambot)
 
 ## 📷 What it does
 

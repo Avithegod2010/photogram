@@ -28,3 +28,52 @@ updates:
         update-types: ["version-update:semver-major", "version-update:semver-minor"]
       - dependency-name: "react-native-tdlib"
         update-types: ["version-update:semver-major", "version-update:semver-minor"]
+      # Expo module family — every `expo-*` package is released in lockstep with
+      # the SDK, so a semver-major bump (57.x -> 58.x) is an app-wide SDK upgrade,
+      # not a module update. A single module at 58.x inside an SDK 57 app pulls a
+      # mismatched expo-modules-core / native ABI and fails at gradle build time.
+      # `expo-quick-actions` is deliberately absent: it is versioned independently
+      # of the SDK (6.x) and is not an SDK-lockstep module.
+      # Re-evaluate this whole block in one coordinated `expo install` upgrade.
+      - dependency-name: "expo-asset"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "expo-audio"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "expo-battery"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "expo-constants"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "expo-crypto"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "expo-dev-client"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "expo-document-picker"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "expo-file-system"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "expo-image"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "expo-image-manipulator"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "expo-local-authentication"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "expo-media-library"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "expo-network"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "expo-notifications"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "expo-sharing"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "expo-sqlite"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "expo-status-bar"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "expo-system-ui"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "expo-updates"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "expo-video"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "expo-video-thumbnails"
+        update-types: ["version-update:semver-major"]
