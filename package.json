@@ -9,7 +9,7 @@
     "@react-native-ml-kit/text-recognition": "^2.0.0",
     "@react-navigation/bottom-tabs": "^7.22.0",
     "@react-navigation/native": "^7.3.17",
-    "@react-navigation/native-stack": "^7.18.9",
+    "@react-navigation/native-stack": "^7.21.1",
     "@shopify/flash-list": "2.0.2",
     "expo": "~57.0.18",
     "expo-asset": "~57.0.20",
