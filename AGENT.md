@@ -100,11 +100,9 @@ _Last updated: 2026-08-30 evening — v0.6 committed (`4b104f9`), v0.7 coded but
 | `db/queries.ts` | All typed SQL: insertMedia, pageVisibleMedia (keyset), queue ops, trash ops, search, geo list |
 | `screens/LoginScreen.tsx` | M3 login: QR + "Open Telegram" handoff + phone/code/password fallbacks |
 | `screens/GalleryScreen.tsx` | FlashList masonry, Days/Months/Years (segmented + pinch), search bar, Memories header, scan CTA, state dots |
-| `screens/GalleryPlaceholderScreen.tsx` | Placeholder for future implementation |
 | `screens/ViewerScreen.tsx` | Horizontal pager, zoom ScrollView, VideoView, meta sheet, Share/Archive/Hide/Delete |
 | `screens/SettingsScreen.tsx` | Account, storage stats + chart, upload-quality chips, free-up-space, Wi-Fi/charging toggles, biometric toggle, live Uploads dashboard |
 | `screens/TrashScreen.tsx`, `CollectionsScreen.tsx`, `MapScreen.tsx` | Trash grid with countdown; Collections hub; clustered map (graceful no-key notice) |
-| `screens/CollectionsPlaceholderScreen.tsx` | Placeholder for future implementation |
 | `components/MemoriesCarousel.tsx` | Reanimated FadeInDown cards |
 | `store/settingsStore.ts` | MMKV-persisted: exifPreserve, hiddenLockEnabled, wifiOnly/chargeOnly, uploadQuality ('storage_saver' default) |
 | `store/uploadStore.ts` | Reactive queue state for Settings UI; THROTTLE_LIMIT_BYTES = 1_500_000_000 |
