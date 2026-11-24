@@ -127,6 +127,21 @@ jobs:
           ./gradlew :app:assembleRelease --no-daemon --stacktrace \
             -x lintVitalRelease -x lintVitalAnalyzeRelease
 
+      - name: Refuse a debug-signed release
+        # The release APK is signed with whatever the generated Gradle project
+        # falls back to, which is the public AOSP debug key. That key is in every
+        # Android SDK, so anyone can sign an "update" that installs over this app
+        # and inherits its data. Fail loudly instead of shipping it.
+        run: |
+          APK=android/app/build/outputs/apk/release/app-release.apk
+          SIGNER=$(ls "$ANDROID_HOME"/build-tools/*/apksigner | sort -V | tail -1)
+          CERTS=$("$SIGNER" verify --print-certs "$APK")
+          echo "$CERTS" | grep -E 'certificate DN|certificate SHA-256' || true
+          if echo "$CERTS" | grep -qi 'CN=Android Debug'; then
+            echo "::error::Release APK is signed with the Android debug key (CN=Android Debug). Add a real release keystore before distributing this build."
+            exit 1
+          fi
+
       - name: Prepare the artifact
         id: package
         run: |
